@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DIZELTRADE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0a0a0a;--card:#1c1c1e;--card2:#242426;
+  --accent:#c8ff00;--accent-dim:rgba(200,255,0,.1);
+  --text:#fff;--text2:#8e8e93;--text3:#48484a;
+  --border:#2c2c2e;--red:#ff453a;
+}
+html,body{height:100%;overflow:hidden}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;
+  display:flex;align-items:center;justify-content:center;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* фоновый градиент как в мокапе */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 80% 50% at 50% -10%, rgba(200,255,0,.07) 0%, transparent 70%);
+}
+
+.wrap{
+  width:100%;max-width:380px;padding:32px 20px;
+  position:relative;z-index:1;
+}
+
+/* ЛОГО */
+.logo{text-align:center;margin-bottom:48px}
+.logo-mark{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:56px;height:56px;
+  background:var(--accent-dim);border:1px solid rgba(200,255,0,.2);
+  border-radius:16px;margin-bottom:16px;font-size:26px;
+}
+.logo h1{
+  font-size:28px;font-weight:900;letter-spacing:-.5px;
+  color:var(--text);line-height:1;
+}
+.logo h1 span{color:var(--accent)}
+.logo p{
+  font-size:12px;color:var(--text2);margin-top:6px;letter-spacing:.5px;
+}
+
+/* КАРТОЧКА */
+.card{
+  background:var(--card);border-radius:20px;
+  border:1px solid var(--border);padding:24px;
+}
+
+/* ОШИБКА */
+.error-box{
+  background:rgba(255,69,58,.1);border:1px solid rgba(255,69,58,.25);
+  border-radius:12px;padding:11px 14px;margin-bottom:18px;
+  font-size:13px;color:var(--red);display:flex;align-items:center;gap:8px;
+}
+
+/* ПОЛЯ */
+.field{margin-bottom:16px}
+.field label{
+  display:block;font-size:11px;font-weight:600;
+  color:var(--text2);text-transform:uppercase;letter-spacing:.7px;
+  margin-bottom:8px;
+}
+.field input{
+  width:100%;background:var(--card2);border:1px solid var(--border);
+  border-radius:12px;padding:14px 16px;
+  font-size:16px;color:var(--text);outline:none;
+  font-family:inherit;
+  transition:border-color .15s;
+  -webkit-appearance:none;
+}
+.field input::placeholder{color:var(--text3)}
+.field input:focus{border-color:var(--accent)}
+
+/* КНОПКА */
+.btn{
+  width:100%;padding:17px;margin-top:8px;
+  background:var(--accent);color:#000;border:none;border-radius:13px;
+  font-size:17px;font-weight:800;font-family:inherit;
+  cursor:pointer;transition:transform .15s,filter .15s;
+  letter-spacing:-.2px;
+}
+.btn:hover{filter:brightness(1.06)}
+.btn:active{transform:scale(.98)}
+
+/* ФУТЕР */
+.footer{
+  text-align:center;margin-top:24px;
+  font-size:11px;color:var(--text3);letter-spacing:.3px;
+}
+.footer span{color:var(--text2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="logo">
+    <div class="logo-mark">⛽</div>
+    <h1>DIZEL<span>TRADE</span></h1>
+    <p>Система управления логистикой</p>
+  </div>
+
+  <div class="card">
+    {% if error %}
+    <div class="error-box">
+      <span>⚠</span> {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="POST">
+      <div class="field">
+        <label>Ваше имя</label>
+        <input
+          type="text"
+          name="username"
+          placeholder="Василий"
+          autocomplete="name"
+          required
+          autofocus
+        >
+      </div>
+      <div class="field">
+        <label>Пароль</label>
+        <input
+          type="password"
+          name="password"
+          placeholder="••••••••"
+          autocomplete="current-password"
+          required
+        >
+      </div>
+      <button class="btn" type="submit">Войти →</button>
+    </form>
+  </div>
+
+  <div class="footer">
+    <span>app.dtldv.ru</span> · v2.0
+  </div>
+
+</div>
+</body>
+</html>

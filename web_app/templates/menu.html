@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Меню — DIZELTRADE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#111;--card:#1c1c1e;--card2:#242426;--card3:#2c2c2e;
+  --accent:#c8ff00;--accent-dim:rgba(200,255,0,.12);--accent-mid:rgba(200,255,0,.2);
+  --text:#fff;--text2:#8e8e93;--text3:#48484a;
+  --border:#2c2c2e;--border2:#3a3a3c;
+  --red:#ff453a;--green:#32d74b;--orange:#ff9f0a;--blue:#0a84ff;
+}
+html,body{height:100%;overflow:hidden}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;
+  display:flex;flex-direction:column;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* NAV BAR */
+.nav-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 18px 10px;border-bottom:1px solid var(--border);
+  flex-shrink:0;background:rgba(17,17,17,.97);
+  position:sticky;top:0;z-index:50;
+}
+.nav-logo{font-size:18px;font-weight:900;letter-spacing:-.5px;color:var(--text)}
+.nav-logo span{color:var(--accent)}
+.nav-user{
+  font-size:12px;color:var(--text2);
+  background:var(--card);padding:4px 12px;border-radius:20px;
+  display:flex;align-items:center;gap:6px;
+}
+.nav-user a{color:var(--text3);font-size:11px;text-decoration:none}
+.nav-user a:hover{color:var(--red)}
+
+/* CONTENT */
+.content{
+  flex:1;overflow-y:auto;padding:20px 16px 100px;
+  scrollbar-width:none;
+}
+.content::-webkit-scrollbar{display:none}
+
+/* ALERT BANNER */
+{% if alert_count %}
+.alert-banner{
+  background:rgba(255,149,0,.1);border:1px solid rgba(255,149,0,.22);
+  border-radius:14px;padding:12px 14px;margin-bottom:16px;
+  display:flex;align-items:center;gap:10px;cursor:pointer;
+  text-decoration:none;
+}
+.alert-banner .ai{font-size:18px}
+.alert-banner .at{flex:1}
+.alert-banner .at .h{font-size:13px;font-weight:600;color:var(--orange)}
+.alert-banner .at .s{font-size:12px;color:var(--text2);margin-top:2px}
+{% endif %}
+
+/* SCREEN TITLE */
+.stitle{font-size:26px;font-weight:800;letter-spacing:-.5px;margin-bottom:3px}
+.ssub{font-size:13px;color:var(--text2);margin-bottom:18px}
+
+/* MENU GRID */
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* MENU CARD */
+.mc{
+  background:var(--card);border-radius:16px;padding:16px 14px;
+  cursor:pointer;border:1px solid var(--border);
+  text-decoration:none;color:var(--text);
+  display:flex;flex-direction:column;
+  transition:transform .15s,background .15s;
+  position:relative;overflow:hidden;
+  -webkit-user-select:none;user-select:none;
+}
+.mc:active{transform:scale(.96)}
+.mc.accent{background:var(--accent-dim);border-color:var(--accent-mid)}
+.mc.wide{grid-column:span 2}
+
+.mc .i{font-size:26px;margin-bottom:8px;display:block;line-height:1}
+.mc .l{font-size:14px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.2px}
+.mc .sl{font-size:11px;color:var(--text2);margin-top:3px}
+
+/* BADGE — уведомление */
+.mc .b{
+  position:absolute;top:10px;right:10px;
+  background:var(--orange);color:#000;
+  font-size:10px;font-weight:800;
+  min-width:18px;height:18px;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;padding:0 4px;
+}
+
+/* SECTION HEADER */
+.sh{
+  font-size:11px;font-weight:600;color:var(--text2);
+  text-transform:uppercase;letter-spacing:1px;
+  margin:20px 0 9px;
+}
+
+/* TAB BAR */
+.tab-bar{
+  display:flex;background:rgba(17,17,17,.97);
+  border-top:1px solid var(--border);
+  padding:6px 0 22px;
+  position:fixed;bottom:0;left:0;right:0;
+  z-index:50;
+}
+.tab-item{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;gap:2px;cursor:pointer;padding:5px 0;
+  text-decoration:none;
+}
+.tab-icon{font-size:22px}
+.tab-label{font-size:9px;font-weight:600;color:var(--text2)}
+.tab-item.active .tab-label{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- NAV BAR -->
+<div class="nav-bar">
+  <div class="nav-logo">DIZEL<span>TRADE</span></div>
+  <div class="nav-user">
+    <span>{{ username }}</span>
+    <a href="/logout">выйти</a>
+  </div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <div class="stitle">Что записать?</div>
+  <div class="ssub">// добро пожаловать, {{ username }}</div>
+
+  {% if alert_count %}
+  <a class="alert-banner" href="/base">
+    <span class="ai">⏳</span>
+    <div class="at">
+      <div class="h">{{ alert_count }} поставки ожидают подтверждения</div>
+      <div class="s">Нажмите чтобы перейти в БАЗУ</div>
+    </div>
+    <span style="color:var(--text2)">›</span>
+  </a>
+  {% endif %}
+
+  <div class="menu-grid">
+
+    <a href="/base" class="mc accent">
+      <span class="i">⛽</span>
+      <div class="l">База</div>
+      <div class="sl">приёмка / рейсы</div>
+      {% if alert_count %}<div class="b">{{ alert_count }}</div>{% endif %}
+    </a>
+
+    <a href="/orders" class="mc">
+      <span class="i">📦</span>
+      <div class="l">Заказы</div>
+      <div class="sl">прогресс</div>
+    </a>
+
+    <a href="/wizard/income" class="mc">
+      <span class="i">💰</span>
+      <div class="l">Доходы</div>
+    </a>
+
+    <a href="/wizard/expenses" class="mc">
+      <span class="i">📋</span>
+      <div class="l">Расходы</div>
+    </a>
+
+    <a href="/wizard/hire" class="mc">
+      <span class="i">🔁</span>
+      <div class="l">Найм</div>
+      <div class="sl">Хб → Тында</div>
+    </a>
+
+    <a href="/wizard/debt_payment" class="mc">
+      <span class="i">📄</span>
+      <div class="l">Долги</div>
+    </a>
+
+    <a href="/wizard/auto" class="mc">
+      <span class="i">🚛</span>
+      <div class="l">Автопарк</div>
+      <div class="sl">расходы / рейсы</div>
+    </a>
+
+    <a href="/analytics" class="mc">
+      <span class="i">📈</span>
+      <div class="l">Аналитика</div>
+    </a>
+
+    <a href="/balance" class="mc">
+      <span class="i">⚖️</span>
+      <div class="l">Баланс</div>
+    </a>
+
+    <a href="/yearly" class="mc">
+      <span class="i">📅</span>
+      <div class="l">Год. итоги</div>
+    </a>
+
+    <a href="/history" class="mc wide">
+      <span class="i">🕐</span>
+      <div class="l">История записей</div>
+      <div class="sl">кто, что и когда записал</div>
+    </a>
+
+  </div>
+</div>
+
+<!-- TAB BAR -->
+<div class="tab-bar">
+  <a class="tab-item active" href="/menu">
+    <div class="tab-icon">🏠</div>
+    <div class="tab-label">Главная</div>
+  </a>
+  <a class="tab-item" href="/base">
+    <div class="tab-icon">⛽</div>
+    <div class="tab-label">БАЗА</div>
+  </a>
+  <a class="tab-item" href="/orders">
+    <div class="tab-icon">📦</div>
+    <div class="tab-label">Заказы</div>
+  </a>
+  <a class="tab-item" href="/dashboard">
+    <div class="tab-icon">📊</div>
+    <div class="tab-label">Дашборд</div>
+  </a>
+</div>
+
+</body>
+</html>
