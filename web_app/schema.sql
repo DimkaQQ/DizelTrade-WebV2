@@ -467,3 +467,31 @@ SELECT
     COALESCE(SUM(amount_given), 0) - COALESCE(SUM(amount_spent), 0) AS balance
 FROM cash_to_artem
 WHERE is_settled = FALSE;
+
+-- ============================================================
+-- ЕЖЕМЕСЯЧНАЯ СВЕРКА
+-- ============================================================
+CREATE TABLE IF NOT EXISTS monthly_reconciliations (
+    id                SERIAL PRIMARY KEY,
+    period            DATE NOT NULL,
+    calculated_stock  DECIMAL(10,2) NOT NULL,
+    physical_stock    DECIMAL(10,2) NOT NULL,
+    difference        DECIMAL(10,2) GENERATED ALWAYS AS (physical_stock - calculated_stock) STORED,
+    notes             TEXT,
+    entered_by        INT REFERENCES users(id),
+    created_at        TIMESTAMP DEFAULT NOW(),
+    UNIQUE (period)
+);
+
+-- ============================================================
+-- PUSH-УВЕДОМЛЕНИЯ
+-- ============================================================
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id          SERIAL PRIMARY KEY,
+    user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint    TEXT NOT NULL,
+    p256dh      TEXT NOT NULL,
+    auth        TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT NOW(),
+    UNIQUE (user_id, endpoint)
+);
