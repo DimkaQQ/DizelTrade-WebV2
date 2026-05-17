@@ -10,6 +10,9 @@ from passlib.context import CryptContext
 from ..database import query_one, execute, get_db
 from ..config import settings
 from ..deps import get_current_user
+from ..security import (
+    is_locked_out, record_login_fail, clear_login_fails, validate_password
+)
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -37,16 +40,24 @@ def create_access_token(user_id: int, role: str) -> str:
 
 @router.post("/login", status_code=200)
 def login(body: LoginRequest, response: Response):
-    # Find user by email or phone
+    email = body.login.strip().lower()
+
+    if is_locked_out(email):
+        raise HTTPException(status_code=429, detail="Слишком много попыток. Подождите 15 минут.")
+
     user = query_one(
-        "SELECT id, name, email, phone, password_hash, role, is_active FROM users WHERE email = %s",
-        (body.login,)
+        "SELECT id, name, email, phone, password_hash, role, is_active FROM users WHERE lower(email) = %s",
+        (email,)
     )
     if not user or not user["is_active"]:
+        record_login_fail(email)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not pwd_context.verify(body.password, user["password_hash"]):
+        record_login_fail(email)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    clear_login_fails(email)
 
     # Update last_login_at
     execute(
@@ -61,6 +72,9 @@ def login(body: LoginRequest, response: Response):
     raw_refresh = secrets.token_hex(32)
     refresh_hash = pwd_context.hash(raw_refresh)
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+
+    # Clean up expired tokens
+    execute("DELETE FROM refresh_tokens WHERE expires_at < NOW()")
 
     execute(
         "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
@@ -159,6 +173,10 @@ def change_password(body: ChangePasswordRequest, user: dict = Depends(get_curren
 
     if not pwd_context.verify(body.old_password, db_user["password_hash"]):
         raise HTTPException(status_code=400, detail="Old password is incorrect")
+
+    err = validate_password(body.new_password)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
 
     new_hash = pwd_context.hash(body.new_password)
     execute(
