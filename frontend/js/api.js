@@ -1,120 +1,44 @@
 /**
- * DTL Management System – API Client
- * All communication with the backend goes through this module.
- * Access token is kept in memory only (never localStorage/sessionStorage).
+ * DTL Management System – API Client v2
  */
+const api = (() => {
+  const BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000' : '';
+  let token = null;
 
-(function () {
-  'use strict';
-
-  // ── Base URL ────────────────────────────────────────────────────────────────
-  const BASE =
-    location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-      ? 'http://localhost:8000'
-      : '';
-
-  // ── In-memory token ─────────────────────────────────────────────────────────
-  let _token = null;
-  let _refreshing = null; // in-flight refresh promise
-
-  // ── Core fetch wrapper ──────────────────────────────────────────────────────
-  async function _fetch(method, path, body, retry) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (_token) headers['Authorization'] = `Bearer ${_token}`;
-
-    const opts = { method, headers, credentials: 'include' };
+  async function req(method, path, body) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include' };
+    if (token) opts.headers['Authorization'] = `Bearer ${token}`;
     if (body !== undefined) opts.body = JSON.stringify(body);
-
     let res;
-    try {
-      res = await fetch(BASE + path, opts);
-    } catch (err) {
-      throw new Error('Нет соединения с сервером');
+    try { res = await fetch(BASE + path, opts); }
+    catch (e) { throw new Error('Нет соединения с сервером'); }
+    if (res.status === 401 && path !== '/api/auth/login') {
+      const r = await fetch(BASE + '/api/auth/refresh', { method: 'POST', credentials: 'include' });
+      if (r.ok) { token = (await r.json()).access_token; return req(method, path, body); }
+      token = null; location.hash = '#login'; throw new Error('Unauthorized');
     }
-
-    // Token expired – try to refresh once
-    if (res.status === 401 && !retry) {
-      try {
-        await _refresh();
-        return _fetch(method, path, body, true); // one retry
-      } catch {
-        _token = null;
-        window.currentUser = null;
-        location.hash = '#login';
-        throw new Error('Сессия истекла. Пожалуйста, войдите снова.');
-      }
-    }
-
-    if (!res.ok) {
-      let detail = `Ошибка ${res.status}`;
-      try {
-        const j = await res.clone().json();
-        detail = j.detail || j.message || detail;
-      } catch { /* ignore */ }
-      throw new Error(detail);
-    }
-
-    // Some endpoints return 204 No Content
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || res.statusText); }
     if (res.status === 204) return null;
-
     return res.json();
   }
 
-  // ── Public auth methods ─────────────────────────────────────────────────────
-  async function login(loginStr, password) {
-    const data = await _fetch('POST', '/api/auth/login', {
-      login: loginStr,
-      password,
-    }, true);
-    _token = data.access_token;
-    return data;
-  }
-
-  async function logout() {
-    try {
-      await _fetch('POST', '/api/auth/logout', {}, true);
-    } finally {
-      _token = null;
-      window.currentUser = null;
-    }
-  }
-
-  async function _refresh() {
-    // Deduplicate concurrent refresh calls
-    if (_refreshing) return _refreshing;
-    _refreshing = (async () => {
-      const data = await _fetch('POST', '/api/auth/refresh', undefined, true);
-      _token = data.access_token;
-      return data;
-    })().finally(() => { _refreshing = null; });
-    return _refreshing;
-  }
-
-  // ── Public HTTP helpers ─────────────────────────────────────────────────────
-  function get(path) {
-    return _fetch('GET', path, undefined, false);
-  }
-
-  function post(path, body) {
-    return _fetch('POST', path, body, false);
-  }
-
-  function put(path, body) {
-    return _fetch('PUT', path, body, false);
-  }
-
-  function del(path) {
-    return _fetch('DELETE', path, undefined, false);
-  }
-
-  // ── Expose ──────────────────────────────────────────────────────────────────
-  window.api = {
-    login,
-    logout,
-    refresh: _refresh,
-    get,
-    post,
-    put,
-    delete: del,
+  return {
+    setToken(t) { token = t; },
+    getToken() { return token; },
+    get: (p) => req('GET', p),
+    post: (p, b) => req('POST', p, b),
+    put: (p, b) => req('PUT', p, b),
+    patch: (p, b) => req('PATCH', p, b),
+    del: (p) => req('DELETE', p),
+    login: async (login, password) => {
+      const d = await req('POST', '/api/auth/login', { login, password });
+      token = d.access_token;
+      return d;
+    },
+    logout: async () => { await req('POST', '/api/auth/logout'); token = null; },
+    me: () => req('GET', '/api/auth/me'),
+    refresh: () => req('POST', '/api/auth/refresh'),
   };
 })();
+window.api = api;
