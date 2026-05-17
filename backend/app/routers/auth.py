@@ -16,7 +16,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class LoginRequest(BaseModel):
-    login: str   # email or phone
+    login: str   # email
     password: str
 
 
@@ -39,8 +39,8 @@ def create_access_token(user_id: int, role: str) -> str:
 def login(body: LoginRequest, response: Response):
     # Find user by email or phone
     user = query_one(
-        "SELECT id, name, email, phone, password_hash, role, is_active FROM users WHERE email = %s OR phone = %s",
-        (body.login, body.login)
+        "SELECT id, name, email, phone, password_hash, role, is_active FROM users WHERE email = %s",
+        (body.login,)
     )
     if not user or not user["is_active"]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
