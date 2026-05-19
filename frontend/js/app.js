@@ -41,7 +41,7 @@
   // ── Component library ────────────────────────────────────────────────────
 
   function statusBar() {
-    return `<div class="status-bar"><span class="t" id="sb-time">${currentTime()}</span><div class="r">▲▲▲ 🔋</div></div>`;
+    return '';
   }
 
   function badge(text, type) {
