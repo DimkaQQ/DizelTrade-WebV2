@@ -443,6 +443,32 @@ body{display:flex;flex-direction:column;min-height:100vh}
 ══════════════════════════════════════════════════════════════════════ */
 @keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .content > *{animation:pageIn .2s ease}
+
+/* ── Phase 3 enhancements ─────────────────────────────────────────────── */
+.bar-chart{display:flex;align-items:flex-end;gap:8px;height:80px;margin:14px 0;padding:0 4px}
+.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+.bar-fill{width:100%;border-radius:4px 4px 0 0;background:var(--accent);opacity:.7;transition:height .4s ease;min-height:4px}
+.bar-fill.current{opacity:1;box-shadow:0 0 12px rgba(200,255,0,.35);border:1px solid var(--accent)}
+.bar-label{font-size:9px;color:var(--text2);white-space:nowrap}
+.bar-val{font-size:9px;color:var(--text2);margin-bottom:2px}
+
+.prog-mini-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.prog-mini-label{font-size:12px;color:var(--text);width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prog-mini-bar{flex:1;background:var(--card2);border-radius:4px;height:6px;overflow:hidden}
+.prog-mini-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--accent),#90ff00);transition:width .5s ease}
+.prog-mini-fill.o{background:linear-gradient(90deg,var(--orange),#ffcc00)}
+.prog-mini-val{font-size:12px;color:var(--text2);width:55px;text-align:right;flex-shrink:0}
+
+.month-tabs{display:flex;gap:5px;overflow-x:auto;padding-bottom:3px;margin-bottom:14px;scrollbar-width:none}
+.month-tabs::-webkit-scrollbar{display:none}
+.month-tab{padding:5px 10px;border-radius:7px;font-size:11px;border:1px solid var(--border);cursor:pointer;color:var(--text2);background:var(--card);white-space:nowrap;flex-shrink:0}
+.month-tab.active{background:var(--accent);color:#000;font-weight:700;border-color:var(--accent)}
+
+.year-tabs{display:flex;gap:6px;margin-bottom:14px}
+.year-tab{padding:5px 14px;border-radius:7px;font-size:13px;border:1px solid var(--border);cursor:pointer;color:var(--text2);background:var(--card)}
+.year-tab.active{background:var(--accent);color:#000;font-weight:700;border-color:var(--accent)}
+
+.concentration-warning{background:rgba(255,149,0,.08);border:1px solid rgba(255,149,0,.15);border-radius:8px;padding:9px 12px;margin-top:10px;font-size:11px;color:var(--orange)}
 </style>
 </head>
 <body>

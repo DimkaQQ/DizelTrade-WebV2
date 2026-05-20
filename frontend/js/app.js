@@ -205,9 +205,15 @@
           ` : ''}
 
           <div class="nav-group-label">Аналитика</div>
-          <div class="nav-item nav-item-dim"><span class="ni-icon">📈</span> Аналитика <span class="ni-badge" style="background:var(--text3)">скоро</span></div>
-          <div class="nav-item nav-item-dim"><span class="ni-icon">⚖️</span> Баланс <span class="ni-badge" style="background:var(--text3)">скоро</span></div>
-          <div class="nav-item nav-item-dim"><span class="ni-icon">📅</span> Год. итоги <span class="ni-badge" style="background:var(--text3)">скоро</span></div>
+          ${isPartner() ? `
+          <div class="nav-item" data-page="analytics" onclick="navigate('#analytics')"><span class="ni-icon">📈</span> Аналитика</div>
+          <div class="nav-item" data-page="balance" onclick="navigate('#balance')"><span class="ni-icon">⚖️</span> Баланс</div>
+          <div class="nav-item" data-page="annual" onclick="navigate('#annual')"><span class="ni-icon">📅</span> Год. итоги</div>
+          ` : `
+          <div class="nav-item nav-item-dim"><span class="ni-icon">📈</span> Аналитика</div>
+          <div class="nav-item nav-item-dim"><span class="ni-icon">⚖️</span> Баланс</div>
+          <div class="nav-item nav-item-dim"><span class="ni-icon">📅</span> Год. итоги</div>
+          `}
 
           <div class="nav-group-label">Система</div>
           <div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>
@@ -300,6 +306,9 @@
     if (h === 'debts') { viewDebts(); return; }
     if (h === 'dashboard') { viewDashboard(); return; }
     if (h === 'fleet') { viewFleet(); return; }
+    if (h === 'analytics') { viewAnalytics(); return; }
+    if (h === 'balance') { viewBalance(); return; }
+    if (h === 'annual') { viewAnnual(); return; }
     if (h === 'settings') { viewSettings(); return; }
     viewHome();
   }
@@ -471,9 +480,9 @@
         ${menuCard({ icon: '📋', label: 'Расходы', onClick: "navigate('#expenses')" })}
         ${menuCard({ icon: '🔁', label: 'Найм', sub: 'Хб → Тында', onClick: "navigate('#hire')" })}
         ${menuCard({ icon: '📄', label: 'Долги', onClick: "navigate('#debts')" })}
-        <div class="mc" style="opacity:.5"><span class="i">📈</span><div class="l">Аналитика</div><div class="b" style="background:var(--text3)">скоро</div></div>
-        <div class="mc" style="opacity:.5"><span class="i">⚖️</span><div class="l">Баланс</div><div class="b" style="background:var(--text3)">скоро</div></div>
-        <div class="mc" style="opacity:.5"><span class="i">📅</span><div class="l">Год. итоги</div><div class="b" style="background:var(--text3)">скоро</div></div>
+        ${menuCard({ icon: '📈', label: 'Аналитика', onClick: "navigate('#analytics')" })}
+        ${menuCard({ icon: '⚖️', label: 'Баланс', onClick: "navigate('#balance')" })}
+        ${menuCard({ icon: '📅', label: 'Год. итоги', onClick: "navigate('#annual')" })}
         ${menuCard({ icon: '📊', label: 'Дашборд', onClick: "navigate('#dashboard')" })}
         ${menuCard({ icon: '🕐', label: 'История записей', sub: 'кто, что и когда', wide: true })}
       </div>
@@ -1141,7 +1150,19 @@
   // ── Fleet ─────────────────────────────────────────────────────────────────
   async function viewFleet() {
     let trucks = [];
+    let artemDebtData = null;
     try { trucks = (isArtem() ? await api.get('/api/trucks?owner=artem') : await api.get('/api/trucks')) || []; } catch (e) {}
+    if (isArtem()) {
+      try { artemDebtData = await api.get('/api/base/artem-debt'); } catch (e) {}
+    }
+
+    const debtRub = artemDebtData ? (artemDebtData.debt_rub || 0) : 0;
+    const debtPaid = artemDebtData ? (artemDebtData.paid_rub || 0) : 0;
+    const debtBalance = Math.max(0, debtRub - debtPaid);
+    const debtMln = debtBalance > 0 ? (debtBalance / 1000000).toFixed(2) : '0';
+
+    // Aggregate trips and revenue from truck data
+    const tripsMonth = trucks.reduce((s, t) => s + (t.trips_month || 0), 0);
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
@@ -1150,12 +1171,12 @@
       ${isArtem() ? `<div class="role-tag">Управляешь сам · партнёры DTL видят P&amp;L только просмотром</div>` : ''}
       <div class="stats">
         ${statCard(trucks.length || '—', 'Машин')}
-        ${statCard('—', 'Рейсов (май)', 'o')}
-        ${statCard('—', 'Долг DTL млн', 'r')}
+        ${statCard(tripsMonth || '—', 'Рейсов (май)', 'o')}
+        ${isArtem() ? statCard(debtMln, 'Долг DTL млн', 'r') : statCard('—', 'Долг DTL млн', 'r')}
       </div>
       ${sectionHeader('Машины')}
       ${trucks.length ? trucks.map(t => listItem({ icon: '🚛', iconBg: 'y', title: t.name, sub: `${t.trips_month || 0} рейсов · май`, rightVal: t.revenue_month ? formatNum(t.revenue_month) + ' ₽' : '—', rightSub: 'выручка' })).join('') : emptyState('Нет машин')}
-      ${isArtem() ? `<button class="btn-primary" style="margin-top:10px">+ Добавить машину</button>` : ''}
+      ${isArtem() ? `<button class="btn-primary" style="margin-top:10px" onclick="showAddTruckModal()">+ Добавить машину</button>` : ''}
       ${isArtem() ? `
       ${sectionHeader('Внести расход')}
       ${formField('Машина', chipGroup(trucks.map(t => ({ value: String(t.id), label: t.name })), trucks[0] ? String(trucks[0].id) : '', 'fleet-truck'))}
@@ -1163,11 +1184,33 @@
       ${formField('Сумма, ₽', `<input class="inp" type="number" id="fleet-amount" placeholder="0">`)}
       ${formField('Комментарий', `<input class="inp" type="text" id="fleet-note" placeholder="Детали...">`)}
       <button class="btn-primary" onclick="submitFleetExpense()">Записать расход</button>
+      ${sectionHeader('Долг DTL передо мной')}
+      <div class="bb">
+        <div class="bbr"><div class="bbl">Рейсы моих машин (всего)</div><div class="bbv" style="color:var(--red)">${formatNum(Math.round(debtRub))} ₽</div></div>
+        <div class="bbr"><div class="bbl">Получил наличными</div><div class="bbv" style="color:var(--green)">−${formatNum(Math.round(debtPaid))} ₽</div></div>
+        <div class="bbt"><span style="color:var(--text2)">DTL мне должна</span><span style="color:var(--orange)">${formatNum(Math.round(debtBalance))} ₽</span></div>
+      </div>
       ` : ''}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Автопарк';
   }
+
+  window.showAddTruckModal = function () {
+    showModal('Добавить машину', `
+      ${formField('Название / марка', `<input class="inp" type="text" id="m-truck-name" placeholder="Шахман-4, Сайгак...">`)}
+      ${formField('Объём бочки, куб', `<input class="inp" type="number" id="m-truck-cap" placeholder="23.5">`)}
+      ${formField('Гос. номер', `<input class="inp" type="text" id="m-truck-plate" placeholder="А000АА000">`)}
+    `, async () => {
+      const name = document.getElementById('m-truck-name').value.trim();
+      const capacity_m3 = parseFloat(document.getElementById('m-truck-cap').value) || null;
+      const plate_number = document.getElementById('m-truck-plate').value.trim();
+      if (!name) throw new Error('Введите название машины');
+      await api.post('/api/trucks', { name, capacity_m3, plate_number, owner: 'artem' });
+      toast('✅ Машина добавлена!');
+      viewFleet();
+    });
+  };
 
   window.submitFleetExpense = async function () {
     const truckEl = document.querySelector('.chips[data-group="fleet-truck"] .chip.sel');
@@ -1230,6 +1273,307 @@
     const el = document.getElementById('modal-overlay');
     if (el) el.remove();
   };
+
+  // ── Analytics (Phase 3) ───────────────────────────────────────────────────
+  async function viewAnalytics() {
+    if (!isPartner()) { navigate('#home'); return; }
+
+    const now = new Date();
+    let selYear = now.getFullYear();
+    let selMonth = now.getMonth() + 1;
+
+    // Read hash params if any: #analytics?year=2026&month=5
+    const hashParams = new URLSearchParams((location.hash.split('?')[1] || ''));
+    if (hashParams.get('year')) selYear = parseInt(hashParams.get('year'));
+    if (hashParams.get('month')) selMonth = parseInt(hashParams.get('month'));
+
+    let summary = null, clients = [], trucks = [], suppliers = [];
+    try { summary  = await api.get(`/api/analytics/summary?year=${selYear}&month=${selMonth}`); } catch (e) {}
+    try { clients  = await api.get(`/api/analytics/clients?year=${selYear}`) || []; } catch (e) {}
+    try { trucks   = await api.get(`/api/analytics/trucks?year=${selYear}&month=${selMonth}`) || []; } catch (e) {}
+    try { suppliers = await api.get(`/api/analytics/suppliers?year=${selYear}`) || []; } catch (e) {}
+
+    const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+
+    // Period selector (year tabs + month tabs)
+    const yearTabsHtml = [selYear, selYear - 1].map(y =>
+      `<div class="year-tab${y === selYear ? ' active' : ''}" onclick="navigate('#analytics?year=${y}&month=${selMonth}')">${y}</div>`
+    ).join('');
+
+    const monthTabsHtml = months.map((name, i) => {
+      const m = i + 1;
+      return `<div class="month-tab${m === selMonth ? ' active' : ''}" onclick="navigate('#analytics?year=${selYear}&month=${m}')">${name}</div>`;
+    }).join('');
+
+    // Clients section
+    const maxClientPct = clients.length ? Math.max(...clients.map(c => c.pct_of_total)) : 0;
+    const clientRows = clients.length ? clients.map(c => {
+      const isOrange = c.pct_of_total >= 40;
+      return `<div class="prog-mini-row">
+        <div class="prog-mini-label" title="${esc(c.client_name)}">${esc(c.client_name)}</div>
+        <div class="prog-mini-bar"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%" data-target="${c.pct_of_total}%"></div></div>
+        <div class="prog-mini-val" style="color:${isOrange ? 'var(--orange)' : 'var(--accent)'}">${c.pct_of_total}%</div>
+      </div>`;
+    }).join('') : `<div class="empty-state">Нет данных</div>`;
+
+    const concentrationWarning = maxClientPct > 50
+      ? `<div class="concentration-warning">⚠ Концентрация риска: один клиент занимает ${maxClientPct}% выручки</div>`
+      : '';
+
+    // Trucks section
+    const truckRows = trucks.length ? trucks.map(t => {
+      const marginColor = t.margin_pct >= 60 ? 'var(--accent)' : t.margin_pct >= 30 ? 'var(--orange)' : 'var(--red)';
+      return listItem({
+        icon: '🚛', iconBg: 'y',
+        title: t.truck_name,
+        sub: `${t.trips} рейсов · ${t.volume} куб`,
+        rightVal: t.margin_pct + '%',
+        rightSub: 'маржа'
+      }).replace('style="font-size:14px;font-weight:700;color:var(--text)"',
+        `style="font-size:14px;font-weight:700;color:${marginColor}"`);
+    }).join('') : `<div class="empty-state">Нет данных по машинам</div>`;
+
+    // Suppliers section
+    const supplierRows = suppliers.length ? suppliers.map(s => {
+      const isOrange = s.pct_of_total >= 40;
+      return `<div class="prog-mini-row">
+        <div class="prog-mini-label" title="${esc(s.supplier_name)}">${esc(s.supplier_name)}</div>
+        <div class="prog-mini-bar"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%" data-target="${s.pct_of_total}%"></div></div>
+        <div class="prog-mini-val">${s.pct_of_total}%</div>
+      </div>`;
+    }).join('') : `<div class="empty-state">Нет данных</div>`;
+
+    // Financial summary card
+    const rev = summary ? summary.revenue_total : 0;
+    const profit = summary ? summary.profit : 0;
+    const marginPct = summary ? summary.margin_pct : 0;
+    const monthLabel = months[selMonth - 1] || '';
+
+    const html = `
+    ${!isDesktop() ? statusBar() : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📈 Аналитика</div><div style="width:55px"></div></div>` : ''}
+    <div class="content">
+      ${infoTag('🔒 Только для партнёров DTL')}
+      <div class="year-tabs">${yearTabsHtml}</div>
+      <div class="month-tabs">${monthTabsHtml}</div>
+
+      ${sectionHeader('Клиенты — доля выручки')}
+      <div class="pi">
+        ${clientRows}
+        ${concentrationWarning}
+      </div>
+
+      ${sectionHeader('Итог по машинам')}
+      ${truckRows}
+
+      ${sectionHeader('Поставщики — доля закупок')}
+      <div class="pi">
+        ${supplierRows}
+      </div>
+
+      ${sectionHeader('Финансовый итог · ' + monthLabel + ' ' + selYear)}
+      <div class="big-stat">
+        <div class="bl">💰 Выручка</div>
+        <div class="bv">${rev > 0 ? (rev / 1000000).toFixed(2) : '—'} <span class="bu">млн ₽</span></div>
+        <div class="bs">Прибыль: <strong style="color:${profit >= 0 ? 'var(--green)' : 'var(--red)'}">${profit > 0 ? '+' : ''}${profit > 0 ? (profit / 1000000).toFixed(2) : (profit / 1000000).toFixed(2)} млн ₽</strong> · Маржа: <strong>${marginPct}%</strong></div>
+      </div>
+    </div>`;
+
+    setPageContent(html, getTabBar());
+    if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Аналитика';
+    updateSidebarActive('analytics');
+
+    // Animate progress bars after render
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.prog-mini-fill[data-target]').forEach(el => {
+        setTimeout(() => { el.style.width = el.getAttribute('data-target'); }, 50);
+      });
+    });
+  }
+
+
+  // ── Balance (Phase 3) ─────────────────────────────────────────────────────
+  async function viewBalance() {
+    if (!isPartner()) { navigate('#home'); return; }
+
+    const now = new Date();
+    let selYear = now.getFullYear();
+    let selMonth = now.getMonth() + 1;
+
+    const hashParams = new URLSearchParams((location.hash.split('?')[1] || ''));
+    if (hashParams.get('year')) selYear = parseInt(hashParams.get('year'));
+    if (hashParams.get('month')) selMonth = parseInt(hashParams.get('month'));
+
+    let monthly = [], current = null;
+    try { monthly = await api.get(`/api/balance/monthly?year=${selYear}`) || []; } catch (e) {}
+    try { current = await api.get('/api/balance/current'); } catch (e) {}
+
+    const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+
+    // Current month data from monthly array
+    const monthData = monthly.find(m => m.month === selMonth) || { assets: 0, liabilities: 0, net_assets: 0 };
+
+    // Month tabs
+    const monthTabsHtml = months.map((name, i) => {
+      const m = i + 1;
+      return `<div class="month-tab${m === selMonth ? ' active' : ''}" onclick="navigate('#balance?year=${selYear}&month=${m}')">${name}</div>`;
+    }).join('');
+
+    // Mini bar chart — show up to 5 recent months ending at selMonth
+    const barMonths = [];
+    for (let i = 4; i >= 0; i--) {
+      let m = selMonth - i;
+      let y = selYear;
+      if (m <= 0) { m += 12; y -= 1; }
+      barMonths.push({ m, y });
+    }
+    const barData = barMonths.map(bm => {
+      const d = monthly.find(row => row.month === bm.m);
+      return { label: months[bm.m - 1], net: d ? d.net_assets : 0, isCurrent: bm.m === selMonth && bm.y === selYear };
+    });
+    const maxNet = Math.max(...barData.map(b => b.net), 1);
+    const barsHtml = barData.map(b => {
+      const heightPx = Math.max(4, Math.round((b.net / maxNet) * 60));
+      const valLabel = b.net > 0 ? (b.net / 1000000).toFixed(1) : '0';
+      return `<div class="bar-col">
+        <div class="bar-val">${valLabel}</div>
+        <div class="bar-fill${b.isCurrent ? ' current' : ''}" style="height:${heightPx}px"></div>
+        <div class="bar-label">${b.label}</div>
+      </div>`;
+    }).join('');
+
+    // Selected month's data
+    const assets = monthData.assets || (current ? current.assets : 0);
+    const liabilities = monthData.liabilities || (current ? current.liabilities : 0);
+    const netAssets = assets - liabilities;
+    const netDebt = liabilities - assets * 0.3; // simplified net debt estimate
+    const liquidity = liabilities > 0 ? (assets / liabilities).toFixed(1) : '—';
+
+    const html = `
+    ${!isDesktop() ? statusBar() : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">⚖️ Баланс</div><div style="width:55px"></div></div>` : ''}
+    <div class="content">
+      ${infoTag('🔒 Только для партнёров DTL')}
+      <div class="month-tabs">${monthTabsHtml}</div>
+
+      <div class="big-stat">
+        <div class="bl">Чистые активы · ${months[selMonth - 1]} ${selYear}</div>
+        <div class="bv">${netAssets > 0 ? (netAssets / 1000000).toFixed(2) : '—'} <span class="bu">млн ₽</span></div>
+        <div class="bs">${netAssets > 0 ? 'Активы: ' + (assets / 1000000).toFixed(2) + ' млн · Пассивы: ' + (liabilities / 1000000).toFixed(2) + ' млн' : 'Нет данных за этот период'}</div>
+      </div>
+
+      <div class="bar-chart">${barsHtml}</div>
+
+      <div class="bb">
+        <div class="bbr"><div class="bbl">ИТОГО АКТИВЫ</div><div class="bbv" style="color:var(--accent)">${formatNum(Math.round(assets))} ₽</div></div>
+        <div class="bbr"><div class="bbl">ИТОГО ПАССИВЫ</div><div class="bbv" style="color:var(--red)">${formatNum(Math.round(liabilities))} ₽</div></div>
+        <div class="bbt"><span>Чистые активы</span><span style="color:var(--accent)">${formatNum(Math.round(netAssets))} ₽</span></div>
+      </div>
+      <div class="bb">
+        <div class="bbr"><div class="bbl">Чистый долг</div><div class="bbv" style="color:${netDebt > 0 ? 'var(--orange)' : 'var(--green)'}">${formatNum(Math.round(Math.abs(netDebt)))} ₽</div></div>
+        <div class="bbr"><div class="bbl">Ликвидность</div><div class="bbv" style="color:var(--accent)">${liquidity}</div></div>
+      </div>
+      <button class="btn-secondary" onclick="showBalanceEntryModal(${selYear}, ${selMonth})">+ Внести данные за ${months[selMonth - 1]}</button>
+    </div>`;
+
+    setPageContent(html, getTabBar());
+    if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Баланс';
+    updateSidebarActive('balance');
+  }
+
+  window.showBalanceEntryModal = function (year, month) {
+    const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+    showModal(`Баланс за ${months[month - 1]} ${year}`, `
+      ${formField('Итого активы, ₽', `<input class="inp" type="number" id="m-assets" placeholder="0">`)}
+      ${formField('Итого пассивы, ₽', `<input class="inp" type="number" id="m-liabs" placeholder="0">`)}
+      ${formField('Примечания', `<input class="inp" type="text" id="m-notes" placeholder="Комментарий...">`)}
+    `, async () => {
+      const assets = parseFloat(document.getElementById('m-assets').value) || 0;
+      const liabilities = parseFloat(document.getElementById('m-liabs').value) || 0;
+      const notes = document.getElementById('m-notes').value;
+      await api.post('/api/balance/entry', { year, month, assets, liabilities, notes });
+      toast('✅ Данные баланса сохранены!');
+      navigate(`#balance?year=${year}&month=${month}`);
+    });
+  };
+
+
+  // ── Annual (Phase 3) ──────────────────────────────────────────────────────
+  async function viewAnnual() {
+    if (!isPartner()) { navigate('#home'); return; }
+
+    const now = new Date();
+    let selYear = now.getFullYear();
+    const hashParams = new URLSearchParams((location.hash.split('?')[1] || ''));
+    if (hashParams.get('year')) selYear = parseInt(hashParams.get('year'));
+
+    let data = null;
+    try { data = await api.get(`/api/annual?year=${selYear}`); } catch (e) {}
+
+    const yearTabsHtml = [selYear, selYear - 1].map(y =>
+      `<div class="year-tab${y === selYear ? ' active' : ''}" onclick="navigate('#annual?year=${y}')">${y}</div>`
+    ).join('');
+
+    const totalRev = data ? (data.revenue_fleet + data.revenue_hire) : 0;
+    const totalExp = data ? (data.expenses_fleet + data.expenses_fuel + data.expenses_carriers + data.expenses_general) : 0;
+    const profit = data ? data.profit : 0;
+
+    const fmt = (n) => n > 0 ? formatNum(Math.round(n)) : '—';
+    const mln = (n) => n > 0 ? (n / 1000000).toFixed(1) : '—';
+
+    const clients = data ? data.clients : [];
+    const clientRows = clients.length ? clients.map(c => {
+      const isOrange = c.pct_of_total >= 40;
+      return `<div class="prog-mini-row">
+        <div class="prog-mini-label" title="${esc(c.client_name)}">${esc(c.client_name)}</div>
+        <div class="prog-mini-bar"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%" data-target="${c.pct_of_total}%"></div></div>
+        <div class="prog-mini-val">${c.pct_of_total}%</div>
+      </div>`;
+    }).join('') : `<div class="empty-state">Нет данных</div>`;
+
+    const html = `
+    ${!isDesktop() ? statusBar() : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📅 Годовые итоги</div><div style="width:55px"></div></div>` : ''}
+    <div class="content">
+      ${infoTag('🔒 Только для партнёров DTL')}
+      <div class="year-tabs">${yearTabsHtml}</div>
+
+      <div class="stats">
+        <div class="sc"><div class="v" style="font-size:16px">${mln(totalRev)}</div><div class="lv">Выручка млн ₽</div></div>
+        <div class="sc"><div class="v r" style="font-size:16px">${mln(totalExp)}</div><div class="lv">Расходы млн ₽</div></div>
+        <div class="sc"><div class="v g" style="font-size:16px">${mln(profit)}</div><div class="lv">Прибыль млн ₽</div></div>
+      </div>
+
+      <div class="bb">
+        <div class="bbr"><div class="bbl">Выручка свой парк</div><div class="bbv">${fmt(data ? data.revenue_fleet : 0)} ₽</div></div>
+        <div class="bbr"><div class="bbl">Выручка найм</div><div class="bbv">${fmt(data ? data.revenue_hire : 0)} ₽</div></div>
+        <div class="bbr"><div class="bbl">Расходы парк</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_fleet : 0)} ₽</div></div>
+        <div class="bbr"><div class="bbl">Расходы топливо</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_fuel : 0)} ₽</div></div>
+        <div class="bbr"><div class="bbl">Расходы перевозчики</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_carriers : 0)} ₽</div></div>
+        <div class="bbr"><div class="bbl">Общие расходы</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_general : 0)} ₽</div></div>
+        <div class="bbt"><span>Чистая прибыль</span><span style="color:var(--green)">${fmt(profit)} ₽</span></div>
+      </div>
+
+      ${sectionHeader('Клиенты ' + selYear)}
+      <div class="pi">
+        ${clientRows}
+      </div>
+
+      <button class="btn-secondary" onclick="window.open('/api/annual/export?year=${selYear}')">Экспорт CSV</button>
+    </div>`;
+
+    setPageContent(html, getTabBar());
+    if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Годовые итоги';
+    updateSidebarActive('annual');
+
+    // Animate progress bars
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.prog-mini-fill[data-target]').forEach(el => {
+        setTimeout(() => { el.style.width = el.getAttribute('data-target'); }, 50);
+      });
+    });
+  }
+
 
   window.navigate = navigate;
 

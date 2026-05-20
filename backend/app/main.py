@@ -6,6 +6,7 @@ import os
 from .config import settings
 from .security import SecurityMiddleware
 from .routers import auth, dashboard, base, orders, fleet, reference, hire, income, expenses, debts, settings_router, notifications
+from .routers import analytics as analytics_router
 
 app = FastAPI(title="DTL Management API", version="2.0.0", docs_url=None, redoc_url=None)
 
@@ -30,6 +31,7 @@ app.include_router(expenses.router, prefix="/api", tags=["expenses"])
 app.include_router(debts.router, prefix="/api", tags=["debts"])
 app.include_router(settings_router.router, prefix="/api", tags=["settings"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
+app.include_router(analytics_router.router, prefix="/api", tags=["analytics"])
 
 
 @app.get("/api/health")
