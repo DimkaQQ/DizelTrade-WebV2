@@ -156,6 +156,8 @@ CREATE TABLE tariffs (
     site_id     INT NOT NULL REFERENCES sites(id),
     truck_owner VARCHAR(10) CHECK (truck_owner IN ('DTL', 'Артём', 'наёмная')),
     amount      DECIMAL(10,2) NOT NULL,
+    valid_from  DATE NOT NULL DEFAULT CURRENT_DATE,
+    comment     TEXT,
     updated_at  TIMESTAMP DEFAULT NOW()
 );
 

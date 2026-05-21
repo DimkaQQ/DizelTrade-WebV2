@@ -44,14 +44,33 @@ class TariffCreate(BaseModel):
     site_id: int
     truck_owner: str  # DTL | Артём | наёмная
     amount: float
+    valid_from: Optional[str] = None  # DATE string YYYY-MM-DD
+    comment: Optional[str] = None
 
 
 @router.get("/tariffs")
 def list_tariffs(
     site_id: Optional[int] = None,
     truck_owner: Optional[str] = None,
+    latest: bool = False,
     user: dict = Depends(get_current_user),
 ):
+    """Return tariffs. With latest=true returns only the current active tariff per site."""
+    if latest and site_id:
+        # Return the most recent tariff valid on or before today
+        parts = ["t.site_id = %s", "t.valid_from <= CURRENT_DATE"]
+        params = [site_id]
+        if truck_owner:
+            parts.append("t.truck_owner = %s")
+            params.append(truck_owner)
+        where = " AND ".join(parts)
+        row = query_one(f"""
+            SELECT t.*, s.name AS site_name
+            FROM tariffs t LEFT JOIN sites s ON s.id = t.site_id
+            WHERE {where} ORDER BY t.valid_from DESC LIMIT 1
+        """, params)
+        return row or {}
+
     parts = ["1=1"]
     params = []
     if site_id:
@@ -64,15 +83,16 @@ def list_tariffs(
     return query(f"""
         SELECT t.*, s.name AS site_name
         FROM tariffs t LEFT JOIN sites s ON s.id = t.site_id
-        WHERE {where} ORDER BY s.name, t.truck_owner
+        WHERE {where} ORDER BY s.name, t.valid_from DESC
     """, params)
 
 
 @router.post("/tariffs", status_code=201)
 def create_tariff(body: TariffCreate, user: dict = Depends(require_partner)):
     return execute(
-        "INSERT INTO tariffs (site_id, truck_owner, amount) VALUES (%s, %s, %s) RETURNING *",
-        (body.site_id, body.truck_owner, body.amount), returning=True
+        "INSERT INTO tariffs (site_id, truck_owner, amount, valid_from, comment) VALUES (%s, %s, %s, %s, %s) RETURNING *",
+        (body.site_id, body.truck_owner, body.amount,
+         body.valid_from or "today", body.comment), returning=True
     )
 
 
@@ -82,8 +102,9 @@ def update_tariff(tariff_id: int, body: TariffCreate, user: dict = Depends(requi
     if not row:
         raise HTTPException(status_code=404, detail="Tariff not found")
     return execute(
-        "UPDATE tariffs SET site_id=%s, truck_owner=%s, amount=%s, updated_at=NOW() WHERE id=%s RETURNING *",
-        (body.site_id, body.truck_owner, body.amount, tariff_id), returning=True
+        "UPDATE tariffs SET site_id=%s, truck_owner=%s, amount=%s, valid_from=%s, comment=%s, updated_at=NOW() WHERE id=%s RETURNING *",
+        (body.site_id, body.truck_owner, body.amount,
+         body.valid_from or "today", body.comment, tariff_id), returning=True
     )
 
 
@@ -120,9 +141,33 @@ def update_carrier(carrier_id: int, body: CarrierCreate, user: dict = Depends(re
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────
 
+class SupplierCreate(BaseModel):
+    name: str
+    is_active: bool = True
+
+
 @router.get("/suppliers")
 def list_suppliers(user: dict = Depends(get_current_user)):
-    return query("SELECT * FROM suppliers WHERE is_active = TRUE ORDER BY name")
+    return query("SELECT * FROM suppliers ORDER BY name")
+
+
+@router.post("/suppliers", status_code=201)
+def create_supplier(body: SupplierCreate, user: dict = Depends(require_partner)):
+    return execute(
+        "INSERT INTO suppliers (name, is_active) VALUES (%s, %s) RETURNING *",
+        (body.name, body.is_active), returning=True
+    )
+
+
+@router.put("/suppliers/{supplier_id}")
+def update_supplier(supplier_id: int, body: SupplierCreate, user: dict = Depends(require_partner)):
+    row = query_one("SELECT id FROM suppliers WHERE id = %s", (supplier_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    return execute(
+        "UPDATE suppliers SET name=%s, is_active=%s WHERE id=%s RETURNING *",
+        (body.name, body.is_active, supplier_id), returning=True
+    )
 
 
 # ── Clients ───────────────────────────────────────────────────────────────────
