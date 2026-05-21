@@ -37,7 +37,11 @@ const api = (() => {
       if (r.ok) { token = (await r.json()).access_token; return req(method, path, body); }
       token = null; location.hash = '#login'; throw new Error('Unauthorized');
     }
-    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || res.statusText); }
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      const detail = Array.isArray(e.detail) ? e.detail.map(d => d.msg || JSON.stringify(d)).join('; ') : (e.detail || res.statusText);
+      throw new Error(detail);
+    }
     if (res.status === 204) return null;
     const data = await res.json();
 
