@@ -834,6 +834,8 @@
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Рейс на участок';
 
+    const ownerMap = { 'Наш DTL': 'DTL', 'Автопарк Артёма': 'Артём', 'Наёмная': 'наёмная' };
+
     // Bind site chips
     document.querySelectorAll('.chips[data-group="site"] .chip').forEach(chip => {
       chip.addEventListener('click', () => {
@@ -843,25 +845,39 @@
         const siteLabel = chip.textContent;
         const lbl = document.getElementById('tariff-label');
         if (lbl) lbl.textContent = `Тариф (Тында → ${siteLabel})`;
-        loadTariff(siteId);
+        const ownerEl = document.querySelector('.chips[data-group="owner"] .chip.sel');
+        loadTariff(siteId, ownerMap[ownerEl?.dataset.val] || 'DTL');
       });
     });
 
-    if (siteOpts[0]) loadTariff(siteOpts[0].value);
+    // Bind owner chips to reload tariff
+    document.querySelectorAll('.chips[data-group="owner"] .chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        setTimeout(() => {
+          const siteEl = document.querySelector('.chips[data-group="site"] .chip.sel');
+          const ownerEl = document.querySelector('.chips[data-group="owner"] .chip.sel');
+          if (siteEl) loadTariff(siteEl.dataset.val, ownerMap[ownerEl?.dataset.val] || 'DTL');
+        }, 50);
+      });
+    });
+
+    if (siteOpts[0]) loadTariff(siteOpts[0].value, 'DTL');
   }
 
-  window.loadTariff = async function (siteId) {
+  window.loadTariff = async function (siteId, truckOwner) {
     const valEl = document.getElementById('tariff-val');
-    if (!valEl) return;
+    if (!valEl || !siteId) return;
     try {
-      const tariff = await api.get(`/api/tariffs?site_id=${encodeURIComponent(siteId)}&latest=true`);
+      let url = `/api/tariffs?site_id=${encodeURIComponent(siteId)}&latest=true`;
+      if (truckOwner) url += `&truck_owner=${encodeURIComponent(truckOwner)}`;
+      const tariff = await api.get(url);
       valEl.textContent = tariff && tariff.amount ? formatNum(tariff.amount) + ' ₽' : '—';
       valEl.dataset.tariffAmount = tariff ? (tariff.amount || '') : '';
       if (tariff && tariff.comment) {
         const lbl = document.getElementById('tariff-label');
         if (lbl) lbl.textContent += ` · ${tariff.comment}`;
       }
-    } catch (e) { valEl.textContent = '—'; }
+    } catch (e) { if (valEl) valEl.textContent = '—'; }
   };
 
   window.doSubmitDispatch = async function () {
@@ -929,20 +945,40 @@
     setPageContent(html, getTabBar());
   }
 
-  window.showNewOrderModal = function () {
+  window.showNewOrderModal = async function () {
+    let clients = [], sites = [];
+    try { clients = await api.get('/api/clients') || []; } catch (e) {}
+    try { sites = await api.get('/api/sites') || []; } catch (e) {}
+    const clientOpts = clients.length ? clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') : '';
+    const siteCheckboxes = sites.map(s => `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer"><input type="checkbox" class="site-cb" value="${s.id}" style="width:16px;height:16px"> ${esc(s.name)}</label>`).join('');
     showModal('Новый заказ', `
-      ${formField('Клиент', `<input class="inp" type="text" id="m-client" placeholder="Имя клиента">`)}
+      ${formField('Клиент', clients.length ? `<select class="inp" id="m-client-id">${clientOpts}</select>` : `<input class="inp" type="text" id="m-client-name" placeholder="Имя клиента">`)}
+      ${formField('Дата оплаты', `<input class="inp" type="date" id="m-paid-at" value="${new Date().toISOString().slice(0,10)}">`)}
       ${formField('Объём, куб', `<input class="inp" type="number" id="m-vol" placeholder="0">`)}
       ${formField('Цена, ₽/л', `<input class="inp" type="number" id="m-price" placeholder="74">`)}
       ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
+      ${formField('Тип доставки', `<div class="chips" data-group="deltype">
+        <div class="chip sel" data-val="до Тынды">До Тынды</div>
+        <div class="chip" data-val="до участка">До участка</div>
+      </div>`)}
+      ${formField('Участки', `<div style="max-height:150px;overflow-y:auto;padding:4px 0">${siteCheckboxes}</div>`)}
     `, async () => {
-      const client_name = document.getElementById('m-client').value;
-      const volume_total = parseFloat(document.getElementById('m-vol').value);
-      const price_per_liter = parseFloat(document.getElementById('m-price').value);
-      const total_amount = parseFloat(document.getElementById('m-amount').value);
-      await api.post('/api/orders', { client_name, volume_total, price_per_liter, total_amount });
-      toast('✅ Заказ создан!');
-      viewOrders();
+      const clientEl = document.getElementById('m-client-id');
+      const clientNameEl = document.getElementById('m-client-name');
+      const paid_at = document.getElementById('m-paid-at').value;
+      const volume_ordered = parseFloat(document.getElementById('m-vol').value) || 0;
+      const price_per_liter = parseFloat(document.getElementById('m-price').value) || 0;
+      const amount_paid = parseFloat(document.getElementById('m-amount').value) || 0;
+      const delivery_type = document.querySelector('.chips[data-group="deltype"] .chip.sel')?.dataset.val || 'до Тынды';
+      const site_ids = [...document.querySelectorAll('.site-cb:checked')].map(cb => parseInt(cb.value));
+      if (clientEl) {
+        const client_id = parseInt(clientEl.value);
+        await api.post('/api/orders', { client_id, paid_at, volume_ordered, price_per_liter, amount_paid, delivery_type, site_ids });
+      } else {
+        const client_name = clientNameEl?.value?.trim() || '';
+        await api.post('/api/orders', { client_name, paid_at, volume_ordered, price_per_liter, amount_paid, delivery_type, site_ids });
+      }
+      toast('✅ Заказ создан!'); viewOrders();
     });
   };
 
@@ -1053,11 +1089,20 @@
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Найм';
   }
 
-  window.showHireModal = function () {
+  window.showHireModal = async function () {
+    let clients = [], suppliers = [], carriers = [];
+    try { clients = await api.get('/api/clients') || []; } catch (e) {}
+    try { suppliers = await api.get('/api/suppliers') || []; } catch (e) {}
+    try { carriers = await api.get('/api/carriers') || []; } catch (e) {}
+    const sel = (id, items, label) => `<select class="inp" id="${id}">
+      <option value="">— выбери ${label} —</option>
+      ${items.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}
+    </select>`;
     showModal('Новая сделка по найму', `
-      ${formField('Клиент', `<input class="inp" type="text" id="m-client" placeholder="Лао, Лёша...">`)}
-      ${formField('Поставщик', `<input class="inp" type="text" id="m-supplier" placeholder="Камыш, Биржа...">`)}
-      ${formField('Перевозчик', `<input class="inp" type="text" id="m-carrier" placeholder="Коля, Лёха...">`)}
+      ${formField('Дата сделки', `<input class="inp" type="date" id="m-deal-date" value="${new Date().toISOString().slice(0,10)}">`)}
+      ${formField('Клиент', sel('m-client', clients, 'клиента'))}
+      ${formField('Поставщик', sel('m-supplier', suppliers, 'поставщика'))}
+      ${formField('Перевозчик', sel('m-carrier', carriers, 'перевозчика'))}
       ${formField('Объём, л', `<input class="inp" type="number" id="m-volume" placeholder="0" oninput="calcHireMargin()">`)}
       ${formField('Цена клиенту, ₽/л', `<input class="inp" type="number" id="m-price-c" placeholder="74" oninput="calcHireMargin()">`)}
       ${formField('Цена поставщику, ₽/л', `<input class="inp" type="number" id="m-price-s" placeholder="59" oninput="calcHireMargin()">`)}
@@ -1067,13 +1112,15 @@
       const client = document.getElementById('m-client').value;
       const supplier = document.getElementById('m-supplier').value;
       const carrier = document.getElementById('m-carrier').value;
+      const deal_date = document.getElementById('m-deal-date').value;
       const volume = parseFloat(document.getElementById('m-volume').value) || 0;
       const price_client = parseFloat(document.getElementById('m-price-c').value) || 0;
       const price_supplier = parseFloat(document.getElementById('m-price-s').value) || 0;
       const price_carrier = parseFloat(document.getElementById('m-price-t').value) || 0;
-      await api.post('/api/hire', { client, supplier, carrier, volume, price_client, price_supplier, price_carrier });
-      toast('✅ Сделка записана!');
-      viewHire();
+      if (!client) throw new Error('Выберите клиента');
+      if (!supplier) throw new Error('Выберите поставщика');
+      await api.post('/api/hire', { client, supplier, carrier, volume, price_client, price_supplier, price_carrier, deal_date });
+      toast('✅ Сделка записана!'); viewHire();
     });
   };
 
@@ -1194,8 +1241,16 @@
         ${isArtem() ? statCard(debtMln, 'Долг DTL млн', 'r') : statCard('—', 'Долг DTL млн', 'r')}
       </div>
       ${sectionHeader('Машины')}
-      ${trucks.length ? trucks.map(t => listItem({ icon: '🚛', iconBg: 'y', title: t.name, sub: `${t.trips_month || 0} рейсов · май`, rightVal: t.revenue_month ? formatNum(t.revenue_month) + ' ₽' : '—', rightSub: 'выручка' })).join('') : emptyState('Нет машин')}
-      ${isArtem() ? `<button class="btn-primary" style="margin-top:10px" onclick="showAddTruckModal()">+ Добавить машину</button>` : ''}
+      ${(isPartner() || isArtem()) ? `<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn-primary" onclick="showAddTruckModal()">+ Добавить машину</button></div>` : ''}
+      ${trucks.length ? trucks.map(t => `<div class="li">
+        <div class="lic y">🚛</div>
+        <div class="lit"><div class="lim">${esc(t.name)}</div><div class="lis">${t.trips_month || 0} рейсов · ${t.plate || '—'}</div></div>
+        <div class="lir" style="display:flex;gap:6px;align-items:center">
+          ${t.revenue_month ? `<span style="font-size:13px;font-weight:600">${formatNum(t.revenue_month)} ₽</span>` : ''}
+          ${(isPartner() || isArtem()) ? `<button class="prb" onclick="showEditTruckModal(${t.id},'${esc(t.name)}','${esc(t.plate||'')}',${t.tank_volume||0})">✏️</button>` : ''}
+          ${(isPartner() || isArtem()) ? `<button class="prb" style="background:var(--red)" onclick="archiveTruck(${t.id})">📦</button>` : ''}
+        </div>
+      </div>`).join('') : emptyState('Нет машин')}
       ${isArtem() ? `
       ${sectionHeader('Внести расход')}
       ${formField('Машина', chipGroup(trucks.map(t => ({ value: String(t.id), label: t.name })), trucks[0] ? String(trucks[0].id) : '', 'fleet-truck'))}
@@ -1225,9 +1280,31 @@
       const capacity_m3 = parseFloat(document.getElementById('m-truck-cap').value) || null;
       const plate_number = document.getElementById('m-truck-plate').value.trim();
       if (!name) throw new Error('Введите название машины');
-      await api.post('/api/trucks', { name, capacity_m3, plate_number, owner: 'artem' });
+      await api.post('/api/trucks', { name, capacity_m3, plate_number, owner: isArtem() ? 'Артём' : 'DTL' });
       toast('✅ Машина добавлена!');
       viewFleet();
+    });
+  };
+
+  window.showEditTruckModal = function (id, name, plate, tank) {
+    showModal('Редактировать машину', `
+      ${formField('Название / марка', `<input class="inp" type="text" id="m-truck-name" value="${esc(name)}" placeholder="Шахман-4...">`)}
+      ${formField('Объём бочки, куб', `<input class="inp" type="number" id="m-truck-cap" value="${tank||''}" placeholder="23.5">`)}
+      ${formField('Гос. номер', `<input class="inp" type="text" id="m-truck-plate" value="${esc(plate)}" placeholder="А000АА000">`)}
+    `, async () => {
+      const nm = document.getElementById('m-truck-name').value.trim();
+      const capacity_m3 = parseFloat(document.getElementById('m-truck-cap').value) || null;
+      const plate_number = document.getElementById('m-truck-plate').value.trim();
+      if (!nm) throw new Error('Введите название');
+      await api.put(`/api/trucks/${id}`, { name: nm, capacity_m3, plate_number });
+      toast('✅ Сохранено'); viewFleet();
+    });
+  };
+
+  window.archiveTruck = function (id) {
+    showModal('Архивировать машину?', `<p style="color:var(--text2)">Машина будет скрыта из списка. Данные сохранятся.</p>`, async () => {
+      await api.put(`/api/trucks/${id}/archive`);
+      toast('📦 Машина архивирована'); viewFleet();
     });
   };
 
