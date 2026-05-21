@@ -282,8 +282,10 @@
 
   // ── Router ───────────────────────────────────────────────────────────────
   window.addEventListener('hashchange', () => render(location.hash));
+  let _resizeTimer;
   window.addEventListener('resize', () => {
-    if (user) { setupLayout(); render(location.hash); }
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => { if (user) { setupLayout(); render(location.hash); } }, 200);
   });
 
   function render(hash) {
@@ -574,11 +576,20 @@
   // ── БАЗА ─────────────────────────────────────────────────────────────────
   async function viewBase(tab) {
     const activeTab = tab || 'main';
+
+    const tabTitles = { main: 'База Тында', receipts: 'Приёмки', trips: 'Журнал рейсов', cash: 'Наличные' };
+    const pageTitle = tabTitles[activeTab] || 'База Тында';
+
     let balance = null, pending = [], dispatches = [], cashData = null;
-    try { balance = await api.get('/api/base/balance'); } catch (e) {}
-    try { pending = await api.get('/api/base/receipts/pending') || []; } catch (e) {}
-    try { dispatches = await api.get('/api/base/dispatches') || []; } catch (e) {}
-    try { cashData = await api.get('/api/base/artem-balance'); } catch (e) {}
+    if (activeTab === 'main') {
+      try { balance = await api.get('/api/base/balance'); } catch (e) {}
+      try { pending = await api.get('/api/base/receipts/pending') || []; } catch (e) {}
+      try { dispatches = await api.get('/api/base/dispatches') || []; } catch (e) {}
+    } else if (activeTab === 'trips') {
+      try { dispatches = await api.get('/api/base/dispatches') || []; } catch (e) {}
+    } else if (activeTab === 'cash') {
+      try { cashData = await api.get('/api/base/artem-balance'); } catch (e) {}
+    }
 
     const inTransit = dispatches.filter(d => d.status === 'dispatched' || d.status === 'in_transit');
 
@@ -657,7 +668,7 @@
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar">
       <div class="nav-back" onclick="navigate('#home')">Назад</div>
-      <div class="nav-title">⛽ База Тында</div>
+      <div class="nav-title">${esc(pageTitle)}</div>
       <div style="width:55px"></div>
     </div>` : ''}
     <div class="content">
@@ -666,7 +677,7 @@
     </div>`;
     setPageContent(html, getTabBar());
     updateTabBar('base');
-    if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'База Тында';
+    if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = pageTitle;
   }
 
   window.confirmReceipt = async function (id) {
