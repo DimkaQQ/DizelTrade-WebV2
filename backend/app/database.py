@@ -49,10 +49,10 @@ def execute(sql, params=None, conn=None, returning=False):
     try:
         with conn.cursor() as cur:
             cur.execute(sql, params)
-            if returning:
-                return dict(cur.fetchone())
-            if close_after:
-                conn.commit()
+            result = dict(cur.fetchone()) if returning else None
+        if close_after:
+            conn.commit()
+        return result
     except Exception:
         if close_after:
             conn.rollback()
