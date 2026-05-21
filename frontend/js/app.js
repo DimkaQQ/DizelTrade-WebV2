@@ -32,10 +32,11 @@
     el.textContent = msg;
     document.body.appendChild(el);
     requestAnimationFrame(() => el.classList.add('toast-show'));
+    const dur = type === 'error' ? 6000 : 3000;
     setTimeout(() => {
       el.classList.remove('toast-show');
       setTimeout(() => el.remove(), 350);
-    }, 3000);
+    }, dur);
   }
 
   // ── Component library ────────────────────────────────────────────────────
