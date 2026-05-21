@@ -289,7 +289,9 @@
   function render(hash) {
     const h = (hash || '').replace(/^#/, '') || 'home';
     updateTabBar(h);
-    updateSidebarActive(h.split('?')[0]);
+    const _tab = new URLSearchParams((h.split('?')[1] || '')).get('tab');
+    const _pageKey = (_tab === 'trips') ? 'base-dispatches' : (_tab === 'receipts') ? 'base' : h.split('?')[0];
+    updateSidebarActive(_pageKey);
 
     if (h === 'login' || !user) { viewLogin(); return; }
     if (h === 'home' || h === '') { viewHome(); return; }
@@ -780,7 +782,7 @@
     let trucks = [], drivers = [], sites = [];
     try { trucks = await api.get('/api/trucks') || []; } catch (e) {}
     try { drivers = await api.get('/api/drivers') || []; } catch (e) {}
-    try { sites = await api.get('/api/reference/sites') || []; } catch (e) {}
+    try { sites = await api.get('/api/sites') || []; } catch (e) {}
 
     const ownerTypes = ['Наш DTL', 'Автопарк Артёма', 'Наёмная'];
     const truckOpts = trucks.length ? trucks.map(t => ({ value: String(t.id), label: t.name })) : [{ value: 'shkh-1', label: 'Шахман-1' }, { value: 'shkh-2', label: 'Шахман-2' }];
@@ -1234,7 +1236,7 @@
     let sites = [], tariffs = [], suppliers = [], carriers = [], settings = [];
     try { sites = await api.get('/api/sites') || []; } catch (e) {}
     try { tariffs = await api.get('/api/tariffs') || []; } catch (e) {}
-    try { suppliers = await api.get('/api/reference/suppliers') || []; } catch (e) {}
+    try { suppliers = await api.get('/api/suppliers') || []; } catch (e) {}
     try { carriers = await api.get('/api/carriers') || []; } catch (e) {}
     try { settings = await api.get('/api/settings') || []; } catch (e) {}
 
@@ -1322,7 +1324,7 @@
       async () => {
         const name = document.getElementById('m-sup-name')?.value?.trim();
         if (!name) throw new Error('Введите название');
-        await api.post('/api/reference/suppliers', { name });
+        await api.post('/api/suppliers', { name });
         toast('✅ Поставщик добавлен'); viewSettings();
       });
   };
