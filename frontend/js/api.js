@@ -6,10 +6,29 @@ const api = (() => {
     ? 'http://localhost:8000' : '';
   let token = null;
 
+  // Simple in-memory GET cache with 30s TTL
+  const _cache = new Map();
+  const CACHE_TTL = 30000;
+  function cacheGet(key) {
+    const e = _cache.get(key);
+    if (!e) return null;
+    if (Date.now() - e.ts > CACHE_TTL) { _cache.delete(key); return null; }
+    return e.val;
+  }
+  function cacheSet(key, val) { _cache.set(key, { val, ts: Date.now() }); }
+  function cacheClear() { _cache.clear(); }
+
   async function req(method, path, body) {
     const opts = { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include' };
     if (token) opts.headers['Authorization'] = `Bearer ${token}`;
     if (body !== undefined) opts.body = JSON.stringify(body);
+
+    // Cache GET requests (skip auth endpoints)
+    if (method === 'GET' && !path.startsWith('/api/auth')) {
+      const cached = cacheGet(path);
+      if (cached !== null) return cached;
+    }
+
     let res;
     try { res = await fetch(BASE + path, opts); }
     catch (e) { throw new Error('Нет соединения с сервером'); }
@@ -20,7 +39,13 @@ const api = (() => {
     }
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || res.statusText); }
     if (res.status === 204) return null;
-    return res.json();
+    const data = await res.json();
+
+    if (method === 'GET' && !path.startsWith('/api/auth')) cacheSet(path, data);
+    // Invalidate cache on mutations
+    if (method !== 'GET') cacheClear();
+
+    return data;
   }
 
   return {
