@@ -142,6 +142,7 @@
   // ── Layout builders ──────────────────────────────────────────────────────
 
   function getTabBar() {
+    if (isDesktop()) return '';
     if (!user) return '';
     if (isPartner()) {
       return `<div class="tab-bar">
@@ -259,7 +260,7 @@
       ]);
       if (balRes.status === 'fulfilled' && balRes.value) {
         const b = document.getElementById('tb-balance');
-        if (b) b.textContent = (balRes.value.current_balance ?? '—') + ' куб';
+        if (b) b.textContent = (balRes.value.balance_cubic ?? '—') + ' куб';
       }
       if (dashRes.status === 'fulfilled' && dashRes.value) {
         const alerts = Array.isArray(dashRes.value) ? dashRes.value : [];
@@ -502,7 +503,7 @@
     } catch (e) {}
     try { orders = await api.get('/api/orders') || []; } catch (e) {}
 
-    const currentBal = balance ? balance.current_balance : '—';
+    const currentBal = balance ? balance.balance_cubic : '—';
     const pendingItems = [
       ...pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source || ''} ${r.volume_gross || ''} куб`, sub: r.created_at ? new Date(r.created_at).toLocaleDateString('ru') : '', btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })),
       ...dispatches.slice(0, 2).map(d => pendingItem({ title: `${d.truck_name || ''} → ${d.site_name || ''} · ${d.volume} куб`, sub: d.driver_name || '', btnLabel: 'Доставлено', onConfirmAttr: `onclick="confirmDispatch(${d.id})"` }))
@@ -552,7 +553,7 @@
       <div class="ssub">// добро пожаловать</div>
       <div class="big-stat">
         <div class="bl">⛽ Остаток на базе</div>
-        <div class="bv">${esc(String(balance ? balance.current_balance : '—'))} <span class="bu">куб</span></div>
+        <div class="bv">${esc(String(balance ? balance.balance_cubic : '—'))} <span class="bu">куб</span></div>
         <div class="bs">Из 2500 куб</div>
       </div>
       <div class="menu-grid">
@@ -590,7 +591,7 @@
     if (activeTab === 'main') {
       tabContent = `
       <div class="stats">
-        ${statCard(balance ? balance.current_balance : '—', 'Остаток куб', 'a')}
+        ${statCard(balance ? balance.balance_cubic : '—', 'Остаток куб', 'a')}
         ${statCard(balance ? '+' + (balance.received_today || 0) : '—', 'Принято сегодня')}
         ${statCard(inTransit.length, 'Рейса в пути', 'o')}
       </div>
@@ -840,8 +841,13 @@
     const valEl = document.getElementById('tariff-val');
     if (!valEl) return;
     try {
-      const data = await api.get(`/api/tariffs?site_id=${encodeURIComponent(siteId)}`);
-      valEl.textContent = data && data.rate ? formatNum(data.rate) + ' ₽' : '—';
+      const tariff = await api.get(`/api/tariffs?site_id=${encodeURIComponent(siteId)}&latest=true`);
+      valEl.textContent = tariff && tariff.amount ? formatNum(tariff.amount) + ' ₽' : '—';
+      valEl.dataset.tariffAmount = tariff ? (tariff.amount || '') : '';
+      if (tariff && tariff.comment) {
+        const lbl = document.getElementById('tariff-label');
+        if (lbl) lbl.textContent += ` · ${tariff.comment}`;
+      }
     } catch (e) { valEl.textContent = '—'; }
   };
 
@@ -1225,25 +1231,149 @@
 
   // ── Settings ──────────────────────────────────────────────────────────────
   async function viewSettings() {
-    let users = [], tariffs = [];
-    try { users = await api.get('/api/users') || []; } catch (e) {}
+    let sites = [], tariffs = [], suppliers = [], carriers = [], settings = [];
+    try { sites = await api.get('/api/sites') || []; } catch (e) {}
     try { tariffs = await api.get('/api/tariffs') || []; } catch (e) {}
+    try { suppliers = await api.get('/api/reference/suppliers') || []; } catch (e) {}
+    try { carriers = await api.get('/api/carriers') || []; } catch (e) {}
+    try { settings = await api.get('/api/settings') || []; } catch (e) {}
+
+    const getSetting = (key, def) => { const s = settings.find(x => x.key === key); return s ? s.value : def; };
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">⚙️ Настройки</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
-      ${sectionHeader('Пользователи')}
-      ${users.length ? users.map(u => listItem({ icon: '👤', iconBg: 'b', title: u.full_name || u.login, sub: u.role, badgeHtml: badge(u.role === 'partner' ? 'Полный' : u.role === 'artem' ? 'База' : 'Ввод', u.role === 'partner' ? 'done' : u.role === 'artem' ? 'pending' : 'transit') })).join('') : emptyState('Нет пользователей')}
-      ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:10px">+ Добавить пользователя</button>` : ''}
-      ${sectionHeader('Тарифы')}
-      ${tariffs.length ? tariffs.map(t => `<div class="li"><div class="lit"><div class="lim">${esc(t.route || t.site_name || '')}</div></div><div class="lir"><div class="lival" style="color:var(--accent)">${formatNum(t.rate)} ₽</div></div></div>`).join('') : emptyState('Нет тарифов')}
+
+      ${sectionHeader('Участки')}
+      ${sites.map(s => `<div class="li">
+        <div class="lic b">📍</div>
+        <div class="lit"><div class="lim">${esc(s.name)}</div></div>
+        <div class="lir">${s.is_active ? badge('Активен','done') : badge('Скрыт','cancelled')}
+          ${isPartner() ? `<button onclick="toggleSite(${s.id},${!s.is_active})" style="margin-left:8px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">${s.is_active ? 'Скрыть' : 'Показать'}</button>` : ''}
+        </div>
+      </div>`).join('')}
+      ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addSiteModal()">+ Добавить участок</button>` : ''}
+
+      ${sectionHeader('Поставщики (источники топлива)')}
+      ${suppliers.map(s => `<div class="li">
+        <div class="lic g">⛽</div>
+        <div class="lit"><div class="lim">${esc(s.name)}</div></div>
+        <div class="lir">${s.is_active !== false ? badge('Активен','done') : badge('Скрыт','cancelled')}</div>
+      </div>`).join('')}
+      ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addSupplierModal()">+ Добавить поставщика</button>` : ''}
+
+      ${sectionHeader('Перевозчики')}
+      ${carriers.map(c => `<div class="li">
+        <div class="lic tr">🚛</div>
+        <div class="lit"><div class="lim">${esc(c.name)}</div></div>
+        <div class="lir">${c.is_active ? badge('Активен','done') : badge('Скрыт','cancelled')}</div>
+      </div>`).join('')}
+      ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addCarrierModal()">+ Добавить перевозчика</button>` : ''}
+
+      ${sectionHeader('Тарифы — история')}
+      ${tariffs.length ? tariffs.map(t => `<div class="li">
+        <div class="lic y">💰</div>
+        <div class="lit">
+          <div class="lim">${esc(t.site_name || '')} · ${esc(t.truck_owner || '')}</div>
+          <div class="lis">${t.valid_from ? 'с ' + t.valid_from : ''}${t.comment ? ' · ' + esc(t.comment) : ''}</div>
+        </div>
+        <div class="lir"><div class="lival" style="color:var(--accent)">${formatNum(t.amount)} ₽</div></div>
+      </div>`).join('') : emptyState('Нет тарифов')}
+      ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addTariffModal()">+ Добавить тариф</button>` : ''}
+
+      ${sectionHeader('Параметры базы')}
+      <div class="bb">
+        <div class="bbr"><div class="bbl">Вместимость хранилища (куб)</div><div class="bbv">${getSetting('base_capacity_cubic', '2500')}</div></div>
+        <div class="bbr"><div class="bbl">Порог алерта низкого остатка (куб)</div><div class="bbv">${getSetting('alert_low_stock_cubic', '100')}</div></div>
+        <div class="bbr"><div class="bbl">Алерт неподтверждённых ТТН (часов)</div><div class="bbv">${getSetting('alert_unconfirmed_hours', '48')}</div></div>
+      </div>
+      ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="editSettingsModal()">✏️ Изменить параметры</button>` : ''}
+
       <div class="div"></div>
       <button class="btn-secondary" style="width:100%" onclick="doLogout()">Выйти из системы</button>
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Настройки';
   }
+
+  window.toggleSite = async function(id, active) {
+    try {
+      const sites = await api.get('/api/sites') || [];
+      const s = sites.find(x => x.id === id);
+      if (s) { await api.put(`/api/sites/${id}`, { name: s.name, is_active: active }); viewSettings(); }
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.addSiteModal = function() {
+    showModal('Новый участок',
+      formField('Название', `<input class="inp" id="m-site-name" placeholder="Название участка">`),
+      async () => {
+        const name = document.getElementById('m-site-name')?.value?.trim();
+        if (!name) throw new Error('Введите название');
+        await api.post('/api/sites', { name, is_active: true });
+        toast('✅ Участок добавлен'); viewSettings();
+      });
+  };
+
+  window.addSupplierModal = function() {
+    showModal('Новый поставщик',
+      formField('Название', `<input class="inp" id="m-sup-name" placeholder="Название поставщика">`),
+      async () => {
+        const name = document.getElementById('m-sup-name')?.value?.trim();
+        if (!name) throw new Error('Введите название');
+        await api.post('/api/reference/suppliers', { name });
+        toast('✅ Поставщик добавлен'); viewSettings();
+      });
+  };
+
+  window.addCarrierModal = function() {
+    showModal('Новый перевозчик',
+      formField('Название', `<input class="inp" id="m-car-name" placeholder="Название / ФИО">`),
+      async () => {
+        const name = document.getElementById('m-car-name')?.value?.trim();
+        if (!name) throw new Error('Введите название');
+        await api.post('/api/carriers', { name });
+        toast('✅ Перевозчик добавлен'); viewSettings();
+      });
+  };
+
+  window.addTariffModal = async function() {
+    let sites = [];
+    try { sites = await api.get('/api/sites') || []; } catch(e) {}
+    showModal('Новый тариф',
+      formField('Участок', `<select class="inp" id="m-t-site">${sites.filter(s=>s.is_active).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`) +
+      formField('Чья машина', chipGroup(['DTL','Артём','наёмная'], 'DTL', 'm-t-owner')) +
+      formField('Сумма ₽', `<input class="inp" type="number" id="m-t-amount" placeholder="0">`) +
+      formField('Дата начала', `<input class="inp" type="date" id="m-t-date" value="${new Date().toISOString().slice(0,10)}">`) +
+      formField('Комментарий', `<input class="inp" id="m-t-comment" placeholder="зима 2026, бездорожье...">`),
+      async () => {
+        const site_id = parseInt(document.getElementById('m-t-site')?.value);
+        const ownerEl = document.querySelector('.chips[data-group="m-t-owner"] .chip.sel');
+        const amount = parseFloat(document.getElementById('m-t-amount')?.value);
+        const valid_from = document.getElementById('m-t-date')?.value;
+        const comment = document.getElementById('m-t-comment')?.value || null;
+        if (!site_id || !amount) throw new Error('Заполните поля');
+        await api.post('/api/tariffs', { site_id, truck_owner: ownerEl?.dataset.val || 'DTL', amount, valid_from, comment });
+        toast('✅ Тариф добавлен'); viewSettings();
+      });
+  };
+
+  window.editSettingsModal = function() {
+    showModal('Параметры базы',
+      formField('Вместимость хранилища (куб)', `<input class="inp" type="number" id="m-s-cap" placeholder="2500">`) +
+      formField('Порог алерта (куб)', `<input class="inp" type="number" id="m-s-low" placeholder="100">`) +
+      formField('Алерт неподтвержд. ТТН (ч)', `<input class="inp" type="number" id="m-s-hours" placeholder="48">`),
+      async () => {
+        const cap = document.getElementById('m-s-cap')?.value;
+        const low = document.getElementById('m-s-low')?.value;
+        const hrs = document.getElementById('m-s-hours')?.value;
+        if (cap) await api.put('/api/settings/base_capacity_cubic', { value: cap });
+        if (low) await api.put('/api/settings/alert_low_stock_cubic', { value: low });
+        if (hrs) await api.put('/api/settings/alert_unconfirmed_hours', { value: hrs });
+        toast('✅ Сохранено'); viewSettings();
+      });
+  };
 
   // ── Modal helper ──────────────────────────────────────────────────────────
   function showModal(title, bodyHtml, onSubmit) {
