@@ -34,7 +34,7 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// ── Fetch: network-first for API, cache-first for shell ─────────────────────
+// ── Fetch: network-first for API and JS, cache-first for other shell ─────────
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
@@ -44,14 +44,29 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Cache-first for shell assets
+  // Network-first for JS files — ensures code updates are immediate
+  if (url.pathname.startsWith('/js/') || url.pathname === '/sw.js') {
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // Cache-first for other shell assets (HTML, manifest, icons)
   e.respondWith(
     caches.match(e.request).then((cached) => {
       if (cached) return cached;
 
       return fetch(e.request)
         .then((res) => {
-          // Cache new GET responses for shell assets
           if (e.request.method === 'GET' && res.ok) {
             const clone = res.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
@@ -59,7 +74,6 @@ self.addEventListener('fetch', (e) => {
           return res;
         })
         .catch(() => {
-          // Offline fallback: serve index.html for navigation requests
           if (e.request.mode === 'navigate') {
             return caches.match('/index.html');
           }
