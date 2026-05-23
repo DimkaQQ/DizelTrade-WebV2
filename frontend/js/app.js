@@ -1281,7 +1281,7 @@
       const capacity_m3 = parseFloat(document.getElementById('m-truck-cap').value) || null;
       const plate_number = document.getElementById('m-truck-plate').value.trim();
       if (!name) throw new Error('Введите название машины');
-      await api.post('/api/trucks', { name, capacity_m3, plate_number, owner: isArtem() ? 'Артём' : 'DTL' });
+      await api.post('/api/trucks', { name, tank_volume: capacity_m3, plate: plate_number, owner: isArtem() ? 'Артём' : 'DTL' });
       toast('✅ Машина добавлена!');
       viewFleet();
     });
@@ -1297,7 +1297,7 @@
       const capacity_m3 = parseFloat(document.getElementById('m-truck-cap').value) || null;
       const plate_number = document.getElementById('m-truck-plate').value.trim();
       if (!nm) throw new Error('Введите название');
-      await api.put(`/api/trucks/${id}`, { name: nm, capacity_m3, plate_number });
+      await api.put(`/api/trucks/${id}`, { name: nm, tank_volume: capacity_m3, plate: plate_number });
       toast('✅ Сохранено'); viewFleet();
     });
   };
@@ -1315,7 +1315,10 @@
     const amount = parseFloat(document.getElementById('fleet-amount')?.value) || 0;
     const note = document.getElementById('fleet-note')?.value || '';
     try {
-      await api.post('/api/trucks/expenses', { truck_id: truckEl ? truckEl.getAttribute('data-val') : null, category: catEl ? catEl.getAttribute('data-val') : '', amount, note });
+      const truck_id = parseInt(truckEl?.getAttribute('data-val')) || null;
+      if (!truck_id) { toast('Выберите машину', 'error'); return; }
+      const today = new Date().toISOString().slice(0, 10);
+      await api.post('/api/fleet/expenses', { truck_id, expense_at: today, category: catEl ? catEl.getAttribute('data-val') : 'Прочее', amount, comment: note });
       toast('✅ Расход записан!');
     } catch (e) { toast(e.message, 'error'); }
   };
