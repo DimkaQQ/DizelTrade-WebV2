@@ -1079,7 +1079,7 @@
       </div>
       ${deals.length ? deals.map(d => `<div class="oc">
         <div class="och">
-          <div><div class="ocn">${esc(d.client || '')} → ${esc(d.carrier || '')}</div><div class="ocd">${d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : ''} · ${d.supplier || ''}</div></div>
+          <div><div class="ocn">${esc(d.client_name || '')} → ${esc(d.carrier_name || d.carrier_custom || '')}</div><div class="ocd">${d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : ''} · ${d.supplier_name || ''}</div></div>
           <div><div class="oca">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
         </div>
         ${d.volume ? `<div class="ocp-labels"><span>${formatNum(d.volume)} л</span><span>${d.price_client ? d.price_client + ' ₽/л' : ''}</span><span style="color:var(--accent)">${d.price_supplier ? d.price_supplier + ' ₽/л поставщику' : ''}</span></div>` : ''}
@@ -1097,7 +1097,7 @@
     try { carriers = await api.get('/api/carriers') || []; } catch (e) {}
     const sel = (id, items, label) => `<select class="inp" id="${id}">
       <option value="">— выбери ${label} —</option>
-      ${items.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}
+      ${items.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('')}
     </select>`;
     showModal('Новая сделка по найму', `
       ${formField('Дата сделки', `<input class="inp" type="date" id="m-deal-date" value="${new Date().toISOString().slice(0,10)}">`)}
@@ -1110,17 +1110,17 @@
       ${formField('Цена перевозчику, ₽/л', `<input class="inp" type="number" id="m-price-t" placeholder="7" oninput="calcHireMargin()">`)}
       <div class="auto-calc" id="hire-calc">Маржа: — ₽ (—%)</div>
     `, async () => {
-      const client = document.getElementById('m-client').value;
-      const supplier = document.getElementById('m-supplier').value;
-      const carrier = document.getElementById('m-carrier').value;
-      const deal_date = document.getElementById('m-deal-date').value;
-      const volume = parseFloat(document.getElementById('m-volume').value) || 0;
+      const client_id = parseInt(document.getElementById('m-client').value) || null;
+      const supplier_id = parseInt(document.getElementById('m-supplier').value) || null;
+      const carrier_id = parseInt(document.getElementById('m-carrier').value) || null;
+      const delivery_at = document.getElementById('m-deal-date').value;
+      const volume_liters = parseFloat(document.getElementById('m-volume').value) || 0;
       const price_client = parseFloat(document.getElementById('m-price-c').value) || 0;
       const price_supplier = parseFloat(document.getElementById('m-price-s').value) || 0;
       const price_carrier = parseFloat(document.getElementById('m-price-t').value) || 0;
-      if (!client) throw new Error('Выберите клиента');
-      if (!supplier) throw new Error('Выберите поставщика');
-      await api.post('/api/hire', { client, supplier, carrier, volume, price_client, price_supplier, price_carrier, deal_date });
+      if (!client_id) throw new Error('Выберите клиента');
+      if (!supplier_id) throw new Error('Выберите поставщика');
+      await api.post('/api/hire', { client_id, supplier_id, carrier_id, delivery_at, volume_liters, price_client, price_supplier, price_carrier });
       toast('✅ Сделка записана!'); viewHire();
     });
   };
