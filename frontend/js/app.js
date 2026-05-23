@@ -1534,7 +1534,8 @@
     const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
 
     // Period selector (year tabs + month tabs)
-    const yearTabsHtml = [selYear, selYear - 1].map(y =>
+    const curYear = new Date().getFullYear();
+    const yearTabsHtml = [curYear, curYear - 1, curYear - 2].map(y =>
       `<div class="year-tab${y === selYear ? ' active' : ''}" onclick="navigate('#analytics?year=${y}&month=${selMonth}')">${y}</div>`
     ).join('');
 
@@ -1653,7 +1654,11 @@
     // Current month data from monthly array
     const monthData = monthly.find(m => m.month === selMonth) || { assets: 0, liabilities: 0, net_assets: 0 };
 
-    // Month tabs
+    // Year + month tabs
+    const curYear = new Date().getFullYear();
+    const yearTabsHtml = [curYear, curYear - 1, curYear - 2].map(y =>
+      `<div class="year-tab${y === selYear ? ' active' : ''}" onclick="navigate('#balance?year=${y}&month=${selMonth}')">${y}</div>`
+    ).join('');
     const monthTabsHtml = months.map((name, i) => {
       const m = i + 1;
       return `<div class="month-tab${m === selMonth ? ' active' : ''}" onclick="navigate('#balance?year=${selYear}&month=${m}')">${name}</div>`;
@@ -1694,6 +1699,7 @@
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">⚖️ Баланс</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
       ${infoTag('🔒 Только для партнёров DTL')}
+      <div class="year-tabs">${yearTabsHtml}</div>
       <div class="month-tabs">${monthTabsHtml}</div>
 
       <div class="big-stat">
@@ -1750,7 +1756,8 @@
     let data = null;
     try { data = await api.get(`/api/annual?year=${selYear}`); } catch (e) {}
 
-    const yearTabsHtml = [selYear, selYear - 1].map(y =>
+    const curYear = new Date().getFullYear();
+    const yearTabsHtml = [curYear, curYear - 1, curYear - 2].map(y =>
       `<div class="year-tab${y === selYear ? ' active' : ''}" onclick="navigate('#annual?year=${y}')">${y}</div>`
     ).join('');
 
