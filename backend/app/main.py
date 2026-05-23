@@ -1,12 +1,26 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
+import logging
+import time
 from .config import settings
 from .security import SecurityMiddleware
-from .routers import auth, dashboard, base, orders, fleet, reference, hire, income, expenses, debts, settings_router, notifications
+from .routers import auth, dashboard, base, orders, fleet, reference, hire, income, expenses, debts, settings_router, notifications, logs as logs_router
 from .routers import analytics as analytics_router
+
+LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "app.log")
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_PATH, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger("dtl.main")
 
 app = FastAPI(title="DTL Management API", version="2.0.0", docs_url=None, redoc_url=None)
 
@@ -32,6 +46,23 @@ app.include_router(debts.router, prefix="/api", tags=["debts"])
 app.include_router(settings_router.router, prefix="/api", tags=["settings"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(analytics_router.router, prefix="/api", tags=["analytics"])
+app.include_router(logs_router.router, tags=["logs"])
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.time()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        logger.error(f"CRASH {request.method} {request.url.path} → {type(exc).__name__}: {exc}")
+        raise
+    ms = int((time.time() - start) * 1000)
+    if request.url.path.startswith("/api/") and response.status_code >= 400:
+        logger.warning(f"{request.method} {request.url.path} → {response.status_code} ({ms}ms)")
+    elif request.url.path.startswith("/api/"):
+        logger.info(f"{request.method} {request.url.path} → {response.status_code} ({ms}ms)")
+    return response
 
 
 @app.get("/api/health")

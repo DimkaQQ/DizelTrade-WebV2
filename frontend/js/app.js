@@ -1812,6 +1812,32 @@
 
   window.navigate = navigate;
 
+  // ── Global error logging ──────────────────────────────────────────────────
+  function sendLog(level, message, stack) {
+    const body = { level, message, stack: stack || null, url: location.href };
+    fetch('/api/logs/client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(api.getToken() ? { Authorization: 'Bearer ' + api.getToken() } : {}) },
+      body: JSON.stringify(body),
+      credentials: 'include',
+    }).catch(() => {});
+  }
+
+  window.addEventListener('error', (e) => {
+    const msg = `${e.message} (${e.filename}:${e.lineno}:${e.colno})`;
+    console.error('[JS ERROR]', msg, e.error);
+    sendLog('error', msg, e.error ? e.error.stack : null);
+    toast('Ошибка JS: ' + e.message, 'error');
+  });
+
+  window.addEventListener('unhandledrejection', (e) => {
+    const msg = e.reason instanceof Error ? e.reason.message : String(e.reason);
+    const stack = e.reason instanceof Error ? e.reason.stack : null;
+    console.error('[UNHANDLED PROMISE]', msg, e.reason);
+    sendLog('error', 'Unhandled promise: ' + msg, stack);
+    toast('Ошибка: ' + msg, 'error');
+  });
+
   boot();
 
   if ('serviceWorker' in navigator) {
