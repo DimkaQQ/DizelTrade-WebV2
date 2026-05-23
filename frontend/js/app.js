@@ -1,5 +1,6 @@
 (async () => {
   'use strict';
+  window._dtlV = 'v20260524_debug';
 
   let user = null;
 
