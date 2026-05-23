@@ -3,7 +3,7 @@
  * Caches the app shell for offline use.
  */
 
-const CACHE_NAME = 'dtl-v1';
+const CACHE_NAME = 'dtl-v3';
 const SHELL = [
   '/',
   '/index.html',
