@@ -1502,7 +1502,12 @@
 
   // ── Analytics (Phase 3) ───────────────────────────────────────────────────
   async function viewAnalytics() {
+    try { await _viewAnalytics(); } catch (e) { console.error('[viewAnalytics ERROR]', e); }
+  }
+
+  async function _viewAnalytics() {
     if (!isPartner()) { navigate('#home'); return; }
+    console.log('[analytics] start, role=', user && user.role, 'hash=', location.hash);
 
     const now = new Date();
     let selYear = now.getFullYear();
@@ -1512,12 +1517,14 @@
     const hashParams = new URLSearchParams((location.hash.split('?')[1] || ''));
     if (hashParams.get('year')) selYear = parseInt(hashParams.get('year'));
     if (hashParams.get('month')) selMonth = parseInt(hashParams.get('month'));
+    console.log('[analytics] selYear=', selYear, 'selMonth=', selMonth);
 
     let summary = null, clients = [], trucks = [], suppliers = [];
-    try { summary  = await api.get(`/api/analytics/summary?year=${selYear}&month=${selMonth}`); } catch (e) {}
-    try { clients  = await api.get(`/api/analytics/clients?year=${selYear}`) || []; } catch (e) {}
-    try { trucks   = await api.get(`/api/analytics/trucks?year=${selYear}&month=${selMonth}`) || []; } catch (e) {}
-    try { suppliers = await api.get(`/api/analytics/suppliers?year=${selYear}`) || []; } catch (e) {}
+    try { summary  = await api.get(`/api/analytics/summary?year=${selYear}&month=${selMonth}`); } catch (e) { console.warn('[analytics] summary err', e); }
+    try { clients  = await api.get(`/api/analytics/clients?year=${selYear}`) || []; } catch (e) { console.warn('[analytics] clients err', e); }
+    try { trucks   = await api.get(`/api/analytics/trucks?year=${selYear}&month=${selMonth}`) || []; } catch (e) { console.warn('[analytics] trucks err', e); }
+    try { suppliers = await api.get(`/api/analytics/suppliers?year=${selYear}`) || []; } catch (e) { console.warn('[analytics] suppliers err', e); }
+    console.log('[analytics] data loaded: summary=', !!summary, 'clients=', clients.length, 'trucks=', trucks.length);
 
     const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
 
@@ -1605,7 +1612,9 @@
       </div>
     </div>`;
 
+    console.log('[analytics] calling setPageContent');
     setPageContent(html, getTabBar());
+    console.log('[analytics] done');
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Аналитика';
     updateSidebarActive('analytics');
 
@@ -1802,6 +1811,32 @@
 
 
   window.navigate = navigate;
+
+  // ── Global error logging ──────────────────────────────────────────────────
+  function sendLog(level, message, stack) {
+    const body = { level, message, stack: stack || null, url: location.href };
+    fetch('/api/logs/client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(api.getToken() ? { Authorization: 'Bearer ' + api.getToken() } : {}) },
+      body: JSON.stringify(body),
+      credentials: 'include',
+    }).catch(() => {});
+  }
+
+  window.addEventListener('error', (e) => {
+    const msg = `${e.message} (${e.filename}:${e.lineno}:${e.colno})`;
+    console.error('[JS ERROR]', msg, e.error);
+    sendLog('error', msg, e.error ? e.error.stack : null);
+    toast('Ошибка JS: ' + e.message, 'error');
+  });
+
+  window.addEventListener('unhandledrejection', (e) => {
+    const msg = e.reason instanceof Error ? e.reason.message : String(e.reason);
+    const stack = e.reason instanceof Error ? e.reason.stack : null;
+    console.error('[UNHANDLED PROMISE]', msg, e.reason);
+    sendLog('error', 'Unhandled promise: ' + msg, stack);
+    toast('Ошибка: ' + msg, 'error');
+  });
 
   boot();
 
