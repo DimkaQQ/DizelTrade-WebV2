@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 import os
 import logging
 import time
@@ -72,6 +72,8 @@ def health():
 
 # Serve frontend static files
 _frontend = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+_js_ver = str(int(time.time()))  # changes on every service restart
+
 if os.path.isdir(_frontend):
     app.mount("/js", StaticFiles(directory=os.path.join(_frontend, "js")), name="js")
 
@@ -92,4 +94,8 @@ if os.path.isdir(_frontend):
 
     @app.get("/{full_path:path}")
     def serve_frontend(full_path: str):
-        return FileResponse(os.path.join(_frontend, "index.html"))
+        with open(os.path.join(_frontend, "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        html = html.replace("/js/api.js", f"/js/api.js?v={_js_ver}")
+        html = html.replace("/js/app.js", f"/js/app.js?v={_js_ver}")
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
