@@ -41,7 +41,7 @@ def analytics_summary(
     # Revenue: tariff income from delivered dispatches in the period
     rev_row = query_one(
         """
-        SELECT COALESCE(SUM(fd.tariff_amount), 0) AS revenue
+        SELECT COALESCE(SUM(fd.tariff), 0) AS revenue
         FROM fuel_dispatches fd
         WHERE fd.status = 'delivered'
           AND EXTRACT(YEAR  FROM fd.dispatched_at) = %s
@@ -56,8 +56,8 @@ def analytics_summary(
         """
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM fleet_expenses
-        WHERE EXTRACT(YEAR  FROM expense_date) = %s
-          AND EXTRACT(MONTH FROM expense_date) = %s
+        WHERE EXTRACT(YEAR  FROM expense_at) = %s
+          AND EXTRACT(MONTH FROM expense_at) = %s
         """,
         (year, month),
     )
@@ -68,8 +68,8 @@ def analytics_summary(
         """
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM company_expenses
-        WHERE EXTRACT(YEAR  FROM expense_date) = %s
-          AND EXTRACT(MONTH FROM expense_date) = %s
+        WHERE EXTRACT(YEAR  FROM expense_at) = %s
+          AND EXTRACT(MONTH FROM expense_at) = %s
         """,
         (year, month),
     )
@@ -82,9 +82,9 @@ def analytics_summary(
           COALESCE(SUM(amount_client), 0)   AS hire_rev,
           COALESCE(SUM(amount_supplier), 0) AS hire_sup,
           COALESCE(SUM(COALESCE(amount_carrier,0)), 0) AS hire_car
-        FROM hire_deals
-        WHERE EXTRACT(YEAR  FROM deal_date) = %s
-          AND EXTRACT(MONTH FROM deal_date) = %s
+        FROM hire_deliveries
+        WHERE EXTRACT(YEAR  FROM delivery_at) = %s
+          AND EXTRACT(MONTH FROM delivery_at) = %s
         """,
         (year, month),
     )
@@ -100,7 +100,7 @@ def analytics_summary(
     # Trips and volume
     trips_row = query_one(
         """
-        SELECT COUNT(*) AS trips, COALESCE(SUM(volume_cubic), 0) AS volume
+        SELECT COUNT(*) AS trips, COALESCE(SUM(volume), 0) AS volume
         FROM fuel_dispatches
         WHERE status = 'delivered'
           AND EXTRACT(YEAR  FROM dispatched_at) = %s
@@ -135,8 +135,8 @@ def analytics_clients(
         """
         SELECT
           c.name AS client_name,
-          COALESCE(SUM(fd.tariff_amount), 0) AS revenue,
-          COALESCE(SUM(fd.volume_cubic), 0)  AS volume
+          COALESCE(SUM(fd.tariff), 0) AS revenue,
+          COALESCE(SUM(fd.volume), 0)  AS volume
         FROM fuel_dispatches fd
         JOIN orders o ON o.id = fd.order_id
         JOIN clients c ON c.id = o.client_id
@@ -177,8 +177,8 @@ def analytics_trucks(
         SELECT
           t.name AS truck_name,
           COUNT(*) AS trips,
-          COALESCE(SUM(fd.volume_cubic), 0)   AS volume,
-          COALESCE(SUM(fd.tariff_amount), 0)  AS revenue
+          COALESCE(SUM(fd.volume), 0)   AS volume,
+          COALESCE(SUM(fd.tariff), 0)  AS revenue
         FROM fuel_dispatches fd
         JOIN trucks t ON t.id = fd.truck_id
         WHERE fd.status = 'delivered'
@@ -198,8 +198,8 @@ def analytics_trucks(
           COALESCE(SUM(fe.amount), 0) AS expenses
         FROM fleet_expenses fe
         JOIN trucks t ON t.id = fe.truck_id
-        WHERE EXTRACT(YEAR  FROM fe.expense_date) = %s
-          AND EXTRACT(MONTH FROM fe.expense_date) = %s
+        WHERE EXTRACT(YEAR  FROM fe.expense_at) = %s
+          AND EXTRACT(MONTH FROM fe.expense_at) = %s
         GROUP BY t.name
         """,
         (year, month),
@@ -236,14 +236,14 @@ def analytics_suppliers(
     rows = query(
         """
         SELECT
-          COALESCE(s.name, fr.source) AS supplier_name,
-          COALESCE(SUM(fr.volume_net), 0)        AS volume,
-          COALESCE(SUM(fr.total_cost), 0)        AS cost
+          COALESCE(s.name, fr.source_custom) AS supplier_name,
+          COALESCE(SUM(fr.volume_adjusted), 0)        AS volume,
+          COALESCE(SUM(0), 0)        AS cost
         FROM fuel_receipts fr
         LEFT JOIN suppliers s ON s.id = fr.supplier_id
         WHERE EXTRACT(YEAR FROM fr.received_at) = %s
           AND fr.ttn_confirmed = TRUE
-        GROUP BY COALESCE(s.name, fr.source)
+        GROUP BY COALESCE(s.name, fr.source_custom)
         ORDER BY cost DESC
         """,
         (year,),
@@ -276,7 +276,7 @@ def analytics_monthly(
         """
         SELECT
           EXTRACT(MONTH FROM dispatched_at)::int AS month,
-          COALESCE(SUM(tariff_amount), 0) AS revenue
+          COALESCE(SUM(tariff), 0) AS revenue
         FROM fuel_dispatches
         WHERE status = 'delivered'
           AND EXTRACT(YEAR FROM dispatched_at) = %s
@@ -289,10 +289,10 @@ def analytics_monthly(
     fleet_exp_rows = query(
         """
         SELECT
-          EXTRACT(MONTH FROM expense_date)::int AS month,
+          EXTRACT(MONTH FROM expense_at)::int AS month,
           COALESCE(SUM(amount), 0) AS total
         FROM fleet_expenses
-        WHERE EXTRACT(YEAR FROM expense_date) = %s
+        WHERE EXTRACT(YEAR FROM expense_at) = %s
         GROUP BY month
         """,
         (year,),
@@ -302,10 +302,10 @@ def analytics_monthly(
     comp_exp_rows = query(
         """
         SELECT
-          EXTRACT(MONTH FROM expense_date)::int AS month,
+          EXTRACT(MONTH FROM expense_at)::int AS month,
           COALESCE(SUM(amount), 0) AS total
         FROM company_expenses
-        WHERE EXTRACT(YEAR FROM expense_date) = %s
+        WHERE EXTRACT(YEAR FROM expense_at) = %s
         GROUP BY month
         """,
         (year,),
@@ -315,12 +315,12 @@ def analytics_monthly(
     hire_rows = query(
         """
         SELECT
-          EXTRACT(MONTH FROM deal_date)::int AS month,
+          EXTRACT(MONTH FROM delivery_at)::int AS month,
           COALESCE(SUM(amount_client), 0) AS hire_rev,
           COALESCE(SUM(amount_supplier), 0) AS hire_sup,
           COALESCE(SUM(COALESCE(amount_carrier,0)), 0) AS hire_car
-        FROM hire_deals
-        WHERE EXTRACT(YEAR FROM deal_date) = %s
+        FROM hire_deliveries
+        WHERE EXTRACT(YEAR FROM delivery_at) = %s
         GROUP BY month
         """,
         (year,),
@@ -463,7 +463,7 @@ def annual_summary(
     # Fleet revenue
     fleet_rev_row = query_one(
         """
-        SELECT COALESCE(SUM(tariff_amount), 0) AS rev
+        SELECT COALESCE(SUM(tariff), 0) AS rev
         FROM fuel_dispatches
         WHERE status = 'delivered'
           AND EXTRACT(YEAR FROM dispatched_at) = %s
@@ -476,8 +476,8 @@ def annual_summary(
     hire_rev_row = query_one(
         """
         SELECT COALESCE(SUM(amount_client), 0) AS rev
-        FROM hire_deals
-        WHERE EXTRACT(YEAR FROM deal_date) = %s
+        FROM hire_deliveries
+        WHERE EXTRACT(YEAR FROM delivery_at) = %s
         """,
         (year,),
     )
@@ -488,7 +488,7 @@ def annual_summary(
         """
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM fleet_expenses
-        WHERE EXTRACT(YEAR FROM expense_date) = %s
+        WHERE EXTRACT(YEAR FROM expense_at) = %s
         """,
         (year,),
     )
@@ -497,7 +497,7 @@ def annual_summary(
     # Fuel cost
     fuel_exp_row = query_one(
         """
-        SELECT COALESCE(SUM(total_cost), 0) AS total
+        SELECT COALESCE(SUM(0), 0) AS total
         FROM fuel_receipts
         WHERE ttn_confirmed = TRUE
           AND EXTRACT(YEAR FROM received_at) = %s
@@ -510,8 +510,8 @@ def annual_summary(
     carrier_exp_row = query_one(
         """
         SELECT COALESCE(SUM(COALESCE(amount_carrier, 0)), 0) AS total
-        FROM hire_deals
-        WHERE EXTRACT(YEAR FROM deal_date) = %s
+        FROM hire_deliveries
+        WHERE EXTRACT(YEAR FROM delivery_at) = %s
         """,
         (year,),
     )
@@ -522,7 +522,7 @@ def annual_summary(
         """
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM company_expenses
-        WHERE EXTRACT(YEAR FROM expense_date) = %s
+        WHERE EXTRACT(YEAR FROM expense_at) = %s
         """,
         (year,),
     )
@@ -532,8 +532,8 @@ def annual_summary(
     hire_sup_row = query_one(
         """
         SELECT COALESCE(SUM(amount_supplier), 0) AS total
-        FROM hire_deals
-        WHERE EXTRACT(YEAR FROM deal_date) = %s
+        FROM hire_deliveries
+        WHERE EXTRACT(YEAR FROM delivery_at) = %s
         """,
         (year,),
     )
@@ -548,8 +548,8 @@ def annual_summary(
         """
         SELECT
           c.name AS client_name,
-          COALESCE(SUM(fd.tariff_amount), 0) AS revenue,
-          COALESCE(SUM(fd.volume_cubic), 0)  AS volume
+          COALESCE(SUM(fd.tariff), 0) AS revenue,
+          COALESCE(SUM(fd.volume), 0)  AS volume
         FROM fuel_dispatches fd
         JOIN orders o ON o.id = fd.order_id
         JOIN clients c ON c.id = o.client_id
