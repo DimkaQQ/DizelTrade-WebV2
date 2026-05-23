@@ -309,9 +309,9 @@
     if (h === 'debts') { viewDebts(); return; }
     if (h === 'dashboard') { viewDashboard(); return; }
     if (h === 'fleet') { viewFleet(); return; }
-    if (h === 'analytics') { viewAnalytics(); return; }
-    if (h === 'balance') { viewBalance(); return; }
-    if (h === 'annual') { viewAnnual(); return; }
+    if (h === 'analytics' || h.startsWith('analytics?')) { viewAnalytics(); return; }
+    if (h === 'balance' || h.startsWith('balance?')) { viewBalance(); return; }
+    if (h === 'annual' || h.startsWith('annual?')) { viewAnnual(); return; }
     if (h === 'settings') { viewSettings(); return; }
     viewHome();
   }
@@ -1080,7 +1080,7 @@
       </div>
       ${deals.length ? deals.map(d => `<div class="oc">
         <div class="och">
-          <div><div class="ocn">${esc(d.client_name || '')} → ${esc(d.carrier_name || d.carrier_custom || '')}</div><div class="ocd">${d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : ''} · ${d.supplier_name || ''}</div></div>
+          <div><div class="ocn">${esc(d.client_name || '')} → ${esc(d.carrier_name || d.carrier_custom || '')}</div><div class="ocd">${[d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : '', d.supplier_name || ''].filter(Boolean).join(' · ')}</div></div>
           <div><div class="oca">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
         </div>
         ${d.volume_liters ? `<div class="ocp-labels"><span>${formatNum(d.volume_liters)} л</span><span>${d.price_client ? d.price_client + ' ₽/л' : ''}</span><span style="color:var(--accent)">${d.price_supplier ? d.price_supplier + ' ₽/л поставщику' : ''}</span></div>` : ''}
@@ -1156,7 +1156,7 @@
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
       ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
-      ${records.length ? records.map(r => listItem({ icon: '📄', iconBg: r.type === 'ДОЛГ' ? 'o' : 'g', title: `${r.debtor} — ${formatNum(Math.abs(r.amount))} ₽`, sub: (r.type === 'ОПЛАТА' ? 'Оплата · ' : '') + (r.comment || '') + (r.recorded_at ? ' · ' + new Date(r.recorded_at).toLocaleDateString('ru') : '') })).join('') : emptyState('Нет записей')}
+      ${records.length ? records.map(r => listItem({ icon: '📄', iconBg: r.type === 'ДОЛГ' ? 'o' : 'g', title: `${r.debtor} — ${formatNum(Math.abs(r.amount))} ₽`, sub: [r.type === 'ОПЛАТА' ? 'Оплата' : '', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ') })).join('') : emptyState('Нет записей')}
       ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
     </div>`;
     setPageContent(html, getTabBar());
