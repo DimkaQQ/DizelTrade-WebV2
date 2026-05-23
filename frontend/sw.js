@@ -3,12 +3,12 @@
  * Caches the app shell for offline use.
  */
 
-const CACHE_NAME = 'dtl-v3';
+const CACHE_NAME = 'dtl-v4';
 const SHELL = [
   '/',
   '/index.html',
-  '/js/api.js',
-  '/js/app.js',
+  '/js/api.js?v=4',
+  '/js/app.js?v=4',
   '/manifest.json',
 ];
 
