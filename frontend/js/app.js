@@ -171,7 +171,7 @@
 
   function getUserInitials() {
     if (!user) return '??';
-    const nm = user.full_name || user.login || '';
+    const nm = user.name || user.email || '';
     const parts = nm.split(' ');
     return ((parts[0] || '')[0] || '') + ((parts[1] || '')[0] || '');
   }
@@ -223,7 +223,7 @@
         <div class="sidebar-user">
           <div class="user-avatar">${getUserInitials().toUpperCase()}</div>
           <div>
-            <div class="user-name">${esc(user.full_name || user.login)}</div>
+            <div class="user-name">${esc(user.name || user.email)}</div>
             <div class="user-role">${esc(user.role === 'partner' ? 'Партнёр DTL · Полный доступ' : user.role === 'artem' ? 'Партнёр (база)' : 'Оператор')}</div>
           </div>
           <button class="btn-logout-sidebar" onclick="doLogout()">⏻</button>
@@ -255,20 +255,17 @@
 
   async function loadTopbarStats() {
     try {
-      const [balRes, dashRes] = await Promise.allSettled([
-        api.get('/api/base/balance'),
-        api.get('/api/dashboard/alerts')
+      const dashRes = await Promise.allSettled([
+        api.get('/api/dashboard')
       ]);
-      if (balRes.status === 'fulfilled' && balRes.value) {
+      const dashResult = dashRes[0];
+      if (dashResult.status === 'fulfilled' && dashResult.value) {
+        const d = dashResult.value;
         const b = document.getElementById('tb-balance');
-        if (b) b.textContent = (balRes.value.balance_cubic ?? '—') + ' куб';
-      }
-      if (dashRes.status === 'fulfilled' && dashRes.value) {
-        const alerts = Array.isArray(dashRes.value) ? dashRes.value : [];
-        const pending = alerts.filter(a => a.type === 'pending_receipt').length;
-        const tripCount = alerts.filter(a => a.type === 'in_transit').length;
+        if (b) b.textContent = (d.base_balance ?? '—') + ' куб';
         const tripsEl = document.getElementById('tb-trips');
-        if (tripsEl) tripsEl.textContent = tripCount || '—';
+        if (tripsEl) tripsEl.textContent = d.trips_in_transit || '—';
+        const pending = d.pending_receipts || 0;
         const alertEl = document.getElementById('tb-alert');
         const badgeEl = document.getElementById('sb-pending-badge');
         if (pending > 0) {
@@ -461,7 +458,7 @@
     try {
       const alerts = await api.get('/api/dashboard/alerts');
       if (Array.isArray(alerts)) {
-        pendingCount = alerts.filter(a => a.type === 'pending_receipt').length;
+        pendingCount = alerts.filter(a => a.type === 'unconfirmed_receipt').length;
         if (pendingCount > 0) {
           alertBannerHtml = `<div class="alert-banner" onclick="navigate('#base')">
             <span class="ai">⏳</span>
@@ -474,7 +471,7 @@
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
-    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.full_name || user.login)}</span></div>` : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
     <div class="content">
       <div class="stitle">Что записать?</div>
       <div class="ssub">// добро пожаловать</div>
@@ -510,7 +507,7 @@
 
     const currentBal = balance ? balance.balance_cubic : '—';
     const pendingItems = [
-      ...pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source || ''} ${r.volume_gross || ''} куб`, sub: r.created_at ? new Date(r.created_at).toLocaleDateString('ru') : '', btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })),
+      ...pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source_custom || r.supplier_name || ''} ${r.volume_nominal || ''} куб`, sub: r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : '', btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })),
       ...dispatches.slice(0, 2).map(d => pendingItem({ title: `${d.truck_name || ''} → ${d.site_name || ''} · ${d.volume} куб`, sub: d.driver_name || '', btnLabel: 'Доставлено', onConfirmAttr: `onclick="confirmDispatch(${d.id})"` }))
     ].join('');
 
@@ -518,11 +515,11 @@
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
-    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.full_name || user.login)}</span></div>` : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
     <div class="content">
       <div class="role-tag orange">🔒 Ограниченный доступ · База Тында</div>
       <div class="stitle">База Тында</div>
-      <div class="ssub">// добрый день, ${esc(user.full_name || user.login)}</div>
+      <div class="ssub">// добрый день, ${esc(user.name || user.email)}</div>
       <div class="big-stat">
         <div class="bl">⛽ Сейчас на базе</div>
         <div class="bv">${esc(String(currentBal))} <span class="bu">куб</span></div>
@@ -536,7 +533,7 @@
         ${menuCard({ icon: '💵', label: 'Отчёт по наличным', wide: true })}
       </div>
       ${activeOrder ? `${sectionHeader('План доставки')}
-      ${orderCard({ name: activeOrder.client_name, date: 'Приоритетный', delivered: activeOrder.volume_delivered || 0, total: activeOrder.volume_total || 0, showFinancials: false, sites: activeOrder.sites || [] })}` : ''}
+      ${orderCard({ name: activeOrder.client_name, date: 'Приоритетный', delivered: activeOrder.delivered || 0, total: activeOrder.volume_ordered || 0, showFinancials: false, sites: activeOrder.sites || [] })}` : ''}
       ${sectionHeader('Последние рейсы')}
       ${dispatches.length ? dispatches.map(d => listItem({ icon: '🚚', iconBg: 'tr', title: `${d.truck_name || ''} → ${d.site_name || ''}`, sub: `${d.volume} куб · ${d.driver_name || ''}`, badgeHtml: badge('В пути', 'transit') })).join('') : emptyState('Нет рейсов')}
     </div>`;
@@ -551,7 +548,7 @@
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
-    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.full_name || user.login)}</span></div>` : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
     <div class="content">
       <div class="role-tag blue">🔒 Минимальный доступ · Ввод данных</div>
       <div class="stitle">Что записать?</div>
@@ -567,7 +564,7 @@
       </div>
       ${sectionHeader('Ожидают подтверждения')}
       ${pending.length ? `<div class="pending-block"><div class="pt">⏳ Требуют действия (${pending.length})</div>
-        ${pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source || ''}`, sub: `${r.volume_gross} куб`, btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })).join('')}
+        ${pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source_custom || r.supplier_name || ''}`, sub: `${r.volume_nominal} куб`, btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })).join('')}
       </div>` : emptyState('Нет ожидающих подтверждения')}
     </div>`;
     setPageContent(html, getTabBar());
@@ -611,7 +608,7 @@
       </div>
       ${pending.length ? `<div class="pending-block">
         <div class="pt">⏳ Ожидают подтверждения приёмки (${pending.length})</div>
-        ${pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source || ''} ${r.volume_gross} куб`, sub: r.created_at ? new Date(r.created_at).toLocaleDateString('ru') : '', btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })).join('')}
+        ${pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source_custom || r.supplier_name || ''} ${r.volume_nominal} куб`, sub: r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : '', btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })).join('')}
       </div>` : ''}
       ${sectionHeader('Действия')}
       <div class="menu-grid">
@@ -631,10 +628,10 @@
       tabContent = `
       <button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="navigate('#base/receipts/new')">+ Принял топливо</button>
       ${receipts.length ? receipts.map(r => listItem({
-        icon: '📥', iconBg: r.status === 'confirmed' ? 'g' : 'o',
-        title: `${r.source} — ${r.volume_gross} куб`,
-        sub: `${r.ttn_number || '—'} · ${r.created_at ? new Date(r.created_at).toLocaleDateString('ru') : ''}`,
-        badgeHtml: badge(r.status === 'confirmed' ? 'Подтверждено' : 'Ожидает', r.status === 'confirmed' ? 'done' : 'pending')
+        icon: '📥', iconBg: r.ttn_confirmed === true ? 'g' : 'o',
+        title: `${r.source_custom || r.supplier_name || '—'} — ${r.volume_nominal} куб`,
+        sub: `${r.ttn_number || '—'} · ${r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : ''}`,
+        badgeHtml: badge(r.ttn_confirmed === true ? 'Подтверждено' : 'Ожидает', r.ttn_confirmed === true ? 'done' : 'pending')
       })).join('') : emptyState('Нет приёмок')}`;
 
     } else if (activeTab === 'trips') {
@@ -658,11 +655,11 @@
       try { cashList = await api.get('/api/base/cash-artem') || []; } catch (e) {}
       tabContent = `
       ${cashData ? balanceBox(
-        [{ label: 'Выдано', val: formatNum(cashData.issued) + ' ₽' }, { label: 'Освоено', val: '−' + formatNum(cashData.spent) + ' ₽', color: 'green' }],
-        'Остаток у Артёма', formatNum(cashData.remaining) + ' ₽', 'orange'
+        [{ label: 'Выдано', val: formatNum(cashData.total_given) + ' ₽' }, { label: 'Освоено', val: '−' + formatNum(cashData.total_spent) + ' ₽', color: 'green' }],
+        'Остаток у Артёма', formatNum(cashData.balance) + ' ₽', 'orange'
       ) : '<div class="empty-state">Нет данных по наличным</div>'}
       ${isPartner() ? `<button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="showCashForm()">+ Выдать наличные</button>` : ''}
-      ${cashList.length ? cashList.map(c => listItem({ icon: '💵', iconBg: 'o', title: formatNum(c.amount) + ' ₽', sub: c.note || (c.created_at ? new Date(c.created_at).toLocaleDateString('ru') : '') })).join('') : emptyState('Нет записей')}`;
+      ${cashList.length ? cashList.map(c => listItem({ icon: '💵', iconBg: 'o', title: formatNum(c.amount_given) + ' ₽', sub: c.purpose || (c.created_at ? new Date(c.created_at).toLocaleDateString('ru') : '') })).join('') : emptyState('Нет записей')}`;
     }
 
     const html = `
@@ -691,7 +688,7 @@
 
   window.confirmDispatch = async function (id) {
     try {
-      await api.put(`/api/base/dispatches/${id}/deliver`);
+      await api.put(`/api/base/dispatches/${id}/status`, { status: 'delivered' });
       toast('✅ Доставка подтверждена!');
       render(location.hash);
     } catch (e) { toast(e.message, 'error'); }
@@ -702,9 +699,9 @@
       ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
       ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Назначение...">`)}
     `, async () => {
-      const amount = parseFloat(document.getElementById('m-amount').value);
-      const note = document.getElementById('m-note').value;
-      await api.post('/api/base/cash-artem', { amount, note });
+      const amount_given = parseFloat(document.getElementById('m-amount').value);
+      const purpose = document.getElementById('m-note').value;
+      await api.post('/api/base/cash-artem', { amount_given, purpose });
       toast('✅ Записано!');
       viewBase('cash');
     });
@@ -781,7 +778,7 @@
     const sourceEl = document.querySelector('.chips[data-group="source"] .chip.sel');
     const source = sourceEl ? sourceEl.getAttribute('data-val') : '';
     try {
-      await api.post('/api/base/receipts', { source, volume_gross: vol, density, temperature: temp, ttn_number: ttn });
+      await api.post('/api/base/receipts', { source_custom: source, volume_nominal: vol, density, temperature: temp, ttn_number: ttn });
       const overlay = document.getElementById('conf-overlay');
       if (overlay) overlay.style.display = 'none';
       toast('✅ Записано! Артём получит уведомление.');
@@ -888,12 +885,14 @@
     const driverEl = document.querySelector('.chips[data-group="driver"] .chip.sel');
     const siteEl = document.querySelector('.chips[data-group="site"] .chip.sel');
     const ownerEl = document.querySelector('.chips[data-group="owner"] .chip.sel');
+    const ownerMap = { 'Наш DTL': 'DTL', 'Автопарк Артёма': 'Артём', 'Наёмная': 'наёмная' };
+    const ownerRaw = ownerEl ? ownerEl.getAttribute('data-val') : 'Наш DTL';
     try {
       await api.post('/api/base/dispatches', {
-        truck_id: truckEl ? truckEl.getAttribute('data-val') : null,
-        driver_id: driverEl ? driverEl.getAttribute('data-val') : null,
-        site_id: siteEl ? siteEl.getAttribute('data-val') : null,
-        owner_type: ownerEl ? ownerEl.getAttribute('data-val') : 'Наш DTL',
+        truck_id: truckEl ? parseInt(truckEl.getAttribute('data-val')) || null : null,
+        driver_id: driverEl ? parseInt(driverEl.getAttribute('data-val')) || null : null,
+        site_id: siteEl ? parseInt(siteEl.getAttribute('data-val')) : null,
+        truck_owner: ownerMap[ownerRaw] || 'DTL',
         volume: vol,
         ttn_number: ttn
       });
@@ -909,7 +908,7 @@
 
     const active = orders.filter(o => o.status === 'active');
     const closed = orders.filter(o => o.status !== 'active');
-    const deliveredCub = active.reduce((s, o) => s + (o.volume_delivered || 0), 0);
+    const deliveredCub = active.reduce((s, o) => s + (o.delivered || 0), 0);
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
@@ -925,8 +924,8 @@
         ${statCard(deliveredCub, 'Доставлено куб', 'a')}
         ${statCard('—', 'Дебиторка млн', 'o')}
       </div>` : ''}
-      ${active.length ? active.map(o => orderCard({ name: o.client_name, date: o.created_at ? new Date(o.created_at).toLocaleDateString('ru') : '', amount: isPartner() ? formatNum(o.total_amount) + ' ₽' : null, pricePerLiter: o.price_per_liter ? o.price_per_liter + ' ₽/л' : '', delivered: o.volume_delivered || 0, total: o.volume_total || 0, sites: o.sites || [], showFinancials: isPartner() })).join('') : emptyState('Нет активных заказов')}
-      ${closed.length ? closed.map(o => orderCard({ name: o.client_name, date: 'Закрыт ' + (o.closed_at ? new Date(o.closed_at).toLocaleDateString('ru') : ''), delivered: o.volume_delivered || 0, total: o.volume_total || 0, closed: true, showFinancials: false })).join('') : ''}
+      ${active.length ? active.map(o => orderCard({ name: o.client_name, date: o.created_at ? new Date(o.created_at).toLocaleDateString('ru') : '', amount: isPartner() ? formatNum(o.amount_paid) + ' ₽' : null, pricePerLiter: o.price_per_liter ? o.price_per_liter + ' ₽/л' : '', delivered: o.delivered || 0, total: o.volume_ordered || 0, sites: o.sites || [], showFinancials: isPartner() })).join('') : emptyState('Нет активных заказов')}
+      ${closed.length ? closed.map(o => orderCard({ name: o.client_name, date: 'Закрыт ' + (o.closed_at ? new Date(o.closed_at).toLocaleDateString('ru') : ''), delivered: o.delivered || 0, total: o.volume_ordered || 0, closed: true, showFinancials: false })).join('') : ''}
     </div>`;
     setPageContent(html, getTabBar());
     updateTabBar('orders');
@@ -941,7 +940,7 @@
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#orders')">Заказы</div><div class="nav-title">${esc(order.client_name)}</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
-      ${orderCard({ name: order.client_name, date: order.created_at ? new Date(order.created_at).toLocaleDateString('ru') : '', delivered: order.volume_delivered || 0, total: order.volume_total || 0, showFinancials: isPartner(), amount: formatNum(order.total_amount) + ' ₽', sites: order.sites || [] })}
+      ${orderCard({ name: order.client_name, date: order.created_at ? new Date(order.created_at).toLocaleDateString('ru') : '', delivered: order.delivered || 0, total: order.volume_ordered || 0, showFinancials: isPartner(), amount: formatNum(order.amount_paid) + ' ₽', sites: order.sites || [] })}
     </div>`;
     setPageContent(html, getTabBar());
   }
@@ -1000,7 +999,7 @@
         ${statCard(records.length, 'Записей')}
         ${statCard('—', 'Маржа')}
       </div>
-      ${records.length ? records.map(r => listItem({ icon: '💰', iconBg: 'g', title: formatNum(r.amount) + ' ₽', sub: `${r.client || ''} · ${r.created_at ? new Date(r.created_at).toLocaleDateString('ru') : ''}` })).join('') : emptyState('Нет доходов')}
+      ${records.length ? records.map(r => listItem({ icon: '💰', iconBg: 'g', title: formatNum(r.amount) + ' ₽', sub: `${r.client_name || ''} · ${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}` })).join('') : emptyState('Нет доходов')}
       ${!isDesktop() ? `<button class="btn-primary" style="margin-top:12px" onclick="showIncomeModal()">+ Добавить</button>` : ''}
     </div>`;
     setPageContent(html, getTabBar());
@@ -1009,14 +1008,14 @@
 
   window.showIncomeModal = function () {
     showModal('Добавить доход', `
-      ${formField('Клиент', `<input class="inp" type="text" id="m-client" placeholder="Клиент">`)}
+      ${formField('Дата', `<input class="inp" type="date" id="m-income-at" value="${new Date().toISOString().slice(0,10)}">`)}
       ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
       ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Детали...">`)}
     `, async () => {
-      const client = document.getElementById('m-client').value;
+      const income_at = document.getElementById('m-income-at').value;
       const amount = parseFloat(document.getElementById('m-amount').value);
-      const note = document.getElementById('m-note').value;
-      await api.post('/api/income', { client, amount, note });
+      const comment = document.getElementById('m-note').value;
+      await api.post('/api/income', { income_at, amount, comment });
       toast('✅ Доход записан!');
       viewIncome();
     });
@@ -1038,7 +1037,7 @@
         ${statCard(records.length, 'Записей')}
         ${statCard('—', 'Категорий')}
       </div>
-      ${records.length ? records.map(r => listItem({ icon: '📋', iconBg: 'o', title: formatNum(r.amount) + ' ₽', sub: `${r.category || ''} · ${r.created_at ? new Date(r.created_at).toLocaleDateString('ru') : ''}` })).join('') : emptyState('Нет расходов')}
+      ${records.length ? records.map(r => listItem({ icon: '📋', iconBg: 'o', title: formatNum(r.amount) + ' ₽', sub: `${r.category || ''} · ${r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : ''}` })).join('') : emptyState('Нет расходов')}
       <button class="btn-primary" style="margin-top:12px" onclick="showExpenseModal()">+ Добавить</button>
     </div>`;
     setPageContent(html, getTabBar());
@@ -1046,17 +1045,19 @@
   }
 
   window.showExpenseModal = function () {
-    const categories = ['Топливо', 'Ремонт', 'ТО', 'Зарплата', 'Аренда', 'Прочее'];
+    const categories = ['Бухгалтерия', 'Аренда', 'Кредиты (тело)', 'Проценты по кредитам', 'Налоги/штрафы', 'Командировочные', 'Зарплата партнёрам', 'Финансовые расходы (налоги/вывод)', 'Прочие'];
     showModal('Добавить расход', `
-      ${formField('Категория', chipGroup(categories, 'Прочее', 'exp-cat'))}
+      ${formField('Дата', `<input class="inp" type="date" id="m-expense-at" value="${new Date().toISOString().slice(0,10)}">`)}
+      ${formField('Категория', chipGroup(categories, 'Прочие', 'exp-cat'))}
       ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
       ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Детали...">`)}
     `, async () => {
+      const expense_at = document.getElementById('m-expense-at').value;
       const catEl = document.querySelector('.chips[data-group="exp-cat"] .chip.sel');
-      const category = catEl ? catEl.getAttribute('data-val') : 'Прочее';
+      const category = catEl ? catEl.getAttribute('data-val') : 'Прочие';
       const amount = parseFloat(document.getElementById('m-amount').value);
-      const note = document.getElementById('m-note').value;
-      await api.post('/api/expenses', { category, amount, note });
+      const comment = document.getElementById('m-note').value;
+      await api.post('/api/expenses', { expense_at, category, amount, comment });
       toast('✅ Расход записан!');
       viewExpenses();
     });
@@ -1082,7 +1083,7 @@
           <div><div class="ocn">${esc(d.client_name || '')} → ${esc(d.carrier_name || d.carrier_custom || '')}</div><div class="ocd">${d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : ''} · ${d.supplier_name || ''}</div></div>
           <div><div class="oca">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
         </div>
-        ${d.volume ? `<div class="ocp-labels"><span>${formatNum(d.volume)} л</span><span>${d.price_client ? d.price_client + ' ₽/л' : ''}</span><span style="color:var(--accent)">${d.price_supplier ? d.price_supplier + ' ₽/л поставщику' : ''}</span></div>` : ''}
+        ${d.volume_liters ? `<div class="ocp-labels"><span>${formatNum(d.volume_liters)} л</span><span>${d.price_client ? d.price_client + ' ₽/л' : ''}</span><span style="color:var(--accent)">${d.price_supplier ? d.price_supplier + ' ₽/л поставщику' : ''}</span></div>` : ''}
       </div>`).join('') : emptyState('Нет сделок')}
       <button class="btn-primary" style="margin-top:12px" onclick="showHireModal()">+ Новая сделка</button>
     </div>`;
@@ -1139,16 +1140,23 @@
 
   // ── Debts ─────────────────────────────────────────────────────────────────
   async function viewDebts() {
-    let balances = [], records = [];
-    try { balances = await api.get('/api/debts/balances') || []; } catch (e) {}
-    try { records = await api.get('/api/debts') || []; } catch (e) {}
+    let balances = {}, records = [];
+    try {
+      const debtData = await api.get('/api/debts');
+      if (debtData && debtData.records) {
+        records = debtData.records;
+        balances = debtData.balances || {};
+      }
+    } catch (e) {}
+
+    const balanceEntries = Object.entries(balances);
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
-      ${balances.length ? `<div class="bb">${balances.map(d => `<div class="bbr"><div class="bbl">${esc(d.counterparty)}</div><div class="bbv" style="color:var(--${d.balance > 0 ? 'orange' : 'green'})">${d.balance > 0 ? '+' : ''}${formatNum(d.balance)} ₽</div></div>`).join('')}</div>` : ''}
-      ${records.length ? records.map(r => listItem({ icon: '📄', iconBg: r.amount > 0 ? 'o' : 'g', title: `${r.counterparty} — ${formatNum(Math.abs(r.amount))} ₽`, sub: r.note || (r.created_at ? new Date(r.created_at).toLocaleDateString('ru') : '') })).join('') : emptyState('Нет записей')}
+      ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
+      ${records.length ? records.map(r => listItem({ icon: '📄', iconBg: r.type === 'ДОЛГ' ? 'o' : 'g', title: `${r.debtor} — ${formatNum(Math.abs(r.amount))} ₽`, sub: (r.type === 'ОПЛАТА' ? 'Оплата · ' : '') + (r.comment || '') + (r.recorded_at ? ' · ' + new Date(r.recorded_at).toLocaleDateString('ru') : '') })).join('') : emptyState('Нет записей')}
       ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
     </div>`;
     setPageContent(html, getTabBar());
@@ -1157,14 +1165,19 @@
 
   window.showDebtModal = function () {
     showModal('Добавить запись долга', `
-      ${formField('Контрагент', `<input class="inp" type="text" id="m-cp" placeholder="Кто">`)}
-      ${formField('Сумма, ₽ (+ нам должны, − мы должны)', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
+      ${formField('Дата', `<input class="inp" type="date" id="m-recorded-at" value="${new Date().toISOString().slice(0,10)}">`)}
+      ${formField('Контрагент (должник)', `<input class="inp" type="text" id="m-cp" placeholder="Кто">`)}
+      ${formField('Тип', `<div class="chips" data-group="debt-type"><div class="chip sel" data-val="ДОЛГ">Долг</div><div class="chip" data-val="ОПЛАТА">Оплата</div></div>`)}
+      ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
       ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Детали...">`)}
     `, async () => {
-      const counterparty = document.getElementById('m-cp').value;
+      const recorded_at = document.getElementById('m-recorded-at').value;
+      const debtor = document.getElementById('m-cp').value;
+      const typeEl = document.querySelector('.chips[data-group="debt-type"] .chip.sel');
+      const type = typeEl ? typeEl.getAttribute('data-val') : 'ДОЛГ';
       const amount = parseFloat(document.getElementById('m-amount').value);
-      const note = document.getElementById('m-note').value;
-      await api.post('/api/debts', { counterparty, amount, note });
+      const comment = document.getElementById('m-note').value;
+      await api.post('/api/debts', { recorded_at, debtor, type, amount, comment });
       toast('✅ Записано!');
       viewDebts();
     });
@@ -1176,36 +1189,27 @@
     try { dash = await api.get('/api/dashboard'); } catch (e) {}
     try { orders = await api.get('/api/orders') || []; } catch (e) {}
 
-    const rev = dash?.revenue_month;
-    const profit = dash?.profit_month;
-    const margin = dash?.margin_pct;
-    const cub = dash?.volume_delivered;
+    const baseBalance = dash?.base_balance ?? null;
+    const tripsInTransit = dash?.trips_in_transit ?? null;
+    const pendingReceipts = dash?.pending_receipts ?? null;
+    const artemCashBalance = dash?.artem_cash_balance ?? null;
     const artemDebt = dash?.artem_debt || 0;
-    const artemPaid = dash?.artem_paid || 0;
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📊 Дашборд</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
-      <div style="display:flex;gap:6px;margin-bottom:14px">
-        <div style="background:var(--accent);color:#000;padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700">Этот месяц</div>
+      <div class="stats">
+        ${statCard(baseBalance != null ? baseBalance + ' куб' : '—', 'Остаток на базе', 'a')}
+        ${statCard(tripsInTransit != null ? tripsInTransit : '—', 'Рейсов в пути', 'o')}
+        ${statCard(pendingReceipts != null ? pendingReceipts : '—', 'Ждут подтвержд.')}
       </div>
-      <div style="background:var(--card);border-radius:16px;padding:18px;margin-bottom:12px;border:1px solid var(--border)">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Выручка</div>
-        <div style="font-size:38px;font-weight:900;color:var(--accent);letter-spacing:-2px;line-height:1">${rev != null ? (rev / 1000000).toFixed(1) : '—'} <span style="font-size:18px;color:var(--text2);font-weight:400">млн ₽</span></div>
-        <div style="height:1px;background:var(--border);margin:12px 0"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center">
-          <div><div style="font-size:17px;font-weight:800">${profit != null ? (profit / 1000000).toFixed(1) : '—'}</div><div style="font-size:10px;color:var(--text2)">Прибыль млн</div></div>
-          <div><div style="font-size:17px;font-weight:800">${margin != null ? margin + '%' : '—'}</div><div style="font-size:10px;color:var(--text2)">Маржа</div></div>
-          <div><div style="font-size:17px;font-weight:800">${cub != null ? cub : '—'}</div><div style="font-size:10px;color:var(--text2)">Куб отгружено</div></div>
-        </div>
-      </div>
-      ${orders.slice(0, 2).map(o => listItem({ icon: '🚛', iconBg: 'y', title: o.client_name, sub: `${o.volume_delivered || 0} куб из ${o.volume_total || 0}`, rightVal: o.volume_total > 0 ? Math.round((o.volume_delivered / o.volume_total) * 100) + '%' : '—' })).join('')}
+      ${orders.slice(0, 2).map(o => listItem({ icon: '🚛', iconBg: 'y', title: o.client_name, sub: `${o.delivered || 0} куб из ${o.volume_ordered || 0}`, rightVal: o.volume_ordered > 0 ? Math.round(((o.delivered || 0) / o.volume_ordered) * 100) + '%' : '—' })).join('')}
       ${sectionHeader('Долг DTL перед Артёмом')}
       ${balanceBox(
-        [{ label: 'Рейсы машин Артёма', val: '−' + formatNum(artemDebt) + ' ₽', color: 'red' }, { label: 'Выплачено наличными', val: '+' + formatNum(artemPaid) + ' ₽', color: 'green' }],
-        'Остаток долга',
-        formatNum(Math.max(0, artemDebt - artemPaid)) + ' ₽',
+        [{ label: 'Задолженность по рейсам', val: formatNum(artemDebt) + ' ₽', color: 'red' }, { label: 'Остаток наличных у Артёма', val: formatNum(artemCashBalance) + ' ₽', color: 'green' }],
+        'Долг DTL',
+        formatNum(Math.max(0, artemDebt)) + ' ₽',
         'orange'
       )}
     </div>`;
@@ -1218,14 +1222,13 @@
   async function viewFleet() {
     let trucks = [];
     let artemDebtData = null;
-    try { trucks = (isArtem() ? await api.get('/api/trucks?owner=artem') : await api.get('/api/trucks')) || []; } catch (e) {}
+    try { trucks = (isArtem() ? await api.get('/api/trucks?owner=Артём') : await api.get('/api/trucks')) || []; } catch (e) {}
     if (isArtem()) {
       try { artemDebtData = await api.get('/api/base/artem-debt'); } catch (e) {}
     }
 
     const debtRub = artemDebtData ? (artemDebtData.debt_rub || 0) : 0;
-    const debtPaid = artemDebtData ? (artemDebtData.paid_rub || 0) : 0;
-    const debtBalance = Math.max(0, debtRub - debtPaid);
+    const debtBalance = debtRub;
     const debtMln = debtBalance > 0 ? (debtBalance / 1000000).toFixed(2) : '0';
 
     // Aggregate trips and revenue from truck data
@@ -1262,7 +1265,6 @@
       ${sectionHeader('Долг DTL передо мной')}
       <div class="bb">
         <div class="bbr"><div class="bbl">Рейсы моих машин (всего)</div><div class="bbv" style="color:var(--red)">${formatNum(Math.round(debtRub))} ₽</div></div>
-        <div class="bbr"><div class="bbl">Получил наличными</div><div class="bbv" style="color:var(--green)">−${formatNum(Math.round(debtPaid))} ₽</div></div>
         <div class="bbt"><span style="color:var(--text2)">DTL мне должна</span><span style="color:var(--orange)">${formatNum(Math.round(debtBalance))} ₽</span></div>
       </div>
       ` : ''}
@@ -1802,4 +1804,10 @@
   window.navigate = navigate;
 
   boot();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  }
 })();
