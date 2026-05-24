@@ -225,7 +225,7 @@
           <div class="user-avatar">${getUserInitials().toUpperCase()}</div>
           <div>
             <div class="user-name">${esc(user.name || user.email)}</div>
-            <div class="user-role">${esc(user.role === 'partner' ? 'Партнёр DTL · Полный доступ' : user.role === 'artem' ? 'Партнёр (база)' : 'Оператор')}</div>
+            <div class="user-role">${esc(user.role === 'partner' ? 'Партнёр DTL · Полный доступ' : user.role === 'artem' ? 'Артём · Ограниченный доступ' : 'Оператор')}</div>
           </div>
           <button class="btn-logout-sidebar" onclick="doLogout()">⏻</button>
         </div>
@@ -302,7 +302,7 @@
     }
     if (h === 'base/receipts/new') { viewBaseReceiptNew(); return; }
     if (h === 'base/dispatches/new') { viewBaseDispatchNew(); return; }
-    if (h === 'orders') { viewOrders(); return; }
+    if (h === 'orders') { if (isOp()) { navigate('#home'); return; } viewOrders(); return; }
     if (h.startsWith('orders/')) { viewOrderDetail(h.split('/')[1]); return; }
     if (h === 'income') { viewIncome(); return; }
     if (h === 'expenses') { viewExpenses(); return; }
@@ -313,7 +313,7 @@
     if (h === 'analytics' || h.startsWith('analytics?')) { viewAnalytics(); return; }
     if (h === 'balance' || h.startsWith('balance?')) { viewBalance(); return; }
     if (h === 'annual' || h.startsWith('annual?')) { viewAnnual(); return; }
-    if (h === 'settings') { viewSettings(); return; }
+    if (h === 'settings') { if (isOp()) { navigate('#home'); return; } viewSettings(); return; }
     viewHome();
   }
 
@@ -1524,11 +1524,12 @@
     const hashParams = new URLSearchParams((location.hash.split('?')[1] || ''));
     if (hashParams.get('year')) selYear = parseInt(hashParams.get('year'));
     if (hashParams.get('month')) selMonth = parseInt(hashParams.get('month'));
-    let summary = null, clients = [], trucks = [], suppliers = [];
+    let summary = null, clients = [], trucks = [], suppliers = [], carriers = [];
     try { summary  = await api.get(`/api/analytics/summary?year=${selYear}&month=${selMonth}`); } catch (e) { sendLog('warn', `[analytics] summary err: ${e.message}`); }
     try { clients  = await api.get(`/api/analytics/clients?year=${selYear}`) || []; } catch (e) { sendLog('warn', `[analytics] clients err: ${e.message}`); }
     try { trucks   = await api.get(`/api/analytics/trucks?year=${selYear}&month=${selMonth}`) || []; } catch (e) { sendLog('warn', `[analytics] trucks err: ${e.message}`); }
     try { suppliers = await api.get(`/api/analytics/suppliers?year=${selYear}`) || []; } catch (e) { sendLog('warn', `[analytics] suppliers err: ${e.message}`); }
+    try { carriers  = await api.get(`/api/analytics/carriers?year=${selYear}&month=${selMonth}`) || []; } catch (e) { sendLog('warn', `[analytics] carriers err: ${e.message}`); }
     sendLog('info', `[analytics] data ok: summary=${!!summary} clients=${Array.isArray(clients)?clients.length:'NOT_ARRAY:'+typeof clients} trucks=${Array.isArray(trucks)?trucks.length:'NOT_ARRAY:'+typeof trucks}`);
 
     const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
@@ -1582,6 +1583,16 @@
       </div>`;
     }).join('') : `<div class="empty-state">Нет данных</div>`;
 
+    // Carriers section
+    const carrierRows = carriers.length ? carriers.map(c => {
+      const isOrange = c.pct_cost >= 40;
+      return `<div class="prog-mini-row">
+        <div class="prog-mini-label" title="${esc(c.carrier_name)}">${esc(c.carrier_name)}</div>
+        <div class="prog-mini-bar"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%" data-target="${c.pct_cost}%"></div></div>
+        <div class="prog-mini-val">${c.pct_cost}% · ${c.pct_volume}% объём</div>
+      </div>`;
+    }).join('') : `<div class="empty-state">Нет данных</div>`;
+
     // Financial summary card
     const rev = summary ? summary.revenue_total : 0;
     const profit = summary ? summary.profit : 0;
@@ -1608,6 +1619,11 @@
       ${sectionHeader('Поставщики — доля закупок')}
       <div class="pi">
         ${supplierRows}
+      </div>
+
+      ${sectionHeader('Перевозчики — доля объёма и суммы')}
+      <div class="pi">
+        ${carrierRows}
       </div>
 
       ${sectionHeader('Финансовый итог · ' + monthLabel + ' ' + selYear)}
@@ -1676,9 +1692,10 @@
       const d = monthly.find(row => row.month === bm.m);
       return { label: months[bm.m - 1], net: d ? d.net_assets : 0, isCurrent: bm.m === selMonth && bm.y === selYear };
     });
-    const maxNet = Math.max(...barData.map(b => b.net), 1);
+    const maxNet = Math.max(...barData.map(b => Math.max(0, b.net || 0)), 1);
     const barsHtml = barData.map(b => {
-      const heightPx = Math.max(4, Math.round((b.net / maxNet) * 60));
+      const netVal = Math.max(0, b.net || 0);
+      const heightPx = Math.max(4, Math.round((netVal / maxNet) * 60));
       const valLabel = b.net > 0 ? (b.net / 1000000).toFixed(1) : '0';
       return `<div class="bar-col">
         <div class="bar-val">${valLabel}</div>
@@ -1746,6 +1763,13 @@
 
   // ── Annual (Phase 3) ──────────────────────────────────────────────────────
   async function viewAnnual() {
+    try { await _viewAnnual(); } catch (e) {
+      console.error('[viewAnnual ERROR]', e);
+      sendLog('error', '[viewAnnual] ' + e.message, e.stack);
+    }
+  }
+
+  async function _viewAnnual() {
     if (!isPartner()) { navigate('#home'); return; }
 
     const now = new Date();
@@ -1768,13 +1792,23 @@
     const fmt = (n) => n > 0 ? formatNum(Math.round(n)) : '—';
     const mln = (n) => n > 0 ? (n / 1000000).toFixed(1) : '—';
 
-    const clients = data ? data.clients : [];
+    const clients = (data && data.clients) ? data.clients : [];
     const clientRows = clients.length ? clients.map(c => {
       const isOrange = c.pct_of_total >= 40;
       return `<div class="prog-mini-row">
         <div class="prog-mini-label" title="${esc(c.client_name)}">${esc(c.client_name)}</div>
         <div class="prog-mini-bar"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%" data-target="${c.pct_of_total}%"></div></div>
         <div class="prog-mini-val">${c.pct_of_total}%</div>
+      </div>`;
+    }).join('') : `<div class="empty-state">Нет данных</div>`;
+
+    const annualSuppliers = (data && data.suppliers) ? data.suppliers : [];
+    const annualSupplierRows = annualSuppliers.length ? annualSuppliers.map(s => {
+      const isOrange = s.pct_of_total >= 40;
+      return `<div class="prog-mini-row">
+        <div class="prog-mini-label" title="${esc(s.supplier_name)}">${esc(s.supplier_name)}</div>
+        <div class="prog-mini-bar"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%" data-target="${s.pct_of_total}%"></div></div>
+        <div class="prog-mini-val">${s.pct_of_total}%</div>
       </div>`;
     }).join('') : `<div class="empty-state">Нет данных</div>`;
 
@@ -1804,6 +1838,11 @@
       ${sectionHeader('Клиенты ' + selYear)}
       <div class="pi">
         ${clientRows}
+      </div>
+
+      ${sectionHeader('Поставщики ' + selYear)}
+      <div class="pi">
+        ${annualSupplierRows}
       </div>
 
       <button class="btn-secondary" onclick="window.open('/api/annual/export?year=${selYear}')">Экспорт CSV</button>

@@ -263,6 +263,52 @@ def analytics_suppliers(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# /api/analytics/carriers
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/analytics/carriers")
+def analytics_carriers(
+    year: int = Query(default=2026),
+    month: int = Query(default=5),
+    user: dict = Depends(require_partner),
+):
+    """Carrier share of volume and cost for the period."""
+    rows = query(
+        """
+        SELECT
+          COALESCE(cr.name, hd.carrier_custom, 'Неизвестно') AS carrier_name,
+          COUNT(*) AS trips,
+          COALESCE(SUM(hd.volume_liters), 0) AS volume,
+          COALESCE(SUM(hd.amount_carrier), 0) AS cost
+        FROM hire_deliveries hd
+        LEFT JOIN carriers cr ON cr.id = hd.carrier_id
+        WHERE hd.amount_carrier IS NOT NULL AND hd.amount_carrier > 0
+          AND EXTRACT(YEAR FROM hd.delivery_at) = %s
+          AND EXTRACT(MONTH FROM hd.delivery_at) = %s
+        GROUP BY COALESCE(cr.name, hd.carrier_custom, 'Неизвестно')
+        ORDER BY cost DESC
+        """,
+        (year, month),
+    )
+
+    total_volume = sum(_safe_float(r["volume"]) for r in rows)
+    total_cost = sum(_safe_float(r["cost"]) for r in rows)
+    result = []
+    for r in rows:
+        vol = _safe_float(r["volume"])
+        cost = _safe_float(r["cost"])
+        result.append({
+            "carrier_name": r["carrier_name"],
+            "trips": _safe_int(r["trips"]),
+            "volume": round(vol, 2),
+            "cost": round(cost, 2),
+            "pct_volume": round((vol / total_volume * 100), 1) if total_volume > 0 else 0.0,
+            "pct_cost": round((cost / total_cost * 100), 1) if total_cost > 0 else 0.0,
+        })
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # /api/analytics/monthly
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -571,6 +617,31 @@ def annual_summary(
             "pct_of_total": round((rev / total_client_rev * 100), 1) if total_client_rev > 0 else 0.0,
         })
 
+    # Suppliers breakdown for the year
+    supplier_rows = query(
+        """
+        SELECT
+          COALESCE(s.name, fr.source_custom) AS supplier_name,
+          COALESCE(SUM(fr.volume_adjusted), 0) AS volume
+        FROM fuel_receipts fr
+        LEFT JOIN suppliers s ON s.id = fr.supplier_id
+        WHERE EXTRACT(YEAR FROM fr.received_at) = %s
+          AND fr.ttn_confirmed = TRUE
+        GROUP BY COALESCE(s.name, fr.source_custom)
+        ORDER BY volume DESC
+        """,
+        (year,),
+    )
+    total_sup_volume = sum(_safe_float(r["volume"]) for r in supplier_rows)
+    suppliers = []
+    for r in supplier_rows:
+        vol = _safe_float(r["volume"])
+        suppliers.append({
+            "supplier_name": r["supplier_name"] or "Неизвестно",
+            "volume": round(vol, 2),
+            "pct_of_total": round((vol / total_sup_volume * 100), 1) if total_sup_volume > 0 else 0.0,
+        })
+
     return {
         "year": year,
         "revenue_fleet": round(revenue_fleet, 2),
@@ -581,6 +652,7 @@ def annual_summary(
         "expenses_general": round(expenses_general, 2),
         "profit": round(profit, 2),
         "clients": clients,
+        "suppliers": suppliers,
     }
 
 
