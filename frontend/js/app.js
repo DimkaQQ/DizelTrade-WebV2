@@ -190,7 +190,7 @@
           <div class="nav-group-label">Главное</div>
           <div class="nav-item" data-page="dashboard" onclick="navigate('#dashboard')"><span class="ni-icon">📊</span> Дашборд</div>
           <div class="nav-item" data-page="base" onclick="navigate('#base')"><span class="ni-icon">⛽</span> База Тында<span class="ni-badge" id="sb-pending-badge" style="display:none">0</span></div>
-          <div class="nav-item" data-page="orders" onclick="navigate('#orders')"><span class="ni-icon">📦</span> Заказы клиентов</div>
+          ${!isOp() ? `<div class="nav-item" data-page="orders" onclick="navigate('#orders')"><span class="ni-icon">📦</span> Заказы клиентов</div>` : `<div class="nav-item nav-item-dim"><span class="ni-icon">📦</span> Заказы клиентов</div>`}
           <div class="nav-item" data-page="base-dispatches" onclick="navigate('#base?tab=trips')"><span class="ni-icon">🚚</span> Журнал рейсов</div>
 
           ${isPartner() ? `
@@ -219,7 +219,7 @@
           `}
 
           <div class="nav-group-label">Система</div>
-          <div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>
+          ${!isOp() ? `<div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>` : `<div class="nav-item nav-item-dim"><span class="ni-icon">⚙️</span> Настройки</div>`}
         </div>
         <div class="sidebar-user">
           <div class="user-avatar">${getUserInitials().toUpperCase()}</div>
@@ -302,7 +302,7 @@
     }
     if (h === 'base/receipts/new') { viewBaseReceiptNew(); return; }
     if (h === 'base/dispatches/new') { viewBaseDispatchNew(); return; }
-    if (h === 'orders') { if (isOp()) { navigate('#home'); return; } viewOrders(); return; }
+    if (h === 'orders') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewOrders(); return; }
     if (h.startsWith('orders/')) { viewOrderDetail(h.split('/')[1]); return; }
     if (h === 'income') { viewIncome(); return; }
     if (h === 'expenses') { viewExpenses(); return; }
@@ -313,7 +313,7 @@
     if (h === 'analytics' || h.startsWith('analytics?')) { viewAnalytics(); return; }
     if (h === 'balance' || h.startsWith('balance?')) { viewBalance(); return; }
     if (h === 'annual' || h.startsWith('annual?')) { viewAnnual(); return; }
-    if (h === 'settings') { if (isOp()) { navigate('#home'); return; } viewSettings(); return; }
+    if (h === 'settings') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewSettings(); return; }
     viewHome();
   }
 
