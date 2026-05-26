@@ -125,12 +125,51 @@
     return `<div class="fsec"><div class="fl">${esc(label)}</div>${inputHtml}</div>`;
   }
 
-  function photoButton() {
-    return `<div class="photo-btn">
-      <div class="pi2">📷</div>
-      <div class="pt2">Сфотографировать ТТН</div>
-      <div class="ps">или добавить позже — запись сохранится без фото</div>
-    </div>`;
+  function photoButton(inputId) {
+    return `<label class="photo-btn" for="${inputId}">
+    <div class="pi2">📷</div>
+    <div class="pt2">Сфотографировать ТТН</div>
+    <div class="ps">Нажми чтобы выбрать или сделать фото</div>
+    <input type="file" id="${inputId}" accept="image/*" capture="environment" style="display:none" onchange="previewPhoto('${inputId}')">
+  </label>
+  <div id="${inputId}-preview" style="display:none;margin-top:8px">
+    <img id="${inputId}-img" style="max-width:100%;border-radius:8px;max-height:200px" src="" alt="ТТН">
+  </div>`;
+  }
+
+  window.previewPhoto = function(inputId) {
+    const file = document.getElementById(inputId)?.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = document.getElementById(inputId + '-img');
+      const preview = document.getElementById(inputId + '-preview');
+      if (img) img.src = e.target.result;
+      if (preview) preview.style.display = 'block';
+      const label = document.querySelector(`label[for="${inputId}"] .pt2`);
+      if (label) label.textContent = '✅ Фото выбрано';
+    };
+    reader.readAsDataURL(file);
+  };
+
+  async function uploadTtnPhoto(inputId) {
+    const input = document.getElementById(inputId);
+    const file = input?.files[0];
+    if (!file) return null;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const resp = await fetch('/api/upload/ttn', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + api.getToken() },
+        body: formData,
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return data.url || null;
+    } catch (e) {
+      return null;
+    }
   }
 
   function sectionHeader(text) {
@@ -373,6 +412,21 @@
     } catch (e) { user = null; }
     setupLayout();
     render(location.hash || '#home');
+    // Re-register push subscription if already granted
+    if (user && 'Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) {
+          const j = existing.toJSON();
+          await fetch('/api/notifications/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + api.getToken() },
+            body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }),
+          });
+        }
+      } catch (e) { /* non-critical */ }
+    }
     setInterval(() => {
       document.querySelectorAll('#sb-time').forEach(el => { el.textContent = currentTime(); });
     }, 30000);
@@ -730,7 +784,7 @@
       </div>
       <div class="auto-calc" id="auto-calc">→ Пересчитано: <strong>200.0 куб</strong> при 20°C</div>`)}
       ${formField('Номер ТТН', `<input class="inp" type="text" id="f-ttn" placeholder="ТТН-2026-...">`)}
-      ${formField('Фото ТТН', photoButton())}
+      ${formField('Фото ТТН', photoButton('f-photo-r'))}
       <button class="btn-primary" onclick="submitReceiptForm()">Далее →</button>
       <button class="btn-secondary" onclick="navigate('#base')">Отмена</button>
     </div>
@@ -766,7 +820,9 @@
     const source = sourceEl ? sourceEl.getAttribute('data-val') : '';
     const converted = (parseFloat(vol) * parseFloat(density) / 0.840).toFixed(1);
     const sub = document.getElementById('conf-sub');
-    if (sub) sub.innerHTML = `📥 <strong>${esc(source)} → База Тында</strong><br>Объём: <strong>${esc(vol)} куб</strong> (${esc(converted)} приведённых)<br>Плотность: ${esc(density)} · Темп: +${esc(temp)}°C<br>ТТН: ${ttn ? esc(ttn) : '<span style="color:var(--text3)">не указан</span>'}<br><span style="color:var(--orange)">⚠ Фото не прикреплено</span>`;
+    const hasPhoto = document.getElementById('f-photo-r')?.files?.length > 0;
+    const photoLine = hasPhoto ? '<span style="color:var(--green)">✅ Фото прикреплено</span>' : '<span style="color:var(--orange)">⚠ Фото не прикреплено</span>';
+    if (sub) sub.innerHTML = `📥 <strong>${esc(source)} → База Тында</strong><br>Объём: <strong>${esc(vol)} куб</strong> (${esc(converted)} приведённых)<br>Плотность: ${esc(density)} · Темп: +${esc(temp)}°C<br>ТТН: ${ttn ? esc(ttn) : '<span style="color:var(--text3)">не указан</span>'}<br>${photoLine}`;
     const overlay = document.getElementById('conf-overlay');
     if (overlay) overlay.style.display = 'flex';
   };
@@ -779,9 +835,20 @@
     const sourceEl = document.querySelector('.chips[data-group="source"] .chip.sel');
     const source = sourceEl ? sourceEl.getAttribute('data-val') : '';
     try {
-      await api.post('/api/base/receipts', { source_custom: source, volume_nominal: vol, density, temperature: temp, ttn_number: ttn });
+      const res = await api.post('/api/base/receipts', { source_custom: source, volume_nominal: vol, density, temperature: temp, ttn_number: ttn });
       const overlay = document.getElementById('conf-overlay');
       if (overlay) overlay.style.display = 'none';
+      if (res && res.id) {
+        const photoUrl = await uploadTtnPhoto('f-photo-r');
+        if (photoUrl) {
+          try {
+            await fetch(`/api/base/receipts/${res.id}/photo?photo_url=${encodeURIComponent(photoUrl)}`, {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + api.getToken() },
+            });
+          } catch (e2) { /* photo upload failed, not critical */ }
+        }
+      }
       toast('✅ Записано! Артём получит уведомление.');
       navigate('#base');
     } catch (e) { toast(e.message, 'error'); }
@@ -823,7 +890,7 @@
         <div class="tariff-val" id="tariff-val">—</div>
       </div>
       ${formField('Номер ТТН', `<input class="inp" type="text" id="f-ttn-d" placeholder="ТТН-2026-...">`)}
-      ${formField('Фото ТТН', photoButton())}
+      ${formField('Фото ТТН', photoButton('f-photo-d'))}
       <div style="background:rgba(50,215,75,.06);border:1px solid rgba(50,215,75,.15);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:var(--green)">
         «Доставлено» отмечает Артём или приёмщик, когда водитель вернулся с подписанным ТТН
       </div>
@@ -889,7 +956,7 @@
     const ownerMap = { 'Наш DTL': 'DTL', 'Автопарк Артёма': 'Артём', 'Наёмная': 'наёмная' };
     const ownerRaw = ownerEl ? ownerEl.getAttribute('data-val') : 'Наш DTL';
     try {
-      await api.post('/api/base/dispatches', {
+      const res = await api.post('/api/base/dispatches', {
         truck_id: truckEl ? parseInt(truckEl.getAttribute('data-val')) || null : null,
         driver_id: driverEl ? parseInt(driverEl.getAttribute('data-val')) || null : null,
         site_id: siteEl ? parseInt(siteEl.getAttribute('data-val')) : null,
@@ -897,6 +964,17 @@
         volume: vol,
         ttn_number: ttn
       });
+      if (res && res.id) {
+        const photoUrl = await uploadTtnPhoto('f-photo-d');
+        if (photoUrl) {
+          try {
+            await fetch(`/api/base/dispatches/${res.id}/photo?photo_url=${encodeURIComponent(photoUrl)}`, {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + api.getToken() },
+            });
+          } catch (e2) { /* photo upload failed, not critical */ }
+        }
+      }
       toast('✅ Рейс зафиксирован!');
       navigate('#base?tab=trips');
     } catch (e) { toast(e.message, 'error'); }
@@ -1327,6 +1405,39 @@
   };
 
   // ── Settings ──────────────────────────────────────────────────────────────
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) { outputArray[i] = rawData.charCodeAt(i); }
+    return outputArray;
+  }
+
+  window.subscribePush = async function() {
+    const btn = document.getElementById('push-subscribe-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { toast('Уведомления заблокированы', 'error'); if (btn) btn.disabled = false; return; }
+      const reg = await navigator.serviceWorker.ready;
+      const keyResp = await fetch('/api/notifications/vapid-public-key');
+      const { key } = await keyResp.json();
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+      const j = sub.toJSON();
+      await fetch('/api/notifications/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + api.getToken() },
+        body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }),
+      });
+      toast('✅ Push-уведомления подключены!');
+      if (btn) { btn.textContent = '✅ Подключено'; btn.disabled = false; }
+    } catch (e) {
+      toast('Ошибка подписки: ' + e.message, 'error');
+      if (btn) btn.disabled = false;
+    }
+  };
+
   async function viewSettings() {
     let sites = [], tariffs = [], suppliers = [], carriers = [], settings = [];
     try { sites = await api.get('/api/sites') || []; } catch (e) {}
@@ -1337,10 +1448,22 @@
 
     const getSetting = (key, def) => { const s = settings.find(x => x.key === key); return s ? s.value : def; };
 
+    const pushSupported = ('Notification' in window && 'serviceWorker' in navigator);
+    let pushPermState = pushSupported ? Notification.permission : 'unsupported';
+    let pushBtnLabel = 'Подключить уведомления';
+    if (pushPermState === 'granted') pushBtnLabel = '✅ Подключено (обновить)';
+    if (pushPermState === 'denied') pushBtnLabel = '🚫 Заблокировано в браузере';
+
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">⚙️ Настройки</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
+
+      ${sectionHeader('Push-уведомления')}
+      ${pushSupported ? `<div class="bb">
+        <div class="bbr"><div class="bbl">Статус</div><div class="bbv">${pushPermState === 'granted' ? '<span style="color:var(--green)">✅ Разрешены</span>' : pushPermState === 'denied' ? '<span style="color:var(--red)">🚫 Заблокированы</span>' : '<span style="color:var(--text2)">Не запрошено</span>'}</div></div>
+      </div>
+      <button id="push-subscribe-btn" class="btn-secondary" style="width:100%;margin-top:8px" onclick="subscribePush()" ${pushPermState === 'denied' ? 'disabled' : ''}>${pushBtnLabel}</button>` : `<div class="info-tag">Push-уведомления не поддерживаются в этом браузере</div>`}
 
       ${sectionHeader('Участки')}
       ${sites.map(s => `<div class="li">
