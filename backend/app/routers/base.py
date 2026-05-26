@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 
 from ..database import query, query_one, execute, get_db
@@ -137,7 +137,7 @@ def get_receipt(receipt_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.post("/receipts", status_code=201)
-def create_receipt(body: ReceiptCreate, user: dict = Depends(get_current_user)):
+def create_receipt(body: ReceiptCreate, bg: BackgroundTasks, user: dict = Depends(get_current_user)):
     # Determine auto-confirm
     auto_confirm = False
     if body.supplier_id:
@@ -182,7 +182,19 @@ def create_receipt(body: ReceiptCreate, user: dict = Depends(get_current_user)):
             returning=True,
         )
         log_action(conn, "fuel_receipts", row["id"], "INSERT", user["id"], new_data=dict(row))
-    return row
+
+    # Push notification to partners
+    from .notifications import push_to_role
+    source_label = body.source_custom or "Неизвестно"
+    push_to_role(
+        "partner",
+        "DTL · Новая приёмка",
+        f"{source_label} → База Тында: {volume_adjusted:.1f} куб",
+        "/base",
+        bg=bg,
+    )
+
+    return {"id": row["id"], "ok": True, **dict(row)}
 
 
 @router.put("/receipts/{receipt_id}/confirm")
@@ -349,7 +361,7 @@ def create_dispatch(body: DispatchCreate, user: dict = Depends(get_current_user)
             returning=True,
         )
         log_action(conn, "fuel_dispatches", row["id"], "INSERT", user["id"], new_data=dict(row))
-    return row
+    return {"id": row["id"], "ok": True, **dict(row)}
 
 
 @router.put("/dispatches/{dispatch_id}/status")

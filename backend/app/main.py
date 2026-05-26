@@ -7,7 +7,7 @@ import logging
 import time
 from .config import settings
 from .security import SecurityMiddleware
-from .routers import auth, dashboard, base, orders, fleet, reference, hire, income, expenses, debts, settings_router, notifications, logs as logs_router
+from .routers import auth, dashboard, base, orders, fleet, reference, hire, income, expenses, debts, settings_router, notifications, logs as logs_router, uploads as uploads_router
 from .routers import analytics as analytics_router
 
 LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "app.log")
@@ -47,6 +47,7 @@ app.include_router(settings_router.router, prefix="/api", tags=["settings"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(analytics_router.router, prefix="/api", tags=["analytics"])
 app.include_router(logs_router.router, tags=["logs"])
+app.include_router(uploads_router.router, prefix="/api", tags=["uploads"])
 
 
 @app.middleware("http")
@@ -69,6 +70,11 @@ async def log_requests(request: Request, call_next):
 def health():
     return {"status": "ok", "version": "2.0.0"}
 
+
+# Serve uploaded files (TTN photos etc.)
+_uploads_dir = os.path.join(os.path.dirname(__file__), "..", "..", "uploads")
+os.makedirs(_uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
 # Serve frontend static files
 _frontend = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
