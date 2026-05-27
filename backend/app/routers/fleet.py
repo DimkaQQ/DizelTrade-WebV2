@@ -35,9 +35,20 @@ def list_trucks(
         parts.append("t.status = %s")
         params.append(status)
 
-    # Artem sees only his trucks for editing; DTL trucks read-only for artem
     where = " AND ".join(parts)
-    return query(f"SELECT * FROM trucks t WHERE {where} ORDER BY t.owner, t.name", params)
+    return query(f"""
+        SELECT t.*,
+            COALESCE(d.trips_month, 0) AS trips_month
+        FROM trucks t
+        LEFT JOIN (
+            SELECT truck_id, COUNT(*) AS trips_month
+            FROM fuel_dispatches
+            WHERE status = 'delivered'
+              AND dispatched_at >= DATE_TRUNC('month', NOW())
+            GROUP BY truck_id
+        ) d ON d.truck_id = t.id
+        WHERE {where} ORDER BY t.owner, t.name
+    """, params)
 
 
 @router.get("/trucks/{truck_id}")

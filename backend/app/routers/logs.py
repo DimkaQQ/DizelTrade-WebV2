@@ -53,7 +53,7 @@ async def tail_logs(n: int = 100, user=Depends(get_current_user)):
 
 
 @router.get("/api/logs")
-def get_audit_logs(limit: int = Query(50, ge=1, le=200), user: dict = Depends(require_partner)):
+def get_audit_logs(limit: int = Query(500, ge=1, le=1000), user: dict = Depends(require_partner)):
     rows = query("""
         SELECT al.*, u.name AS user_name
         FROM audit_log al
