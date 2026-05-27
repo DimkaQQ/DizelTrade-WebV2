@@ -2693,13 +2693,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     // Read hash params if any: #analytics?year=2026&month=5
     const hashParams = new URLSearchParams((location.hash.split('?')[1] || ''));
     if (hashParams.get('year')) selYear = parseInt(hashParams.get('year'));
-    if (hashParams.get('month')) selMonth = parseInt(hashParams.get('month'));
+    if (hashParams.get('month') !== null && hashParams.get('month') !== '') selMonth = parseInt(hashParams.get('month'));
+    // selMonth=0 means full year
+    const monthParam = selMonth ? `&month=${selMonth}` : '';
     let summary = null, clients = [], trucks = [], suppliers = [], carriers = [];
-    try { summary  = await api.get(`/api/analytics/summary?year=${selYear}&month=${selMonth}`); } catch (e) { sendLog('warn', `[analytics] summary err: ${e.message}`); }
-    try { clients  = await api.get(`/api/analytics/clients?year=${selYear}`) || []; } catch (e) { sendLog('warn', `[analytics] clients err: ${e.message}`); }
-    try { trucks   = await api.get(`/api/analytics/trucks?year=${selYear}&month=${selMonth}`) || []; } catch (e) { sendLog('warn', `[analytics] trucks err: ${e.message}`); }
-    try { suppliers = await api.get(`/api/analytics/suppliers?year=${selYear}`) || []; } catch (e) { sendLog('warn', `[analytics] suppliers err: ${e.message}`); }
-    try { carriers  = await api.get(`/api/analytics/carriers?year=${selYear}&month=${selMonth}`) || []; } catch (e) { sendLog('warn', `[analytics] carriers err: ${e.message}`); }
+    try { summary  = await api.get(`/api/analytics/summary?year=${selYear}&month=${selMonth || 1}`); } catch (e) { sendLog('warn', `[analytics] summary err: ${e.message}`); }
+    try { clients  = await api.get(`/api/analytics/clients?year=${selYear}${monthParam}`) || []; } catch (e) { sendLog('warn', `[analytics] clients err: ${e.message}`); }
+    try { trucks   = await api.get(`/api/analytics/trucks?year=${selYear}&month=${selMonth || new Date().getMonth()+1}`) || []; } catch (e) { sendLog('warn', `[analytics] trucks err: ${e.message}`); }
+    try { suppliers = await api.get(`/api/analytics/suppliers?year=${selYear}${monthParam}`) || []; } catch (e) { sendLog('warn', `[analytics] suppliers err: ${e.message}`); }
+    try { carriers  = await api.get(`/api/analytics/carriers?year=${selYear}&month=${selMonth || new Date().getMonth()+1}`) || []; } catch (e) { sendLog('warn', `[analytics] carriers err: ${e.message}`); }
     sendLog('info', `[analytics] data ok: summary=${!!summary} clients=${Array.isArray(clients)?clients.length:'NOT_ARRAY:'+typeof clients} trucks=${Array.isArray(trucks)?trucks.length:'NOT_ARRAY:'+typeof trucks}`);
 
     const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
@@ -2710,10 +2712,11 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       `<div class="year-tab${y === selYear ? ' active' : ''}" onclick="navigate('#analytics?year=${y}&month=${selMonth}')">${y}</div>`
     ).join('');
 
-    const monthTabsHtml = months.map((name, i) => {
-      const m = i + 1;
-      return `<div class="month-tab${m === selMonth ? ' active' : ''}" onclick="navigate('#analytics?year=${selYear}&month=${m}')">${name}</div>`;
-    }).join('');
+    const monthTabsHtml = `<div class="month-tab${selMonth === 0 ? ' active' : ''}" onclick="navigate('#analytics?year=${selYear}&month=0')">Год</div>` +
+      months.map((name, i) => {
+        const m = i + 1;
+        return `<div class="month-tab${m === selMonth ? ' active' : ''}" onclick="navigate('#analytics?year=${selYear}&month=${m}')">${name}</div>`;
+      }).join('');
 
     // Clients section
     const maxClientPct = clients.length ? Math.max(...clients.map(c => c.pct_of_total)) : 0;
@@ -2796,7 +2799,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${carrierRows}
       </div>
 
-      ${sectionHeader('Финансовый итог · ' + monthLabel + ' ' + selYear)}
+      ${sectionHeader('Финансовый итог · ' + (selMonth ? monthLabel + ' ' + selYear : 'Весь ' + selYear))}
       <div class="big-stat">
         <div class="bl">💰 Выручка</div>
         <div class="bv">${rev > 0 ? (rev / 1000000).toFixed(2) : '—'} <span class="bu">млн ₽</span></div>

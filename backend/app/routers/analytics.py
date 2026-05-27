@@ -128,11 +128,15 @@ def analytics_summary(
 @router.get("/analytics/clients")
 def analytics_clients(
     year: int = Query(default=2026),
+    month: int = Query(default=0),
     user: dict = Depends(require_partner),
 ):
-    """Client revenue breakdown for the year (dispatches + hire)."""
+    """Client revenue breakdown. month=0 means full year."""
+    month_filter = "AND EXTRACT(MONTH FROM delivery_at) = %(m)s" if month else ""
+    month_filter_fd = "AND EXTRACT(MONTH FROM fd.dispatched_at) = %(m)s" if month else ""
+    params = {"y": year, "m": month}
     rows = query(
-        """
+        f"""
         SELECT client_name, SUM(revenue) AS revenue, SUM(volume) AS volume
         FROM (
             SELECT c.name AS client_name,
@@ -142,19 +146,21 @@ def analytics_clients(
             JOIN orders o ON o.id = fd.order_id
             JOIN clients c ON c.id = o.client_id
             WHERE fd.status = 'delivered'
-              AND EXTRACT(YEAR FROM fd.dispatched_at) = %s
+              AND EXTRACT(YEAR FROM fd.dispatched_at) = %(y)s
+              {month_filter_fd}
             UNION ALL
             SELECT c.name AS client_name,
                    COALESCE(hd.amount_client, 0) AS revenue,
                    COALESCE(hd.volume_liters / 1000.0, 0) AS volume
             FROM hire_deliveries hd
             JOIN clients c ON c.id = hd.client_id
-            WHERE EXTRACT(YEAR FROM hd.delivery_at) = %s
+            WHERE EXTRACT(YEAR FROM hd.delivery_at) = %(y)s
+              {month_filter}
         ) t
         GROUP BY client_name
         ORDER BY revenue DESC
         """,
-        (year, year),
+        params,
     )
 
     total_rev = sum(_safe_float(r["revenue"]) for r in rows)
@@ -243,11 +249,14 @@ def analytics_trucks(
 @router.get("/analytics/suppliers")
 def analytics_suppliers(
     year: int = Query(default=2026),
+    month: int = Query(default=0),
     user: dict = Depends(require_partner),
 ):
-    """Supplier purchase share for the year (hire deliveries)."""
+    """Supplier purchase share. month=0 means full year."""
+    month_filter = "AND EXTRACT(MONTH FROM hd.delivery_at) = %s" if month else ""
+    params = [year] + ([month] if month else [])
     rows = query(
-        """
+        f"""
         SELECT
           COALESCE(s.name, 'Неизвестно') AS supplier_name,
           COALESCE(SUM(hd.volume_liters), 0) AS volume,
@@ -256,10 +265,11 @@ def analytics_suppliers(
         LEFT JOIN suppliers s ON s.id = hd.supplier_id
         WHERE EXTRACT(YEAR FROM hd.delivery_at) = %s
           AND hd.amount_supplier IS NOT NULL
+          {month_filter}
         GROUP BY COALESCE(s.name, 'Неизвестно')
         ORDER BY cost DESC
         """,
-        (year,),
+        params,
     )
 
     total_cost = sum(_safe_float(r["cost"]) for r in rows)
@@ -653,22 +663,28 @@ def annual_summary(
     total_expenses = expenses_fleet + expenses_fuel + expenses_carriers + expenses_general + hire_supplier_cost
     profit = total_revenue - total_expenses
 
-    # Clients breakdown
+    # Clients breakdown (dispatches + hire)
     client_rows = query(
         """
-        SELECT
-          c.name AS client_name,
-          COALESCE(SUM(fd.tariff), 0) AS revenue,
-          COALESCE(SUM(fd.volume), 0)  AS volume
-        FROM fuel_dispatches fd
-        JOIN orders o ON o.id = fd.order_id
-        JOIN clients c ON c.id = o.client_id
-        WHERE fd.status = 'delivered'
-          AND EXTRACT(YEAR FROM fd.dispatched_at) = %s
-        GROUP BY c.name
-        ORDER BY revenue DESC
+        SELECT client_name, SUM(revenue) AS revenue, SUM(volume) AS volume
+        FROM (
+            SELECT c.name AS client_name,
+                   COALESCE(fd.tariff, 0) AS revenue, COALESCE(fd.volume, 0) AS volume
+            FROM fuel_dispatches fd
+            JOIN orders o ON o.id = fd.order_id
+            JOIN clients c ON c.id = o.client_id
+            WHERE fd.status = 'delivered' AND EXTRACT(YEAR FROM fd.dispatched_at) = %s
+            UNION ALL
+            SELECT c.name AS client_name,
+                   COALESCE(hd.amount_client, 0) AS revenue,
+                   COALESCE(hd.volume_liters / 1000.0, 0) AS volume
+            FROM hire_deliveries hd
+            JOIN clients c ON c.id = hd.client_id
+            WHERE EXTRACT(YEAR FROM hd.delivery_at) = %s
+        ) t
+        GROUP BY client_name ORDER BY revenue DESC
         """,
-        (year,),
+        (year, year),
     )
     total_client_rev = sum(_safe_float(r["revenue"]) for r in client_rows)
     clients = []
@@ -681,29 +697,28 @@ def annual_summary(
             "pct_of_total": round((rev / total_client_rev * 100), 1) if total_client_rev > 0 else 0.0,
         })
 
-    # Suppliers breakdown for the year
+    # Suppliers breakdown (hire)
     supplier_rows = query(
         """
-        SELECT
-          COALESCE(s.name, fr.source_custom) AS supplier_name,
-          COALESCE(SUM(fr.volume_adjusted), 0) AS volume
-        FROM fuel_receipts fr
-        LEFT JOIN suppliers s ON s.id = fr.supplier_id
-        WHERE EXTRACT(YEAR FROM fr.received_at) = %s
-          AND fr.ttn_confirmed = TRUE
-        GROUP BY COALESCE(s.name, fr.source_custom)
-        ORDER BY volume DESC
+        SELECT COALESCE(s.name, 'Неизвестно') AS supplier_name,
+               COALESCE(SUM(hd.volume_liters), 0) AS volume,
+               COALESCE(SUM(hd.amount_supplier), 0) AS cost
+        FROM hire_deliveries hd
+        LEFT JOIN suppliers s ON s.id = hd.supplier_id
+        WHERE EXTRACT(YEAR FROM hd.delivery_at) = %s AND hd.amount_supplier IS NOT NULL
+        GROUP BY COALESCE(s.name, 'Неизвестно') ORDER BY cost DESC
         """,
         (year,),
     )
-    total_sup_volume = sum(_safe_float(r["volume"]) for r in supplier_rows)
+    total_sup_cost = sum(_safe_float(r["cost"]) for r in supplier_rows)
     suppliers = []
     for r in supplier_rows:
-        vol = _safe_float(r["volume"])
+        cost = _safe_float(r["cost"])
         suppliers.append({
             "supplier_name": r["supplier_name"] or "Неизвестно",
-            "volume": round(vol, 2),
-            "pct_of_total": round((vol / total_sup_volume * 100), 1) if total_sup_volume > 0 else 0.0,
+            "volume": round(_safe_float(r["volume"]), 2),
+            "cost": round(cost, 2),
+            "pct_of_total": round((cost / total_sup_cost * 100), 1) if total_sup_cost > 0 else 0.0,
         })
 
     return {
