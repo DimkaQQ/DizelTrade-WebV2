@@ -1833,27 +1833,30 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       </div>
       ${deals.length ? deals.map(d => {
         const volCub = d.volume_liters ? (d.volume_liters / 1000).toFixed(1) : null;
-        const revenue = d.amount_client ? formatNum(d.amount_client) + ' ₽' : null;
-        return `<div class="oc">
-        <div class="och">
-          <div style="flex:1;min-width:0">
-            <div class="ocn">${esc(d.client_name || '—')}${d.carrier_name || d.carrier_custom ? ` → <span style="color:var(--text2)">${esc(d.carrier_name || d.carrier_custom)}</span>` : ''}</div>
-            <div class="ocd">${[d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : '', d.supplier_name ? '⛽ ' + d.supplier_name : ''].filter(Boolean).join(' · ')}</div>
+        const marginColor = d.margin_pct >= 10 ? 'var(--green)' : d.margin_pct > 0 ? 'var(--orange)' : 'var(--red)';
+        return `<div class="oc" style="padding:16px;margin-bottom:10px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:17px;font-weight:700;margin-bottom:3px">${esc(d.client_name || '—')}${d.carrier_name || d.carrier_custom ? ` <span style="color:var(--text2);font-weight:400">→</span> ${esc(d.carrier_name || d.carrier_custom)}` : ''}</div>
+              <div style="font-size:13px;color:var(--text2)">${d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : ''}${d.supplier_name ? ' · ⛽ ' + esc(d.supplier_name) : ''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+              ${d.margin_pct ? `<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:${marginColor}">${d.margin_pct}%</div><div style="font-size:11px;color:var(--text2)">маржа</div></div>` : ''}
+              ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer">✏ Испр.</button>` : ''}
+            </div>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
-            <div><div class="oca" style="color:${d.margin_pct >= 10 ? 'var(--green)' : 'var(--orange)'}">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
-            ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+          ${d.volume_liters ? `<div style="font-size:15px;font-weight:600;margin-bottom:10px">📦 ${formatNum(d.volume_liters)} л${volCub ? ' <span style="font-size:13px;color:var(--text2);font-weight:400">(' + volCub + ' куб)</span>' : ''}</div>` : ''}
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
+            ${d.price_client ? `<div style="background:var(--card2);border-radius:8px;padding:8px 10px"><div style="font-size:16px;font-weight:700">${d.price_client} ₽/л</div><div style="font-size:11px;color:var(--text2);margin-top:2px">клиенту</div></div>` : '<div></div>'}
+            ${d.price_supplier ? `<div style="background:var(--card2);border-radius:8px;padding:8px 10px"><div style="font-size:16px;font-weight:700">${d.price_supplier} ₽/л</div><div style="font-size:11px;color:var(--text2);margin-top:2px">поставщику</div></div>` : '<div></div>'}
+            ${d.price_carrier ? `<div style="background:var(--card2);border-radius:8px;padding:8px 10px"><div style="font-size:16px;font-weight:700">${d.price_carrier} ₽/л</div><div style="font-size:11px;color:var(--text2);margin-top:2px">перевозчику</div></div>` : '<div></div>'}
           </div>
-        </div>
-        <div class="ocp-labels" style="margin-top:6px">
-          ${d.volume_liters ? `<span>📦 <strong>${formatNum(d.volume_liters)} л</strong>${volCub ? ' (' + volCub + ' куб)' : ''}</span>` : ''}
-          ${d.price_client ? `<span>${d.price_client} ₽/л → клиент</span>` : ''}
-          ${d.price_supplier ? `<span style="color:var(--text2)">${d.price_supplier} ₽/л поставщику</span>` : ''}
-          ${d.price_carrier ? `<span style="color:var(--text2)">${d.price_carrier} ₽/л перевозчику</span>` : ''}
-        </div>
-        ${revenue ? `<div style="margin-top:4px;font-size:12px;color:var(--text2)">Выручка: <strong style="color:var(--green)">${revenue}</strong>${d.margin ? ' · Маржа: <strong>' + formatNum(d.margin) + ' ₽</strong>' : ''}</div>` : ''}
-        ${d.comment ? `<div style="font-size:12px;color:var(--text3);margin-top:4px">${esc(d.comment)}</div>` : ''}
-      </div>`;
+          <div style="display:flex;gap:16px;font-size:14px;flex-wrap:wrap">
+            ${d.amount_client ? `<span>Выручка: <strong style="color:var(--green)">${formatNum(d.amount_client)} ₽</strong></span>` : ''}
+            ${d.margin ? `<span>Маржа: <strong>${formatNum(d.margin)} ₽</strong></span>` : ''}
+          </div>
+          ${d.comment ? `<div style="font-size:13px;color:var(--text2);margin-top:8px;padding:6px 10px;background:var(--card2);border-radius:7px">${esc(d.comment)}</div>` : ''}
+        </div>`;
       }).join('') : emptyState('Нет сделок')}
       <button class="btn-primary" style="margin-top:12px" onclick="showHireModal()">+ Новая сделка</button>
       ${printBtn('Распечатать / PDF')}
