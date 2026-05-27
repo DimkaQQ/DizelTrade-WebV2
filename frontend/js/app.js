@@ -868,7 +868,7 @@
       rightVal: r.volume + ' куб',
     })).join('') : emptyState('Нет записей');
 
-    const truckOpts = trucks.filter(t => t.status === 'active').map(t => ({ value: String(t.id), label: t.name }));
+    const truckOpts = trucks.filter(t => t.status !== 'archived').map(t => ({ value: String(t.id), label: t.name }));
 
     return `
       <div style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:12px">
