@@ -7,10 +7,14 @@ from ..deps import get_current_user
 router = APIRouter()
 
 # Uploads directory: project_root/uploads/
-_UPLOADS_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "uploads")
+_UPLOADS_DIR = os.environ.get(
+    "UPLOADS_DIR",
+    os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "uploads"))
 )
-os.makedirs(_UPLOADS_DIR, exist_ok=True)
+try:
+    os.makedirs(_UPLOADS_DIR, exist_ok=True)
+except PermissionError:
+    pass  # Directory must be created manually: mkdir -p /opt/dtl/uploads && chown <service-user> /opt/dtl/uploads
 
 _MAX_SIZE = 10 * 1024 * 1024  # 10 MB
 _ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
