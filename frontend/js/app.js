@@ -643,7 +643,7 @@
   async function viewBase(tab) {
     const activeTab = tab || 'main';
 
-    const tabTitles = { main: 'База Тында', receipts: 'Приёмки', trips: 'Журнал рейсов', cash: 'Наличные' };
+    const tabTitles = { main: 'База Тында', receipts: 'Приёмки', trips: 'Рейсы', cash: 'Наличные', advances: 'Авансы', recon: 'Сверка' };
     const pageTitle = tabTitles[activeTab] || 'База Тында';
 
     let balance = null, pending = [], dispatches = [], cashData = null;
@@ -659,7 +659,15 @@
 
     const inTransit = dispatches.filter(d => d.status === 'dispatched' || d.status === 'in_transit');
 
-    const tabDefs = [['main','Главная'],['receipts','Приёмки'],['trips','Рейсы'],['cash','Наличные']];
+    // Build tab list based on role
+    const tabDefs = [
+      ['main','Главная'],
+      ['receipts','Приёмки'],
+      ['trips','Рейсы'],
+      ...(!isOp() ? [['cash','Наличные']] : []),
+      ...(!isOp() ? [['advances','Авансы']] : []),
+      ['recon','Сверка'],
+    ];
 
     function subTabBar() {
       return `<div class="sub-tabs">${tabDefs.map(([t, l]) => `<div class="sub-tab${activeTab === t ? ' active' : ''}" onclick="navigate('#base?tab=${t}')">${l}</div>`).join('')}</div>`;
@@ -690,10 +698,10 @@
       <div class="menu-grid">
         ${menuCard({ icon: '📥', label: 'Принял топливо', accent: true, onClick: "navigate('#base/receipts/new')" })}
         ${menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" })}
-        ${menuCard({ icon: '💸', label: 'Аванс', sub: 'топливо в долг' })}
+        ${!isOp() ? menuCard({ icon: '💸', label: 'Авансы', sub: 'топливо в долг', onClick: "navigate('#base?tab=advances')" }) : ''}
         ${menuCard({ icon: '🔋', label: 'Заправка', sub: 'своих машин' })}
-        ${menuCard({ icon: '💵', label: 'Наличные', sub: 'Артёму' })}
-        ${menuCard({ icon: '📊', label: 'Состояние базы', onClick: "navigate('#base?tab=main')" })}
+        ${!isOp() ? menuCard({ icon: '💵', label: 'Наличные', sub: 'Артёму', onClick: "navigate('#base?tab=cash')" }) : ''}
+        ${menuCard({ icon: '📊', label: 'Сверка', onClick: "navigate('#base?tab=recon')" })}
       </div>
       ${sectionHeader('Рейсы в пути')}
       ${inTransit.length ? inTransit.map(d => `<div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer">${listItem({ icon: '🚚', iconBg: 'tr', title: `${d.truck_name || ''} → ${d.site_name || ''}`, sub: `${d.volume} куб · ${d.driver_name || ''} · ${d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : ''}`, badgeHtml: badge('В пути', 'transit') })}</div>`).join('') : emptyState('Нет рейсов в пути')}`;
@@ -708,7 +716,8 @@
         title: `${r.source_custom || r.supplier_name || '—'} — ${r.volume_nominal} куб`,
         sub: `${r.ttn_number || '—'} · ${r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : ''}`,
         badgeHtml: badge(r.ttn_confirmed === true ? 'Подтверждено' : 'Ожидает', r.ttn_confirmed === true ? 'done' : 'pending')
-      })}</div>`).join('') : emptyState('Нет приёмок')}`;
+      })}</div>`).join('') : emptyState('Нет приёмок')}
+      ${exportCsvBtn('receipts')}`;
 
     } else if (activeTab === 'trips') {
       tabContent = `
@@ -724,18 +733,15 @@
             ${isTransit && (isArtem() || isOp()) ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id})">Доставлено</button>` : ''}
           </div>
         </div></div>`;
-      }).join('') : emptyState('Нет рейсов')}`;
+      }).join('') : emptyState('Нет рейсов')}
+      ${exportCsvBtn('dispatches')}`;
 
     } else if (activeTab === 'cash') {
-      let cashList = [];
-      try { cashList = await api.get('/api/base/cash-artem') || []; } catch (e) {}
-      tabContent = `
-      ${cashData ? balanceBox(
-        [{ label: 'Выдано', val: formatNum(cashData.total_given) + ' ₽' }, { label: 'Освоено', val: '−' + formatNum(cashData.total_spent) + ' ₽', color: 'green' }],
-        'Остаток у Артёма', formatNum(cashData.balance) + ' ₽', 'orange'
-      ) : '<div class="empty-state">Нет данных по наличным</div>'}
-      ${isPartner() ? `<button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="showCashForm()">+ Выдать наличные</button>` : ''}
-      ${cashList.length ? cashList.map(c => listItem({ icon: '💵', iconBg: 'o', title: formatNum(c.amount_given) + ' ₽', sub: c.purpose || (c.created_at ? new Date(c.created_at).toLocaleDateString('ru') : '') })).join('') : emptyState('Нет записей')}`;
+      tabContent = await buildCashArtemTab();
+    } else if (activeTab === 'advances') {
+      tabContent = await buildAdvancesTab();
+    } else if (activeTab === 'recon') {
+      tabContent = await buildReconTab();
     }
 
     const html = `
@@ -752,6 +758,162 @@
     setPageContent(html, getTabBar());
     updateTabBar('base');
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = pageTitle;
+
+    // Load recon history asynchronously after page render
+    if (activeTab === 'recon') {
+      (async () => {
+        const histEl = document.getElementById('recon-history');
+        if (!histEl) return;
+        const histPeriods = [];
+        const now2 = new Date();
+        for (let i = 1; i <= 5; i++) {
+          const d = new Date(now2.getFullYear(), now2.getMonth() - i, 1);
+          histPeriods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        }
+        const months2 = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+        const rows2 = await Promise.all(histPeriods.map(p => api.get('/api/base/reconciliation/' + p).catch(() => null)));
+        histEl.innerHTML = rows2.map((r2, i) => {
+          const p = histPeriods[i];
+          const mo = months2[parseInt(p.split('-')[1]) - 1];
+          const yr = p.split('-')[0];
+          if (!r2 || r2.physical_stock == null) return `<div class="li"><div class="lic"><span style="color:var(--text3)">—</span></div><div class="lit"><div class="lim">${mo} ${yr}</div><div class="lis">Не проводилась</div></div></div>`;
+          const diff = parseFloat(r2.difference || 0);
+          const color = Math.abs(diff) > 5 ? 'var(--red)' : 'var(--green)';
+          return `<div class="li"><div class="lic g">✓</div><div class="lit"><div class="lim">${mo} ${yr}</div><div class="lis">Физ: ${parseFloat(r2.physical_stock).toFixed(1)} куб</div></div><div class="lir"><div class="lival" style="color:${color}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)}</div></div></div>`;
+        }).join('') || '<div class="empty-state">Нет данных</div>';
+      })();
+    }
+  }
+
+  // ── buildAdvancesTab ──────────────────────────────────────────────────────
+  async function buildAdvancesTab() {
+    let advances = [];
+    try { advances = await api.get('/api/base/advances') || []; } catch (e) {}
+
+    const openAdvances = advances.filter(a => a.status === 'open');
+    const closedAdvances = advances.filter(a => a.status === 'returned');
+
+    const fmt = n => n ? formatNum(Math.round(n)) : '—';
+
+    const totalOpen = openAdvances.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
+    const totalVolOpen = openAdvances.reduce((s, a) => s + (parseFloat(a.volume) || 0), 0);
+
+    const openRows = openAdvances.length ? openAdvances.map(a => `
+      <div class="li">
+        <div class="lic y">⛽</div>
+        <div class="lit">
+          <div class="lim">${esc(a.recipient || '—')}</div>
+          <div class="lis">${a.given_at ? new Date(a.given_at).toLocaleDateString('ru') : '—'}${a.volume ? ' · ' + a.volume + ' куб' : ''}</div>
+          ${a.notes ? `<div class="lis" style="color:var(--text3)">${esc(a.notes)}</div>` : ''}
+        </div>
+        <div class="lir">
+          ${a.amount ? `<div class="lival">${fmt(a.amount)} ₽</div>` : ''}
+          ${!isOp() ? `<button onclick="window.returnAdvance(${a.id})" style="margin-top:4px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">Вернули</button>` : ''}
+        </div>
+      </div>`).join('') : `<div class="empty-state">Нет открытых авансов</div>`;
+
+    const closedRows = closedAdvances.slice(0, 10).map(a => `
+      <div class="li" style="opacity:.6">
+        <div class="lic g">✓</div>
+        <div class="lit">
+          <div class="lim">${esc(a.recipient || '—')}</div>
+          <div class="lis">${a.given_at ? new Date(a.given_at).toLocaleDateString('ru') : '—'} · возвращено</div>
+        </div>
+        <div class="lir"><div class="lival">${fmt(a.amount)} ₽</div></div>
+      </div>`).join('');
+
+    return `
+      ${totalOpen > 0 ? `<div style="background:rgba(255,165,0,.1);border:1px solid var(--orange);border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:13px">
+        <span style="color:var(--orange);font-weight:700">Открытых авансов: ${openAdvances.length} · ${fmt(totalOpen)} ₽</span>
+        ${totalVolOpen > 0 ? ` · ${totalVolOpen} куб` : ''}
+      </div>` : ''}
+      ${sectionHeader('Открытые авансы')}
+      ${openRows}
+      ${isPartner() || isArtem() ? `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="window.addAdvanceModal()">+ Новый аванс</button>` : ''}
+      ${closedAdvances.length ? sectionHeader('Закрытые') + closedRows : ''}
+    `;
+  }
+
+  // ── buildCashArtemTab ─────────────────────────────────────────────────────
+  async function buildCashArtemTab() {
+    let records = [], artemBalance = null;
+    try { records = await api.get('/api/base/cash-artem') || []; } catch (e) {}
+    try { artemBalance = await api.get('/api/base/artem-balance'); } catch (e) {}
+
+    const fmt = n => n != null ? formatNum(Math.round(n)) : '—';
+    const balance = artemBalance ? parseFloat(artemBalance.balance || 0) : 0;
+
+    const rows = records.length ? records.map(r => {
+      const settled = r.is_settled;
+      return `<div class="li${settled ? '" style="opacity:.55' : ''}">
+        <div class="lic ${settled ? 'g' : 'y'}">${settled ? '✓' : '💵'}</div>
+        <div class="lit">
+          <div class="lim">${r.purpose ? esc(r.purpose) : 'Наличные Артёму'}</div>
+          <div class="lis">${r.given_at ? new Date(r.given_at).toLocaleDateString('ru') : '—'}
+            ${r.amount_spent ? ' · потрачено: ' + fmt(r.amount_spent) + ' ₽' : ''}
+            ${r.fuel_received ? ' · получено: ' + r.fuel_received + ' куб' : ''}
+          </div>
+        </div>
+        <div class="lir">
+          <div class="lival">${fmt(r.amount_given)} ₽</div>
+          ${!settled && isArtem() ? `<button onclick="window.reportCashArtem(${r.id})" style="margin-top:4px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">Отчёт</button>` : ''}
+          ${!settled && isPartner() && r.amount_spent ? `<button onclick="window.settleCashArtem(${r.id})" style="margin-top:4px;background:var(--card2);border:1px solid var(--border);color:var(--green);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">Закрыть</button>` : ''}
+        </div>
+      </div>`;
+    }).join('') : `<div class="empty-state">Нет записей</div>`;
+
+    return `
+      <div style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Остаток у Артёма (не освоено)</div>
+        <div style="font-size:28px;font-weight:700;color:${balance > 0 ? 'var(--orange)' : 'var(--text)'}">${fmt(balance)} ₽</div>
+      </div>
+      ${rows}
+      ${isPartner() ? `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="window.addCashArtemModal()">+ Выдать наличные</button>` : ''}
+    `;
+  }
+
+  // ── buildReconTab ─────────────────────────────────────────────────────────
+  async function buildReconTab() {
+    const now = new Date();
+    const thisPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    let recon = null, balance = null;
+    try { recon = await api.get('/api/base/reconciliation/' + thisPeriod); } catch (e) {}
+    try { balance = await api.get('/api/base/balance'); } catch (e) {}
+
+    const calcStock = balance ? parseFloat(balance.balance_cubic || 0) : 0;
+    const fmt = n => n != null ? parseFloat(n).toFixed(1) : '—';
+
+    const diffHtml = recon && recon.physical_stock != null ? (() => {
+      const diff = parseFloat(recon.difference || 0);
+      const color = Math.abs(diff) > 5 ? 'var(--red)' : 'var(--green)';
+      return `<div class="bbr"><div class="bbl">Расхождение</div><div class="bbv" style="color:${color}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)} куб</div></div>`;
+    })() : '';
+
+    const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    const monthName = months[parseInt(thisPeriod.split('-')[1]) - 1];
+    const yearName = thisPeriod.split('-')[0];
+
+    return `
+      ${sectionHeader('Сверка за ' + monthName + ' ' + yearName)}
+      <div class="bb">
+        <div class="bbr"><div class="bbl">Расчётный остаток (система)</div><div class="bbv" style="color:var(--accent)">${fmt(calcStock)} куб</div></div>
+        <div class="bbr"><div class="bbl">Физический замер</div><div class="bbv">${recon && recon.physical_stock != null ? fmt(recon.physical_stock) + ' куб' : '<span style="color:var(--text3)">Не внесён</span>'}</div></div>
+        ${diffHtml}
+        ${recon && recon.notes ? `<div class="bbr"><div class="bbl">Примечание</div><div class="bbv">${esc(recon.notes)}</div></div>` : ''}
+      </div>
+
+      ${!isOp() ? `
+      <div style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">Ввести физический замер</div>
+        <input id="recon-physical" class="inp" type="number" step="0.1" placeholder="Замер в кубах" value="${recon && recon.physical_stock != null ? recon.physical_stock : ''}" style="width:100%;margin-bottom:10px">
+        <input id="recon-notes" class="inp" placeholder="Примечание (опционально)" value="${recon && recon.notes ? esc(recon.notes) : ''}" style="width:100%;margin-bottom:10px">
+        <button onclick="window.submitReconciliation('${thisPeriod}', ${calcStock})" class="btn-primary" style="width:100%">Сохранить замер</button>
+      </div>` : ''}
+
+      ${sectionHeader('История сверок')}
+      <div id="recon-history">Загрузка...</div>
+    `;
   }
 
   window.confirmReceipt = async function (id) {
@@ -780,6 +942,212 @@
       await api.post('/api/base/cash-artem', { amount_given, purpose });
       toast('✅ Записано!');
       viewBase('cash');
+    });
+  };
+
+  // ── Advances global functions ─────────────────────────────────────────────
+  window.returnAdvance = async function(advanceId) {
+    if (!confirm('Отметить аванс как возвращённый?')) return;
+    try {
+      await api.put('/api/base/advances/' + advanceId + '/return', {});
+      toast('✅ Аванс закрыт');
+      navigate('#base?tab=advances');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.addAdvanceModal = function() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+    overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">Новый аванс топлива</div>
+      <input id="adv-recipient" class="inp" placeholder="Кому (Максим, другое)" style="width:100%;margin-bottom:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="adv-volume" class="inp" type="number" placeholder="Объём куб" style="flex:1">
+        <input id="adv-amount" class="inp" type="number" placeholder="Сумма ₽" style="flex:1">
+      </div>
+      <input id="adv-notes" class="inp" placeholder="Примечание (опционально)" style="width:100%;margin-bottom:16px">
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('[style*=z-index]').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+        <button onclick="window._submitAdvance()" class="btn-primary" style="flex:1">Записать</button>
+      </div>
+    </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window._submitAdvance = async function() {
+    const recipient = document.getElementById('adv-recipient')?.value?.trim();
+    const volume = parseFloat(document.getElementById('adv-volume')?.value) || null;
+    const amount = parseFloat(document.getElementById('adv-amount')?.value) || null;
+    const notes = document.getElementById('adv-notes')?.value?.trim() || null;
+    if (!recipient) { toast('Укажите кому', 'error'); return; }
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await api.post('/api/base/advances', { given_at: today, recipient, volume, amount, notes });
+      toast('✅ Аванс записан');
+      document.querySelector('[style*="z-index:9999"]')?.remove();
+      navigate('#base?tab=advances');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Cash Artem global functions ───────────────────────────────────────────
+  window.addCashArtemModal = function() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+    overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">Выдать наличные Артёму</div>
+      <input id="cash-amount" class="inp" type="number" placeholder="Сумма ₽" style="width:100%;margin-bottom:10px">
+      <input id="cash-purpose" class="inp" placeholder="Назначение (закупка Ангарск, прочее)" style="width:100%;margin-bottom:16px">
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('[style*=z-index]').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+        <button onclick="window._submitCashArtem()" class="btn-primary" style="flex:1">Записать</button>
+      </div>
+    </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window._submitCashArtem = async function() {
+    const amount = parseFloat(document.getElementById('cash-amount')?.value);
+    const purpose = document.getElementById('cash-purpose')?.value?.trim() || null;
+    if (!amount || amount <= 0) { toast('Укажите сумму', 'error'); return; }
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await api.post('/api/base/cash-artem', { given_at: today, amount_given: amount, purpose });
+      toast('✅ Записано');
+      document.querySelector('[style*="z-index:9999"]')?.remove();
+      navigate('#base?tab=cash');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.reportCashArtem = function(recordId) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+    overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">Отчёт по расходованию</div>
+      <input id="report-spent" class="inp" type="number" placeholder="Потрачено ₽" style="width:100%;margin-bottom:10px">
+      <input id="report-fuel" class="inp" type="number" placeholder="Получено топлива куб" style="width:100%;margin-bottom:10px">
+      <input id="report-notes" class="inp" placeholder="Примечание" style="width:100%;margin-bottom:16px">
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('[style*=z-index]').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+        <button onclick="window._submitCashReport(${recordId})" class="btn-primary" style="flex:1">Отправить</button>
+      </div>
+    </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window._submitCashReport = async function(recordId) {
+    const amount_spent = parseFloat(document.getElementById('report-spent')?.value) || 0;
+    const fuel_received = parseFloat(document.getElementById('report-fuel')?.value) || 0;
+    const notes = document.getElementById('report-notes')?.value?.trim() || null;
+    try {
+      await api.put('/api/base/cash-artem/' + recordId + '/report', { amount_spent, fuel_received, notes });
+      toast('✅ Отчёт отправлен');
+      document.querySelector('[style*="z-index:9999"]')?.remove();
+      navigate('#base?tab=cash');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.settleCashArtem = async function(recordId) {
+    if (!confirm('Закрыть эту запись? Деньги освоены и проверены.')) return;
+    try {
+      await api.put('/api/base/cash-artem/' + recordId + '/settle', {});
+      toast('✅ Запись закрыта');
+      navigate('#base?tab=cash');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Reconciliation global functions ───────────────────────────────────────
+  window.submitReconciliation = async function(period, calcStock) {
+    const physical = parseFloat(document.getElementById('recon-physical')?.value);
+    const notes = document.getElementById('recon-notes')?.value?.trim() || null;
+    if (!physical || isNaN(physical)) { toast('Введите замер', 'error'); return; }
+    try {
+      await api.post('/api/base/reconciliation', { period: period, physical_stock: physical, notes });
+      toast('✅ Замер сохранён');
+      navigate('#base?tab=recon');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Correction modal ──────────────────────────────────────────────────────
+  function showCorrectionModal({ title, fields, onSubmit }) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+    const fieldsHtml = fields.map(f => `
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${esc(f.label)}</div>
+        <input id="corr-${f.id}" class="inp" type="${f.type || 'text'}" value="${esc(String(f.value || ''))}" placeholder="${esc(f.label)}" style="width:100%">
+      </div>`).join('');
+    overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%;max-height:85vh;overflow-y:auto">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">${esc(title)}</div>
+      ${fieldsHtml}
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;color:var(--orange);margin-bottom:4px;font-weight:600">Причина исправления (обязательно)</div>
+        <input id="corr-reason" class="inp" placeholder="Например: ошибка при вводе, уточнённые данные..." style="width:100%;border-color:var(--orange)">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('[style*=z-index]').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+        <button onclick="window._submitCorrection()" class="btn-primary" style="flex:1">Исправить</button>
+      </div>
+    </div>`;
+
+    window._correctionOnSubmit = onSubmit;
+    window._correctionFields = fields;
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+
+  window._submitCorrection = async function() {
+    const reason = document.getElementById('corr-reason')?.value?.trim();
+    if (!reason) { toast('Укажите причину исправления', 'error'); return; }
+    const data = { reason };
+    (window._correctionFields || []).forEach(f => {
+      const el = document.getElementById('corr-' + f.id);
+      if (el && el.value !== String(f.value || '')) {
+        data[f.id] = f.type === 'number' ? (parseFloat(el.value) || null) : el.value;
+      }
+    });
+    try {
+      await window._correctionOnSubmit(data);
+      toast('✅ Исправлено и записано в аудит-лог');
+      document.querySelector('[style*="z-index:9999"]')?.remove();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Receipt correction modal ──────────────────────────────────────────────
+  window.correctReceiptModal = function(id, vol, density, temp, ttn, notes) {
+    showCorrectionModal({
+      title: 'Исправить приёмку',
+      fields: [
+        { id: 'volume_nominal', label: 'Объём номинал (куб)', type: 'number', value: vol },
+        { id: 'density', label: 'Плотность (г/см³)', type: 'number', value: density },
+        { id: 'temperature', label: 'Температура (°C)', type: 'number', value: temp },
+        { id: 'ttn_number', label: 'Номер ТТН', value: ttn },
+        { id: 'notes', label: 'Примечание', value: notes },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/base/receipts/' + id + '/correct', data);
+        navigate('#base');
+      },
+    });
+  };
+
+  // ── Dispatch correction modal ─────────────────────────────────────────────
+  window.correctDispatchModal = function(id, volume, tariff, ttn, notes) {
+    showCorrectionModal({
+      title: 'Исправить рейс',
+      fields: [
+        { id: 'volume', label: 'Объём (куб)', type: 'number', value: volume },
+        { id: 'tariff', label: 'Тариф ₽', type: 'number', value: tariff },
+        { id: 'ttn_number', label: 'Номер ТТН', value: ttn },
+        { id: 'notes', label: 'Примечание', value: notes },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/base/dispatches/' + id + '/correct', data);
+        navigate('#base?tab=trips');
+      },
     });
   };
 
@@ -1082,6 +1450,12 @@
     });
   };
 
+  // ── Export CSV helper ─────────────────────────────────────────────────────
+  function exportCsvBtn(section, period) {
+    const url = `/api/reports/export?section=${section}${period ? '&period=' + period : ''}`;
+    return `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="window.open('${url}')">⬇ Экспорт CSV</button>`;
+  }
+
   // ── Income ────────────────────────────────────────────────────────────────
   async function viewIncome() {
     if (!isPartner()) { navigate('#home'); return; }
@@ -1099,12 +1473,34 @@
         ${statCard(records.length, 'Записей')}
         ${statCard('—', 'Маржа')}
       </div>
-      ${records.length ? records.map(r => listItem({ icon: '💰', iconBg: 'g', title: formatNum(r.amount) + ' ₽', sub: `${r.client_name || ''} · ${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}` })).join('') : emptyState('Нет доходов')}
+      ${records.length ? records.map(r => `<div class="li">
+        <div class="lic g">💰</div>
+        <div class="lit"><div class="lim">${formatNum(r.amount)} ₽</div><div class="lis">${esc(r.client_name || '')} · ${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}</div></div>
+        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${isPartner() ? `<button onclick="window.correctIncome(${r.id},'${r.income_at ? r.income_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+        </div>
+      </div>`).join('') : emptyState('Нет доходов')}
       ${!isDesktop() ? `<button class="btn-primary" style="margin-top:12px" onclick="showIncomeModal()">+ Добавить</button>` : ''}
+      ${exportCsvBtn('income')}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Доходы';
   }
+
+  window.correctIncome = function(id, income_at, amount, comment) {
+    showCorrectionModal({
+      title: 'Исправить запись доходов',
+      fields: [
+        { id: 'income_at', label: 'Дата', type: 'date', value: income_at },
+        { id: 'amount', label: 'Сумма ₽', type: 'number', value: amount },
+        { id: 'comment', label: 'Комментарий', value: comment || '' },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/income/' + id + '/correct', data);
+        viewIncome();
+      },
+    });
+  };
 
   window.showIncomeModal = function () {
     showModal('Добавить доход', `
@@ -1137,12 +1533,35 @@
         ${statCard(records.length, 'Записей')}
         ${statCard('—', 'Категорий')}
       </div>
-      ${records.length ? records.map(r => listItem({ icon: '📋', iconBg: 'o', title: formatNum(r.amount) + ' ₽', sub: `${r.category || ''} · ${r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : ''}` })).join('') : emptyState('Нет расходов')}
+      ${records.length ? records.map(r => `<div class="li">
+        <div class="lic o">📋</div>
+        <div class="lit"><div class="lim">${formatNum(r.amount)} ₽</div><div class="lis">${esc(r.category || '')} · ${r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : ''}</div></div>
+        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${isPartner() ? `<button onclick="window.correctExpense(${r.id},'${r.expense_at ? r.expense_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.category||'')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+        </div>
+      </div>`).join('') : emptyState('Нет расходов')}
       <button class="btn-primary" style="margin-top:12px" onclick="showExpenseModal()">+ Добавить</button>
+      ${exportCsvBtn('expenses')}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Расходы';
   }
+
+  window.correctExpense = function(id, expense_at, amount, category, comment) {
+    showCorrectionModal({
+      title: 'Исправить расход',
+      fields: [
+        { id: 'expense_at', label: 'Дата', type: 'date', value: expense_at },
+        { id: 'amount', label: 'Сумма ₽', type: 'number', value: amount },
+        { id: 'category', label: 'Категория', value: category || '' },
+        { id: 'comment', label: 'Комментарий', value: comment || '' },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/expenses/' + id + '/correct', data);
+        viewExpenses();
+      },
+    });
+  };
 
   window.showExpenseModal = function () {
     const categories = ['Бухгалтерия', 'Аренда', 'Кредиты (тело)', 'Проценты по кредитам', 'Налоги/штрафы', 'Командировочные', 'Зарплата партнёрам', 'Финансовые расходы (налоги/вывод)', 'Прочие'];
@@ -1181,15 +1600,36 @@
       ${deals.length ? deals.map(d => `<div class="oc">
         <div class="och">
           <div><div class="ocn">${esc(d.client_name || '')} → ${esc(d.carrier_name || d.carrier_custom || '')}</div><div class="ocd">${[d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : '', d.supplier_name || ''].filter(Boolean).join(' · ')}</div></div>
-          <div><div class="oca">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <div><div class="oca">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
+            ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+          </div>
         </div>
         ${d.volume_liters ? `<div class="ocp-labels"><span>${formatNum(d.volume_liters)} л</span><span>${d.price_client ? d.price_client + ' ₽/л' : ''}</span><span style="color:var(--accent)">${d.price_supplier ? d.price_supplier + ' ₽/л поставщику' : ''}</span></div>` : ''}
       </div>`).join('') : emptyState('Нет сделок')}
       <button class="btn-primary" style="margin-top:12px" onclick="showHireModal()">+ Новая сделка</button>
+      ${exportCsvBtn('hire')}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Найм';
   }
+
+  window.correctHire = function(id, delivery_at, volume_liters, price_client, price_carrier, comment) {
+    showCorrectionModal({
+      title: 'Исправить сделку по найму',
+      fields: [
+        { id: 'delivery_at', label: 'Дата', type: 'date', value: delivery_at },
+        { id: 'volume_liters', label: 'Объём литров', type: 'number', value: volume_liters },
+        { id: 'price_client', label: 'Цена клиенту ₽/л', type: 'number', value: price_client },
+        { id: 'price_carrier', label: 'Цена перевозчику ₽/л', type: 'number', value: price_carrier },
+        { id: 'comment', label: 'Комментарий', value: comment || '' },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/hire/' + id + '/correct', data);
+        viewHire();
+      },
+    });
+  };
 
   window.showHireModal = async function () {
     let clients = [], suppliers = [], carriers = [];
@@ -1256,12 +1696,35 @@
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
       ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
-      ${records.length ? records.map(r => listItem({ icon: '📄', iconBg: r.type === 'ДОЛГ' ? 'o' : 'g', title: `${r.debtor} — ${formatNum(Math.abs(r.amount))} ₽`, sub: [r.type === 'ОПЛАТА' ? 'Оплата' : '', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ') })).join('') : emptyState('Нет записей')}
+      ${records.length ? records.map(r => `<div class="li">
+        <div class="lic ${r.type === 'ДОЛГ' ? 'o' : 'g'}">📄</div>
+        <div class="lit"><div class="lim">${esc(r.debtor)} — ${formatNum(Math.abs(r.amount))} ₽</div><div class="lis">${[r.type === 'ОПЛАТА' ? 'Оплата' : '', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ')}</div></div>
+        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${isPartner() ? `<button onclick="window.correctDebt(${r.id},'${r.recorded_at ? r.recorded_at.slice(0,10) : ''}',${r.amount||0},'${esc(r.type||'ДОЛГ')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+        </div>
+      </div>`).join('') : emptyState('Нет записей')}
       ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
+      ${isPartner() ? exportCsvBtn('debts') : ''}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Долги';
   }
+
+  window.correctDebt = function(id, recorded_at, amount, type, comment) {
+    showCorrectionModal({
+      title: 'Исправить запись долга',
+      fields: [
+        { id: 'recorded_at', label: 'Дата', type: 'date', value: recorded_at },
+        { id: 'amount', label: 'Сумма ₽', type: 'number', value: amount },
+        { id: 'type', label: 'Тип (ДОЛГ / ОПЛАТА)', value: type || 'ДОЛГ' },
+        { id: 'comment', label: 'Комментарий', value: comment || '' },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/debts/' + id + '/correct', data);
+        viewDebts();
+      },
+    });
+  };
 
   window.showDebtModal = function () {
     showModal('Добавить запись долга', `
@@ -2190,6 +2653,7 @@
         ${!r.ttn_confirmed && (isArtem() || isOp() || isPartner()) ? `
           <button onclick="window.confirmReceiptFromDetail(${r.id})" class="btn-primary" style="width:100%;margin-top:16px">✅ Подтвердить приёмку</button>
         ` : ''}
+        ${isPartner() || isArtem() ? `<button onclick="window.correctReceiptModal(${r.id},${r.volume_nominal||0},${r.density||0.840},${r.temperature||15},'${esc(r.ttn_number||'')}','${esc(r.notes||'')}')" class="btn-secondary" style="width:100%;margin-top:8px">✏ Исправить запись</button>` : ''}
       </div>`;
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
@@ -2245,6 +2709,7 @@
         </div>
         ${photoHtml}
         ${actionsHtml}
+        ${isPartner() || isArtem() ? `<button onclick="window.correctDispatchModal(${d.id},${d.volume||0},${d.tariff||0},'${esc(d.ttn_number||'')}','${esc(d.notes||'')}')" class="btn-secondary" style="width:100%;margin-top:8px">✏ Исправить запись</button>` : ''}
       </div>`;
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
