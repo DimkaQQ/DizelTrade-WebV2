@@ -1595,23 +1595,61 @@
     });
   };
 
-  // ── Export CSV helper ─────────────────────────────────────────────────────
-  function exportCsvBtn(section, period) {
-    return `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="window.downloadCsv('${section}','${period||''}')">⬇ Экспорт CSV</button>`;
+  // ── Print / PDF helper ────────────────────────────────────────────────────
+  let _printData = null;
+
+  function printBtn(label) {
+    return `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="window.printCurrentPage()">🖨 ${label || 'Печать / PDF'}</button>`;
   }
 
-  window.downloadCsv = async function(section, period) {
-    try {
-      const url = `/api/reports/export?section=${section}${period ? '&period=' + period : ''}`;
-      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + api.getToken() } });
-      if (!res.ok) { toast('Ошибка экспорта: ' + res.status, 'error'); return; }
-      const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${section}${period ? '_' + period : ''}.csv`;
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+  window.printCurrentPage = function() {
+    if (!_printData) return;
+    window.openPrintWindow(_printData.title, _printData.columns, _printData.rows, _printData.totals);
+  };
+
+  window.openPrintWindow = function(title, columns, rows, totals) {
+    const w = window.open('', '_blank', 'width=1050,height=720');
+    const tableRows = rows.map(r => `<tr>${r.map(c => `<td>${c !== null && c !== undefined ? c : '—'}</td>`).join('')}</tr>`).join('');
+    const tfoot = totals ? `<tfoot><tr>${totals.map(c => `<td><b>${c}</b></td>`).join('')}</tr></tfoot>` : '';
+    w.document.write(`<!DOCTYPE html>
+<html lang="ru"><head>
+<meta charset="utf-8"><title>${title}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Arial,sans-serif;color:#111;padding:18mm 18mm 12mm;font-size:12px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:18px}
+.logo{font-size:22px;font-weight:900;letter-spacing:-1px}.logo-sub{font-size:10px;color:#666;margin-top:2px}
+.meta{font-size:11px;color:#666;text-align:right}
+h1{font-size:17px;font-weight:700;margin:4px 0 0}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:11px}
+th{background:#f2f2f2;border:1px solid #bbb;padding:7px 8px;text-align:left;font-weight:600}
+td{border:1px solid #ddd;padding:6px 8px;vertical-align:top}
+tr:nth-child(even) td{background:#fafafa}
+tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
+.pbar{margin-bottom:14px;display:flex;gap:8px}
+.pbtn{background:#c8ff00;border:none;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;border-radius:6px}
+.cbtn{background:#f0f0f0;border:none;padding:9px 14px;font-size:12px;cursor:pointer;border-radius:6px;color:#666}
+.hint{font-size:11px;color:#999;align-self:center}
+.footer{margin-top:18px;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:8px;text-align:center}
+@media print{.pbar{display:none}@page{margin:10mm 12mm}}
+</style></head><body>
+<div class="header">
+  <div><div class="logo">DIZELTRADE</div><div class="logo-sub">Diesel Trade Logistic</div><h1>${title}</h1></div>
+  <div class="meta">Сформировано: ${new Date().toLocaleDateString('ru',{day:'2-digit',month:'2-digit',year:'numeric'})} ${new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}<br>ДТЛ Менеджмент v2.0</div>
+</div>
+<div class="pbar">
+  <button class="pbtn" onclick="window.print()">🖨 Печать / Сохранить PDF</button>
+  <button class="cbtn" onclick="window.close()">✕ Закрыть</button>
+  <span class="hint">Ctrl+P → «Сохранить как PDF» для цифровой подписи</span>
+</div>
+<table>
+  <thead><tr>${columns.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+  <tbody>${tableRows}</tbody>
+  ${tfoot}
+</table>
+<div class="footer">ООО «ДТЛ» · Сперанский Василий · ${new Date().toLocaleDateString('ru',{year:'numeric',month:'long'})}</div>
+</body></html>`);
+    w.document.close();
   };
 
   // ── Income ────────────────────────────────────────────────────────────────
@@ -1641,8 +1679,11 @@
         </div>
       </div>`).join('') : emptyState('Нет доходов')}
       ${!isDesktop() ? `<button class="btn-primary" style="margin-top:12px" onclick="showIncomeModal()">+ Добавить</button>` : ''}
-      ${exportCsvBtn('income')}
+      ${printBtn('Распечатать / PDF')}
     </div>`;
+    _printData = { title: 'Доходы', columns: ['Дата', 'Клиент', 'Сумма ₽', 'Объём куб', 'Комментарий'],
+      rows: records.map(r => [r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : '—', r.client_name || '—', formatNum(r.amount), r.volume || '—', r.comment || '']),
+      totals: ['Итого', '', formatNum(total) + ' ₽', '', ''] };
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Доходы';
   }
@@ -1704,8 +1745,11 @@
         </div>
       </div>`).join('') : emptyState('Нет расходов')}
       <button class="btn-primary" style="margin-top:12px" onclick="showExpenseModal()">+ Добавить</button>
-      ${exportCsvBtn('expenses')}
+      ${printBtn('Распечатать / PDF')}
     </div>`;
+    _printData = { title: 'Расходы компании', columns: ['Дата', 'Категория', 'Сумма ₽', 'Комментарий'],
+      rows: records.map(r => [r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : '—', r.category || '—', formatNum(r.amount), r.comment || '']),
+      totals: ['Итого', '', formatNum(total) + ' ₽', ''] };
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Расходы';
   }
@@ -1789,8 +1833,11 @@
       </div>`;
       }).join('') : emptyState('Нет сделок')}
       <button class="btn-primary" style="margin-top:12px" onclick="showHireModal()">+ Новая сделка</button>
-      ${exportCsvBtn('hire')}
+      ${printBtn('Распечатать / PDF')}
     </div>`;
+    _printData = { title: 'Найм · Хабаровск → Тында', columns: ['Дата', 'Клиент', 'Поставщик', 'Перевозчик', 'Объём л', 'Цена кл. ₽/л', 'Выручка ₽', 'Маржа %'],
+      rows: deals.map(d => [d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : '—', d.client_name || '—', d.supplier_name || '—', d.carrier_name || d.carrier_custom || '—', formatNum(d.volume_liters), d.price_client || '—', formatNum(d.amount_client), (d.margin_pct || 0) + '%']),
+      totals: ['Итого', '', '', '', '', '', formatNum(totalRevenue) + ' ₽', ''] };
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Найм';
   }
@@ -1885,8 +1932,13 @@
         </div>
       </div>`).join('') : emptyState('Нет записей')}
       ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
-      ${isPartner() ? exportCsvBtn('debts') : ''}
+      ${isPartner() ? printBtn('Распечатать / PDF') : ''}
     </div>`;
+    const totalDebt = records.filter(r => r.type === 'ДОЛГ').reduce((s,r) => s + (r.amount || 0), 0);
+    const totalPaid = records.filter(r => r.type === 'ОПЛАТА').reduce((s,r) => s + (Math.abs(r.amount) || 0), 0);
+    _printData = { title: 'Долги и платежи', columns: ['Дата', 'Контрагент', 'Тип', 'Сумма ₽', 'Комментарий'],
+      rows: records.map(r => [r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : '—', r.debtor || '—', r.type || 'ДОЛГ', formatNum(Math.abs(r.amount)), r.comment || '']),
+      totals: ['', 'Долг: ' + formatNum(totalDebt) + ' · Оплачено: ' + formatNum(totalPaid), '', '', ''] };
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Долги';
   }
@@ -2002,8 +2054,8 @@
         <div class="lit"><div class="lim">${esc(t.name)}</div><div class="lis">${t.trips_month || 0} рейсов · ${t.plate || '—'}</div></div>
         <div class="lir" style="display:flex;gap:6px;align-items:center">
           ${t.revenue_month ? `<span style="font-size:13px;font-weight:600">${formatNum(t.revenue_month)} ₽</span>` : ''}
-          ${(isPartner() || isArtem()) ? `<button class="prb" onclick="showEditTruckModal(${t.id},'${esc(t.name)}','${esc(t.plate||'')}',${t.tank_volume||0})">✏️</button>` : ''}
-          ${(isPartner() || isArtem()) ? `<button class="prb" style="background:var(--red)" onclick="archiveTruck(${t.id})">📦</button>` : ''}
+          ${(isPartner() || isArtem()) ? `<button onclick="showEditTruckModal(${t.id},'${esc(t.name)}','${esc(t.plate||'')}',${t.tank_volume||0})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">✏ Изм.</button>` : ''}
+          ${(isPartner() || isArtem()) ? `<button onclick="archiveTruck(${t.id})" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.25);color:var(--red);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">📦 Арх.</button>` : ''}
         </div>
       </div>`).join('') : emptyState('Нет машин')}
       ${isArtem() ? `
@@ -2328,16 +2380,28 @@
       ${sectionHeader('Настройки алертов')}
       <div class="bb">
         <div class="bbr"><div class="bbl">Вместимость хранилища (куб)</div>
-          <input id="set-capacity" class="inp" type="number" value="${getSetting('base_capacity_cubic','2500')}" style="width:90px;text-align:right;padding:4px 8px"> куб
+          <div style="display:flex;align-items:center;gap:6px">
+            <input id="set-capacity" class="inp" type="number" value="${getSetting('base_capacity_cubic','2500')}" style="width:90px;text-align:right;padding:4px 8px">
+            <span style="color:var(--text2);font-size:13px;min-width:34px">куб</span>
+          </div>
         </div>
         <div class="bbr"><div class="bbl">Порог остатка (алерт)</div>
-          <input id="set-low-stock" class="inp" type="number" value="${getSetting('alert_low_stock_cubic','100')}" style="width:90px;text-align:right;padding:4px 8px"> куб
+          <div style="display:flex;align-items:center;gap:6px">
+            <input id="set-low-stock" class="inp" type="number" value="${getSetting('alert_low_stock_cubic','100')}" style="width:90px;text-align:right;padding:4px 8px">
+            <span style="color:var(--text2);font-size:13px;min-width:34px">куб</span>
+          </div>
         </div>
         <div class="bbr"><div class="bbl">Неподтв. ТТН (алерт)</div>
-          <input id="set-unconf-hours" class="inp" type="number" value="${getSetting('alert_unconfirmed_hours','48')}" style="width:90px;text-align:right;padding:4px 8px"> ч
+          <div style="display:flex;align-items:center;gap:6px">
+            <input id="set-unconf-hours" class="inp" type="number" value="${getSetting('alert_unconfirmed_hours','48')}" style="width:90px;text-align:right;padding:4px 8px">
+            <span style="color:var(--text2);font-size:13px;min-width:34px">ч</span>
+          </div>
         </div>
         <div class="bbr"><div class="bbl">Неосвоенные нал. Артёма</div>
-          <input id="set-cash-days" class="inp" type="number" value="${getSetting('alert_cash_unsettled_days','7')}" style="width:90px;text-align:right;padding:4px 8px"> дней
+          <div style="display:flex;align-items:center;gap:6px">
+            <input id="set-cash-days" class="inp" type="number" value="${getSetting('alert_cash_unsettled_days','7')}" style="width:90px;text-align:right;padding:4px 8px">
+            <span style="color:var(--text2);font-size:13px;min-width:34px">дней</span>
+          </div>
         </div>
       </div>
       <button onclick="window.saveSettings()" class="btn-primary" style="width:100%;margin-top:8px">Сохранить настройки</button>
