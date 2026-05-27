@@ -25,15 +25,18 @@ def list_trucks(
     status: Optional[str] = Query(None),
     user: dict = Depends(get_current_user),
 ):
-    parts = ["t.status != 'archived'"]
+    parts = []
     params = []
+
+    if status:
+        parts.append("t.status = %s")
+        params.append(status)
+    else:
+        parts.append("t.status != 'archived'")
 
     if owner:
         parts.append("t.owner = %s")
         params.append(owner)
-    if status:
-        parts.append("t.status = %s")
-        params.append(status)
 
     where = " AND ".join(parts)
     return query(f"""
@@ -102,6 +105,21 @@ def archive_truck(truck_id: int, user: dict = Depends(require_not_operator)):
         raise HTTPException(status_code=403, detail="Artem can only archive his own trucks")
     return execute(
         "UPDATE trucks SET status='archived', archived_at=NOW() WHERE id=%s RETURNING *",
+        (truck_id,), returning=True
+    )
+
+
+@router.put("/trucks/{truck_id}/unarchive")
+def unarchive_truck(truck_id: int, user: dict = Depends(require_not_operator)):
+    existing = query_one("SELECT * FROM trucks WHERE id = %s", (truck_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Truck not found")
+    if existing["status"] != "archived":
+        raise HTTPException(status_code=400, detail="Truck is not archived")
+    if user["role"] == "artem" and existing["owner"] != "Артём":
+        raise HTTPException(status_code=403, detail="Artem can only unarchive his own trucks")
+    return execute(
+        "UPDATE trucks SET status='active', archived_at=NULL WHERE id=%s RETURNING *",
         (truck_id,), returning=True
     )
 

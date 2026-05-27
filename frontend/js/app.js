@@ -2035,8 +2035,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   // ── Fleet ─────────────────────────────────────────────────────────────────
   async function viewFleet() {
     let trucks = [];
+    let archivedTrucks = [];
     let artemDebtData = null;
     try { trucks = (isArtem() ? await api.get('/api/trucks?owner=Артём') : await api.get('/api/trucks')) || []; } catch (e) {}
+    if (isPartner() || isArtem()) {
+      try {
+        const all = (isArtem() ? await api.get('/api/trucks?owner=Артём&status=archived') : await api.get('/api/trucks?status=archived')) || [];
+        archivedTrucks = all;
+      } catch (e) {}
+    }
     if (isArtem()) {
       try { artemDebtData = await api.get('/api/base/artem-debt'); } catch (e) {}
     }
@@ -2062,13 +2069,35 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${(isPartner() || isArtem()) ? `<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn-primary" onclick="showAddTruckModal()">+ Добавить машину</button></div>` : ''}
       ${trucks.length ? trucks.map(t => `<div class="li">
         <div class="lic y">🚛</div>
-        <div class="lit"><div class="lim">${esc(t.name)}</div><div class="lis">${t.trips_month || 0} рейсов · ${t.plate || '—'}</div></div>
+        <div class="lit">
+          <div class="lim">${esc(t.name)}${t.status === 'for_sale' ? `<span style="font-size:10px;font-weight:600;background:rgba(255,165,0,.15);border:1px solid var(--orange);color:var(--orange);border-radius:5px;padding:1px 6px;margin-left:6px">На продаже</span>` : ''}</div>
+          <div class="lis">${t.trips_month || 0} рейсов · ${t.plate || '—'}</div>
+        </div>
         <div class="lir" style="display:flex;gap:6px;align-items:center">
           ${t.revenue_month ? `<span style="font-size:13px;font-weight:600">${formatNum(t.revenue_month)} ₽</span>` : ''}
           ${(isPartner() || isArtem()) ? `<button onclick="showEditTruckModal(${t.id},'${esc(t.name)}','${esc(t.plate||'')}',${t.tank_volume||0})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">✏ Изм.</button>` : ''}
           ${(isPartner() || isArtem()) ? `<button onclick="archiveTruck(${t.id})" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.25);color:var(--red);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">📦 Арх.</button>` : ''}
         </div>
       </div>`).join('') : emptyState('Нет машин')}
+      ${(isPartner() || isArtem()) && archivedTrucks.length ? `
+      <details style="margin-top:16px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);padding:10px 0;list-style:none;display:flex;align-items:center;gap:6px">
+          <span>▶</span> Архив (${archivedTrucks.length})
+        </summary>
+        <div style="margin-top:8px">
+          ${archivedTrucks.map(t => `<div class="li" style="opacity:.7">
+            <div class="lic" style="background:var(--card2)">📦</div>
+            <div class="lit">
+              <div class="lim">${esc(t.name)}</div>
+              <div class="lis">${t.plate || '—'} · архивирована</div>
+            </div>
+            <div class="lir">
+              <button onclick="unarchiveTruck(${t.id})" style="background:rgba(100,200,100,.1);border:1px solid rgba(100,200,100,.3);color:var(--green);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">↩ Вернуть</button>
+            </div>
+          </div>`).join('')}
+        </div>
+      </details>
+      ` : ''}
       ${isArtem() ? `
       ${sectionHeader('Внести расход')}
       ${formField('Машина', chipGroup(trucks.map(t => ({ value: String(t.id), label: t.name })), trucks[0] ? String(trucks[0].id) : '', 'fleet-truck'))}
@@ -2122,6 +2151,13 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     showModal('Архивировать машину?', `<p style="color:var(--text2)">Машина будет скрыта из списка. Данные сохранятся.</p>`, async () => {
       await api.put(`/api/trucks/${id}/archive`);
       toast('📦 Машина архивирована'); viewFleet();
+    });
+  };
+
+  window.unarchiveTruck = function (id) {
+    showModal('Восстановить машину?', `<p style="color:var(--text2)">Машина вернётся в активный список.</p>`, async () => {
+      await api.put(`/api/trucks/${id}/unarchive`);
+      toast('✅ Машина восстановлена'); viewFleet();
     });
   };
 
