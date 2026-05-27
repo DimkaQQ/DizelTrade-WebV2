@@ -923,7 +923,7 @@
         <div class="lir">
           <div class="lival">${fmt(r.amount_given)} ₽</div>
           ${!settled && isArtem() ? `<button onclick="window.reportCashArtem(${r.id})" style="margin-top:4px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">Отчёт</button>` : ''}
-          ${!settled && isPartner() && r.amount_spent ? `<button onclick="window.settleCashArtem(${r.id})" style="margin-top:4px;background:var(--card2);border:1px solid var(--border);color:var(--green);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">Закрыть</button>` : ''}
+          ${!settled && isPartner() ? `<button onclick="window.settleCashArtem(${r.id})" style="margin-top:4px;background:rgba(50,215,75,.12);border:1px solid rgba(50,215,75,.3);color:var(--green);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600">✓ Закрыть</button>` : ''}
         </div>
       </div>`;
     }).join('') : `<div class="empty-state">Нет записей</div>`;
@@ -1116,7 +1116,7 @@
       await api.put('/api/base/cash-artem/' + recordId + '/report', { amount_spent, fuel_received, notes });
       toast('✅ Отчёт отправлен');
       document.querySelector('[style*="z-index:9999"]')?.remove();
-      navigate('#base?tab=cash');
+      render('#base?tab=cash');
     } catch (e) { toast(e.message, 'error'); }
   };
 
@@ -1125,7 +1125,7 @@
     try {
       await api.put('/api/base/cash-artem/' + recordId + '/settle', {});
       toast('✅ Запись закрыта');
-      navigate('#base?tab=cash');
+      render('#base?tab=cash');
     } catch (e) { toast(e.message, 'error'); }
   };
 
@@ -1528,7 +1528,7 @@
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <button onclick="window.open('/api/orders/${id}/report')" class="btn-secondary" style="flex:1">🖨 Отчёт для клиента</button>
+        <button onclick="window.openOrderReport(${id})" class="btn-secondary" style="flex:1">🖨 Отчёт для клиента</button>
         ${isPartner() && order.status === 'active' ? `<button onclick="window.closeOrder(${id})" class="btn-secondary" style="flex:1;color:var(--red)">Закрыть заказ</button>` : ''}
         ${isPartner() && order.status !== 'closed' ? `<button onclick="window.reconcileOrder(${id})" class="btn-secondary" style="flex:1">✅ Сверен</button>` : ''}
       </div>
@@ -1554,8 +1554,19 @@
     try {
       await api.put('/api/orders/' + id + '/reconcile', {});
       toast('✅ Заказ отмечен как сверен');
-      navigate('#orders/' + id);
+      render('#orders/' + id);
     } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.openOrderReport = async function(id) {
+    try {
+      const res = await fetch(`/api/orders/${id}/report`, { headers: { Authorization: 'Bearer ' + api.getToken() } });
+      if (!res.ok) { toast('Ошибка: ' + res.status, 'error'); return; }
+      const html = await res.text();
+      const w = window.open('', '_blank', 'width=1050,height=720');
+      w.document.write(html);
+      w.document.close();
+    } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
   };
 
   window.showNewOrderModal = async function () {
