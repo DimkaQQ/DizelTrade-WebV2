@@ -154,7 +154,7 @@ body{display:flex;flex-direction:column;min-height:100vh}
 .inp::placeholder{color:var(--text3)}
 .inp:focus{border-color:var(--accent)}
 .inp-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.photo-btn{background:var(--card);border:2px dashed var(--border);border-radius:13px;padding:18px;text-align:center;cursor:pointer}
+.photo-btn{display:block;background:var(--card);border:2px dashed var(--border);border-radius:13px;padding:18px;text-align:center;cursor:pointer}
 .photo-btn:active{border-color:var(--accent);background:var(--accent-dim)}
 .photo-btn .pi2{font-size:26px;margin-bottom:5px}
 .photo-btn .pt2{font-size:13px;color:var(--text2)}
@@ -389,14 +389,11 @@ body{display:flex;flex-direction:column;min-height:100vh}
   .topbar-alert:hover{background:rgba(255,149,0,.2)}
 
   /* ── CONTENT AREA ───────────────────────────────────────────────── */
-  .content{
-    flex:1;overflow-y:auto;overflow-x:hidden;padding:24px;
-    scrollbar-width:thin;scrollbar-color:var(--border2) transparent;
-    padding-bottom:24px;
-  }
-  .content::-webkit-scrollbar{width:5px}
-  .content::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
-  .form-wrap{max-width:580px}
+  #content{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+  #content::-webkit-scrollbar{width:5px}
+  #content::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+  .content{padding:24px;padding-bottom:24px}
+  .form-content{max-width:580px}
 
   /* ── HIDE MOBILE-ONLY ELEMENTS ──────────────────────────────────── */
   .tab-bar{display:none}
