@@ -20,7 +20,10 @@ def _get_claude_client():
         return None
     try:
         import anthropic
-        return anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        kwargs = {"api_key": settings.ANTHROPIC_API_KEY}
+        if settings.ANTHROPIC_BASE_URL:
+            kwargs["base_url"] = settings.ANTHROPIC_BASE_URL
+        return anthropic.Anthropic(**kwargs)
     except ImportError:
         return None
 
