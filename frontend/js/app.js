@@ -226,6 +226,7 @@
           <div class="version">Управление · v2.0</div>
         </div>
         <div class="sidebar-nav">
+          <div class="nav-item" data-page="home" onclick="navigate('#home')"><span class="ni-icon">🏠</span> Главная</div>
           <div class="nav-group-label">Главное</div>
           <div class="nav-item" data-page="dashboard" onclick="navigate('#dashboard')"><span class="ni-icon">📊</span> Дашборд</div>
           <div class="nav-item" data-page="base" onclick="navigate('#base')"><span class="ni-icon">⛽</span> База Тында<span class="ni-badge" id="sb-pending-badge" style="display:none">0</span></div>
@@ -343,15 +344,15 @@
     if (h === 'base/dispatches/new') { viewBaseDispatchNew(); return; }
     if (h === 'orders') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewOrders(); return; }
     if (h.startsWith('orders/')) { viewOrderDetail(h.split('/')[1]); return; }
-    if (h === 'income') { viewIncome(); return; }
-    if (h === 'expenses') { viewExpenses(); return; }
-    if (h === 'hire') { viewHire(); return; }
-    if (h === 'debts') { viewDebts(); return; }
+    if (h === 'income') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewIncome(); return; }
+    if (h === 'expenses') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewExpenses(); return; }
+    if (h === 'hire') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewHire(); return; }
+    if (h === 'debts') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewDebts(); return; }
     if (h === 'dashboard') { viewDashboard(); return; }
     if (h === 'fleet') { viewFleet(); return; }
-    if (h === 'analytics' || h.startsWith('analytics?')) { viewAnalytics(); return; }
-    if (h === 'balance' || h.startsWith('balance?')) { viewBalance(); return; }
-    if (h === 'annual' || h.startsWith('annual?')) { viewAnnual(); return; }
+    if (h === 'analytics' || h.startsWith('analytics?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnalytics(); return; }
+    if (h === 'balance' || h.startsWith('balance?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewBalance(); return; }
+    if (h === 'annual' || h.startsWith('annual?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnnual(); return; }
     if (h === 'settings') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewSettings(); return; }
     viewHome();
   }

@@ -9,6 +9,7 @@ from .config import settings
 from .security import SecurityMiddleware
 from .routers import auth, dashboard, base, orders, fleet, reference, hire, income, expenses, debts, settings_router, notifications, logs as logs_router, uploads as uploads_router
 from .routers import analytics as analytics_router
+from .routers import ai as ai_router
 
 LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "app.log")
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
@@ -48,6 +49,7 @@ app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(analytics_router.router, prefix="/api", tags=["analytics"])
 app.include_router(logs_router.router, tags=["logs"])
 app.include_router(uploads_router.router, prefix="/api", tags=["uploads"])
+app.include_router(ai_router.router, prefix="/api", tags=["ai"])
 
 
 @app.middleware("http")
