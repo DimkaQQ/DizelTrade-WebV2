@@ -91,22 +91,31 @@
     </div>`;
   }
 
-  function orderCard({ name, date, amount, pricePerLiter, delivered, total, sites, closed, showFinancials }) {
-    const pct = total > 0 ? Math.round((delivered / total) * 100) : (closed ? 100 : 0);
-    const remaining = total - delivered;
+  function orderCard({ id, name, date, amount, pricePerLiter, delivered, inTransit, total, sites, closed, showFinancials, deliveryType, notes }) {
+    const deliveredN = parseFloat(delivered) || 0;
+    const inTransitN = parseFloat(inTransit) || 0;
+    const totalN = parseFloat(total) || 0;
+    const pct = totalN > 0 ? Math.round((deliveredN / totalN) * 100) : (closed ? 100 : 0);
+    const remaining = Math.max(0, totalN - deliveredN - inTransitN);
     const isOver = pct >= 80;
-    return `<div class="oc${closed ? '" style="opacity:.6' : ''}">
+    const dtLabels = { 'own': 'свой транспорт', 'hire': 'найм', 'mixed': 'смешанный' };
+    const dtLabel = deliveryType ? (dtLabels[deliveryType] || deliveryType) : null;
+    return `<div class="oc${closed ? '" style="opacity:.55' : ''}" ${id && !closed ? `onclick="navigate('#orders/${id}')" style="cursor:pointer"` : ''}>
       <div class="och">
-        <div><div class="ocn">${esc(name)}</div><div class="ocd">${esc(date)}</div></div>
-        ${showFinancials && amount ? `<div><div class="oca">${esc(amount)}</div><div class="ocsub">${esc((total || '') + ' куб' + (pricePerLiter ? ' · ' + pricePerLiter : ''))}</div></div>` : ''}
+        <div style="flex:1;min-width:0">
+          <div class="ocn">${esc(name)}${sites && sites.length ? `<span style="color:var(--text3);font-weight:400"> → ${sites.map(s => esc(s)).join(', ')}</span>` : ''}</div>
+          <div class="ocd">${esc(date)}${dtLabel ? ` · <span style="color:var(--text3)">${dtLabel}</span>` : ''}${totalN ? ` · <strong>${totalN} куб</strong>` : ''}</div>
+        </div>
+        ${showFinancials && amount ? `<div style="text-align:right;flex-shrink:0"><div class="oca">${esc(amount)}</div><div class="ocsub">${pricePerLiter ? esc(pricePerLiter) : ''}</div></div>` : ''}
       </div>
+      ${notes ? `<div style="font-size:12px;color:var(--text2);margin:2px 0 6px;padding:0 2px">${esc(notes)}</div>` : ''}
       <div class="ocp-labels">
-        <span>Доставлено: <strong>${esc(String(delivered))} куб</strong></span>
+        <span>✅ ${deliveredN} куб</span>
+        ${inTransitN > 0 ? `<span style="color:var(--orange)">🚚 ${inTransitN} куб</span>` : ''}
+        <span style="color:var(--text2)">осталось: <strong style="color:var(--orange)">${remaining} куб</strong></span>
         ${showFinancials ? `<span style="color:var(--accent);font-weight:700">${pct}%</span>` : ''}
-        <span>Осталось: <strong style="color:var(--orange)">${esc(String(remaining))} куб</strong></span>
       </div>
-      <div class="ocbar"><div class="ocfill${isOver ? ' o' : ''}" style="width:${pct}%"></div></div>
-      ${sites && sites.length ? `<div class="oc-sites">${sites.map(s => `<div class="oc-site">${esc(s)}</div>`).join('')}</div>` : ''}
+      <div class="ocbar"><div class="ocfill${isOver ? ' o' : ''}" style="width:${Math.min(pct,100)}%"></div></div>
     </div>`;
   }
 
@@ -726,8 +735,7 @@
         title: `${r.source_custom || r.supplier_name || '—'} — ${r.volume_nominal} куб`,
         sub: `${r.ttn_number || '—'} · ${r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : ''}`,
         badgeHtml: badge(r.ttn_confirmed === true ? 'Подтверждено' : 'Ожидает', r.ttn_confirmed === true ? 'done' : 'pending')
-      })}</div>`).join('') : emptyState('Нет приёмок')}
-      ${exportCsvBtn('receipts')}`;
+      })}</div>`).join('') : emptyState('Нет приёмок')}`;
 
     } else if (activeTab === 'trips') {
       tabContent = `
@@ -740,11 +748,10 @@
           <div class="lit"><div class="lim">${esc((d.truck_name || ''))} → ${esc(d.site_name || '')}</div><div class="lis">${esc(d.volume + ' куб · ' + (d.driver_name || ''))}</div></div>
           <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
             ${isDone ? badge('Доставлено', 'done') : badge('В пути', 'transit')}
-            ${isTransit && (isArtem() || isOp()) ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id},this)">Доставлено</button>` : ''}
+            ${isTransit ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id},this)">Доставлено</button>` : ''}
           </div>
         </div></div>`;
-      }).join('') : emptyState('Нет рейсов')}
-      ${exportCsvBtn('dispatches')}`;
+      }).join('') : emptyState('Нет рейсов')}`;
 
     } else if (activeTab === 'cash') {
       tabContent = await buildCashArtemTab();
@@ -1461,8 +1468,8 @@
         ${statCard(deliveredCub, 'Доставлено куб', 'a')}
         ${statCard('—', 'Дебиторка млн', 'o')}
       </div>` : ''}
-      ${active.length ? active.map(o => orderCard({ name: o.client_name, date: o.created_at ? new Date(o.created_at).toLocaleDateString('ru') : '', amount: isPartner() ? formatNum(o.amount_paid) + ' ₽' : null, pricePerLiter: o.price_per_liter ? o.price_per_liter + ' ₽/л' : '', delivered: o.delivered || 0, total: o.volume_ordered || 0, sites: o.sites || [], showFinancials: isPartner() })).join('') : emptyState('Нет активных заказов')}
-      ${closed.length ? closed.map(o => orderCard({ name: o.client_name, date: 'Закрыт ' + (o.closed_at ? new Date(o.closed_at).toLocaleDateString('ru') : ''), delivered: o.delivered || 0, total: o.volume_ordered || 0, closed: true, showFinancials: false })).join('') : ''}
+      ${active.length ? active.map(o => orderCard({ id: o.id, name: o.client_name, date: o.created_at ? new Date(o.created_at).toLocaleDateString('ru') : '', amount: isPartner() ? formatNum(o.amount_paid) + ' ₽' : null, pricePerLiter: o.price_per_liter ? o.price_per_liter + ' ₽/л' : '', delivered: o.delivered || 0, inTransit: o.in_transit || 0, total: o.volume_ordered || 0, sites: o.sites || [], showFinancials: isPartner(), deliveryType: o.delivery_type, notes: o.notes })).join('') : emptyState('Нет активных заказов')}
+      ${closed.length ? closed.map(o => orderCard({ id: o.id, name: o.client_name, date: 'Закрыт ' + (o.closed_at ? new Date(o.closed_at).toLocaleDateString('ru') : ''), delivered: o.delivered || 0, inTransit: 0, total: o.volume_ordered || 0, sites: o.sites || [], closed: true, showFinancials: false })).join('') : ''}
     </div>`;
     setPageContent(html, getTabBar());
     updateTabBar('orders');
@@ -1757,16 +1764,30 @@
         ${statCard(totalRevenue > 0 ? (totalRevenue/1000000).toFixed(1) + ' млн' : '—', 'Выручка ₽', 'a')}
         ${statCard(avgMarginPct + '%', 'Маржа ср.', 'g')}
       </div>
-      ${deals.length ? deals.map(d => `<div class="oc">
+      ${deals.length ? deals.map(d => {
+        const volCub = d.volume_liters ? (d.volume_liters / 1000).toFixed(1) : null;
+        const revenue = d.amount_client ? formatNum(d.amount_client) + ' ₽' : null;
+        return `<div class="oc">
         <div class="och">
-          <div><div class="ocn">${esc(d.client_name || '')} → ${esc(d.carrier_name || d.carrier_custom || '')}</div><div class="ocd">${[d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : '', d.supplier_name || ''].filter(Boolean).join(' · ')}</div></div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-            <div><div class="oca">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
+          <div style="flex:1;min-width:0">
+            <div class="ocn">${esc(d.client_name || '—')}${d.carrier_name || d.carrier_custom ? ` → <span style="color:var(--text2)">${esc(d.carrier_name || d.carrier_custom)}</span>` : ''}</div>
+            <div class="ocd">${[d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : '', d.supplier_name ? '⛽ ' + d.supplier_name : ''].filter(Boolean).join(' · ')}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+            <div><div class="oca" style="color:${d.margin_pct >= 10 ? 'var(--green)' : 'var(--orange)'}">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
             ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
           </div>
         </div>
-        ${d.volume_liters ? `<div class="ocp-labels"><span>${formatNum(d.volume_liters)} л</span><span>${d.price_client ? d.price_client + ' ₽/л' : ''}</span><span style="color:var(--accent)">${d.price_supplier ? d.price_supplier + ' ₽/л поставщику' : ''}</span></div>` : ''}
-      </div>`).join('') : emptyState('Нет сделок')}
+        <div class="ocp-labels" style="margin-top:6px">
+          ${d.volume_liters ? `<span>📦 <strong>${formatNum(d.volume_liters)} л</strong>${volCub ? ' (' + volCub + ' куб)' : ''}</span>` : ''}
+          ${d.price_client ? `<span>${d.price_client} ₽/л → клиент</span>` : ''}
+          ${d.price_supplier ? `<span style="color:var(--text2)">${d.price_supplier} ₽/л поставщику</span>` : ''}
+          ${d.price_carrier ? `<span style="color:var(--text2)">${d.price_carrier} ₽/л перевозчику</span>` : ''}
+        </div>
+        ${revenue ? `<div style="margin-top:4px;font-size:12px;color:var(--text2)">Выручка: <strong style="color:var(--green)">${revenue}</strong>${d.margin ? ' · Маржа: <strong>' + formatNum(d.margin) + ' ₽</strong>' : ''}</div>` : ''}
+        ${d.comment ? `<div style="font-size:12px;color:var(--text3);margin-top:4px">${esc(d.comment)}</div>` : ''}
+      </div>`;
+      }).join('') : emptyState('Нет сделок')}
       <button class="btn-primary" style="margin-top:12px" onclick="showHireModal()">+ Новая сделка</button>
       ${exportCsvBtn('hire')}
     </div>`;
@@ -2299,6 +2320,7 @@
       ${clients.map(c => `<div class="li">
         <div class="lic b">👤</div>
         <div class="lit"><div class="lim">${esc(c.name)}</div>${c.notes ? `<div class="lis">${esc(c.notes)}</div>` : ''}</div>
+        <div class="lir">${isPartner() ? `<button onclick="event.stopPropagation();window.editClientModal(${c.id},${JSON.stringify(c.name)},${JSON.stringify(c.notes||'')})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button>` : ''}</div>
       </div>`).join('') || emptyState('Нет клиентов')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addClientModal()">+ Добавить клиента</button>` : ''}
 
@@ -2379,6 +2401,19 @@
         const notes = document.getElementById('m-cli-notes')?.value?.trim() || null;
         await api.post('/api/clients', { name, notes });
         toast('✅ Клиент добавлен'); viewSettings();
+      });
+  };
+
+  window.editClientModal = function(id, currentName, currentNotes) {
+    showModal('Изменить клиента',
+      formField('Название / имя', `<input class="inp" id="m-cli-name" value="${esc(currentName)}">`) +
+      formField('Примечание', `<input class="inp" id="m-cli-notes" value="${esc(currentNotes || '')}" placeholder="Необязательно">`),
+      async () => {
+        const name = document.getElementById('m-cli-name')?.value?.trim();
+        if (!name) throw new Error('Введите название');
+        const notes = document.getElementById('m-cli-notes')?.value?.trim() || null;
+        await api.put(`/api/clients/${id}`, { name, notes });
+        toast('✅ Клиент обновлён'); viewSettings();
       });
   };
 
