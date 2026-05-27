@@ -288,8 +288,8 @@
             <div><div class="ts-val" style="color:var(--orange)" id="tb-trips">—</div><div class="ts-lbl">Рейса в пути</div></div>
           </div>
           ${isPartner() ? `<div class="topbar-ai" id="topbar-ai" style="display:flex;align-items:center;gap:8px;flex:1;max-width:320px">
-            <input id="ai-input" placeholder="Задать вопрос Клоду..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')window.askClaude()">
-            <button onclick="window.askClaude()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:700">AI</button>
+            <input id="ai-input" placeholder="Спросить ИИ..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')window.askClaude()">
+            <button onclick="window.askClaude()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:700">ИИ</button>
           </div>` : ''}
           <div class="topbar-alert" id="tb-alert" style="display:none" onclick="navigate('#base')">⏳ <span id="tb-alert-text">Ожидают</span></div>
         </div>
@@ -987,6 +987,7 @@
     try {
       await api.put(`/api/base/dispatches/${id}/status`, { status: 'delivered' });
       toast('✅ Доставка подтверждена!');
+      loadTopbarStats();
       render(location.hash);
     } catch (e) { toast(e.message, 'error'); }
   };
@@ -1010,7 +1011,7 @@
     try {
       await api.put('/api/base/advances/' + advanceId + '/return', {});
       toast('✅ Аванс закрыт');
-      navigate('#base?tab=advances');
+      render('#base?tab=advances');
     } catch (e) { toast(e.message, 'error'); }
   };
 
@@ -1300,6 +1301,7 @@
         }
       }
       toast('✅ Записано! Артём получит уведомление.');
+      loadTopbarStats();
       navigate('#base');
     } catch (e) { toast(e.message, 'error'); }
   };
@@ -1584,9 +1586,22 @@
 
   // ── Export CSV helper ─────────────────────────────────────────────────────
   function exportCsvBtn(section, period) {
-    const url = `/api/reports/export?section=${section}${period ? '&period=' + period : ''}`;
-    return `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="window.open('${url}')">⬇ Экспорт CSV</button>`;
+    return `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="window.downloadCsv('${section}','${period||''}')">⬇ Экспорт CSV</button>`;
   }
+
+  window.downloadCsv = async function(section, period) {
+    try {
+      const url = `/api/reports/export?section=${section}${period ? '&period=' + period : ''}`;
+      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + api.getToken() } });
+      if (!res.ok) { toast('Ошибка экспорта: ' + res.status, 'error'); return; }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${section}${period ? '_' + period : ''}.csv`;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+  };
 
   // ── Income ────────────────────────────────────────────────────────────────
   async function viewIncome() {
@@ -1631,7 +1646,7 @@
       ],
       onSubmit: async (data) => {
         await api.put('/api/income/' + id + '/correct', data);
-        viewIncome();
+        await viewIncome();
       },
     });
   };
@@ -2168,7 +2183,7 @@
   // ── Logs / Аудит ─────────────────────────────────────────────────────────
   async function viewLogs() {
     let logs = [];
-    try { logs = await api.get('/api/logs?limit=50') || []; } catch (e) {}
+    try { logs = await api.get('/api/logs?limit=500') || []; } catch (e) {}
 
     const actionColors = { INSERT: 'var(--green)', UPDATE: 'var(--orange)', CORRECTION: 'var(--red)', DELETE: 'var(--red)' };
     const tableNames = { fuel_receipts: 'Приёмка', fuel_dispatches: 'Рейс', income_records: 'Доход', company_expenses: 'Расход', debt_records: 'Долг', hire_deliveries: 'Найм', orders: 'Заказ', trucks: 'Машина' };
@@ -2187,7 +2202,7 @@
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">🕐 История записей</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
-      ${infoTag('Последние 50 изменений в системе')}
+      ${infoTag('Все изменения в системе · от новых к старым')}
       ${rows}
     </div>`;
 
@@ -2196,12 +2211,13 @@
   }
 
   async function viewSettings() {
-    let sites = [], tariffs = [], suppliers = [], carriers = [], settings = [];
+    let sites = [], tariffs = [], suppliers = [], carriers = [], settings = [], clients = [];
     try { sites = await api.get('/api/sites') || []; } catch (e) {}
     try { tariffs = await api.get('/api/tariffs') || []; } catch (e) {}
     try { suppliers = await api.get('/api/suppliers') || []; } catch (e) {}
     try { carriers = await api.get('/api/carriers') || []; } catch (e) {}
     try { settings = await api.get('/api/settings') || []; } catch (e) {}
+    try { clients = await api.get('/api/clients') || []; } catch (e) {}
 
     const getSetting = (key, def) => { const s = settings.find(x => x.key === key); return s ? s.value : def; };
 
@@ -2275,25 +2291,27 @@
       })()}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addTariffModal()">+ Добавить тариф</button>` : ''}
 
-      ${sectionHeader('Параметры базы')}
-      <div class="bb">
-        <div class="bbr"><div class="bbl">Вместимость хранилища (куб)</div><div class="bbv">${getSetting('base_capacity_cubic', '2500')}</div></div>
-        <div class="bbr"><div class="bbl">Порог алерта низкого остатка (куб)</div><div class="bbv">${getSetting('alert_low_stock_cubic', '100')}</div></div>
-        <div class="bbr"><div class="bbl">Алерт неподтверждённых ТТН (часов)</div><div class="bbv">${getSetting('alert_unconfirmed_hours', '48')}</div></div>
-      </div>
-      ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="editSettingsModal()">✏️ Изменить параметры</button>` : ''}
+      ${sectionHeader('Клиенты')}
+      ${clients.map(c => `<div class="li">
+        <div class="lic b">👤</div>
+        <div class="lit"><div class="lim">${esc(c.name)}</div>${c.notes ? `<div class="lis">${esc(c.notes)}</div>` : ''}</div>
+      </div>`).join('') || emptyState('Нет клиентов')}
+      ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addClientModal()">+ Добавить клиента</button>` : ''}
 
       ${isPartner() ? `
-      ${sectionHeader('Системные пороги')}
+      ${sectionHeader('Настройки алертов')}
       <div class="bb">
+        <div class="bbr"><div class="bbl">Вместимость хранилища (куб)</div>
+          <input id="set-capacity" class="inp" type="number" value="${getSetting('base_capacity_cubic','2500')}" style="width:90px;text-align:right;padding:4px 8px"> куб
+        </div>
         <div class="bbr"><div class="bbl">Порог остатка (алерт)</div>
-          <input id="set-low-stock" class="inp" type="number" value="${getSetting('alert_low_stock_cubic','100')}" style="width:80px;text-align:right;padding:4px 8px"> куб
+          <input id="set-low-stock" class="inp" type="number" value="${getSetting('alert_low_stock_cubic','100')}" style="width:90px;text-align:right;padding:4px 8px"> куб
         </div>
         <div class="bbr"><div class="bbl">Неподтв. ТТН (алерт)</div>
-          <input id="set-unconf-hours" class="inp" type="number" value="${getSetting('alert_unconfirmed_hours','48')}" style="width:80px;text-align:right;padding:4px 8px"> часов
+          <input id="set-unconf-hours" class="inp" type="number" value="${getSetting('alert_unconfirmed_hours','48')}" style="width:90px;text-align:right;padding:4px 8px"> ч
         </div>
         <div class="bbr"><div class="bbl">Неосвоенные нал. Артёма</div>
-          <input id="set-cash-days" class="inp" type="number" value="${getSetting('alert_cash_unsettled_days','7')}" style="width:80px;text-align:right;padding:4px 8px"> дней
+          <input id="set-cash-days" class="inp" type="number" value="${getSetting('alert_cash_unsettled_days','7')}" style="width:90px;text-align:right;padding:4px 8px"> дней
         </div>
       </div>
       <button onclick="window.saveSettings()" class="btn-primary" style="width:100%;margin-top:8px">Сохранить настройки</button>
@@ -2344,6 +2362,19 @@
         if (!name) throw new Error('Введите название');
         await api.post('/api/carriers', { name });
         toast('✅ Перевозчик добавлен'); viewSettings();
+      });
+  };
+
+  window.addClientModal = function() {
+    showModal('Новый клиент',
+      formField('Название / имя', `<input class="inp" id="m-cli-name" placeholder="Лао, ООО Рога...">`) +
+      formField('Примечание', `<input class="inp" id="m-cli-notes" placeholder="Необязательно">`),
+      async () => {
+        const name = document.getElementById('m-cli-name')?.value?.trim();
+        if (!name) throw new Error('Введите название');
+        const notes = document.getElementById('m-cli-notes')?.value?.trim() || null;
+        await api.post('/api/clients', { name, notes });
+        toast('✅ Клиент добавлен'); viewSettings();
       });
   };
 
@@ -2419,6 +2450,7 @@
 
   window.saveSettings = async function() {
     const pairs = [
+      ['base_capacity_cubic', document.getElementById('set-capacity')?.value],
       ['alert_low_stock_cubic', document.getElementById('set-low-stock')?.value],
       ['alert_unconfirmed_hours', document.getElementById('set-unconf-hours')?.value],
       ['alert_cash_unsettled_days', document.getElementById('set-cash-days')?.value],
