@@ -298,7 +298,7 @@
     </div>`;
 
     loadTopbarStats();
-    setInterval(loadTopbarStats, 60000);
+    setInterval(loadTopbarStats, 15000);
   }
 
   function buildMobileLayout() {
@@ -580,7 +580,7 @@
     const debtAmount = artemDebt ? (artemDebt.debt_rub || 0) : 0;
     const pendingItems = [
       ...pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source_custom || r.supplier_name || ''} ${r.volume_nominal || ''} куб`, sub: r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : '', btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })),
-      ...dispatches.slice(0, 2).map(d => pendingItem({ title: `${d.truck_name || ''} → ${d.site_name || ''} · ${d.volume} куб`, sub: d.driver_name || '', btnLabel: 'Доставлено', onConfirmAttr: `onclick="confirmDispatch(${d.id})"` }))
+      ...dispatches.slice(0, 2).map(d => pendingItem({ title: `${d.truck_name || ''} → ${d.site_name || ''} · ${d.volume} куб`, sub: d.driver_name || '', btnLabel: 'Доставлено', onConfirmAttr: `onclick="confirmDispatch(${d.id},this)"` }))
     ].join('');
 
     const activeOrder = orders.find(o => o.status === 'active');
@@ -740,7 +740,7 @@
           <div class="lit"><div class="lim">${esc((d.truck_name || ''))} → ${esc(d.site_name || '')}</div><div class="lis">${esc(d.volume + ' куб · ' + (d.driver_name || ''))}</div></div>
           <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
             ${isDone ? badge('Доставлено', 'done') : badge('В пути', 'transit')}
-            ${isTransit && (isArtem() || isOp()) ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id})">Доставлено</button>` : ''}
+            ${isTransit && (isArtem() || isOp()) ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id},this)">Доставлено</button>` : ''}
           </div>
         </div></div>`;
       }).join('') : emptyState('Нет рейсов')}
@@ -983,13 +983,17 @@
     } catch (e) { toast(e.message, 'error'); }
   };
 
-  window.confirmDispatch = async function (id) {
+  window.confirmDispatch = async function (id, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
     try {
       await api.put(`/api/base/dispatches/${id}/status`, { status: 'delivered' });
       toast('✅ Доставка подтверждена!');
       loadTopbarStats();
       render(location.hash);
-    } catch (e) { toast(e.message, 'error'); }
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Доставлено'; }
+      toast(e.message, 'error');
+    }
   };
 
   window.showCashForm = function () {

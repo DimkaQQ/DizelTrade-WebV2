@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from ..database import query, query_one
-from ..deps import get_current_user, require_partner
+from ..deps import get_current_user, require_partner, require_not_operator
 from ..config import settings
 
 router = APIRouter()
@@ -139,8 +139,10 @@ FROM fuel_receipts, fuel_dispatches
 """
 
 
+FINANCIAL_TABLES = {"income_records", "company_expenses", "debt_records", "hire_deliveries", "cash_to_artem", "balance_entries"}
+
 @router.post("/ai/query")
-def ai_query(body: QueryRequest, user: dict = Depends(require_partner)):
+def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
     """Translate a Russian question to SQL, execute, return formatted answer."""
     client = _get_claude_client()
     if not client:
@@ -149,10 +151,25 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_partner)):
     if not body.question or len(body.question) > 500:
         raise HTTPException(status_code=400, detail="Вопрос слишком длинный")
 
+    role = user.get("role", "")
+    is_artem = role == "artem"
+
+    # Role-based schema: Artem sees fleet/dispatch data, not financial tables
+    if is_artem:
+        schema_note = """
+ВАЖНО: У пользователя роль "artem". Он может видеть только:
+- trucks (только owner='Артём'), drivers, fleet_expenses (только его машины)
+- fuel_dispatches, fuel_receipts, sites, orders, clients, fuel_advances
+НЕ используй таблицы: income_records, company_expenses, debt_records, hire_deliveries, cash_to_artem, balance_entries
+Если вопрос касается этих таблиц — верни: ERROR: нет доступа к финансовым данным"""
+    else:
+        schema_note = ""
+
     # Step 1: Generate SQL
     sql_prompt = f"""Ты аналитик базы данных DTL (Diesel Trade Logistic). Схема БД:
 
 {DB_SCHEMA_SUMMARY}
+{schema_note}
 
 Пользователь спрашивает: "{body.question}"
 
@@ -181,6 +198,12 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_partner)):
         for kw in ["INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE", "GRANT"]:
             if kw in sql_upper:
                 return {"ok": False, "answer": "Запрос содержит недопустимые операции"}
+
+        # Role check: Artem cannot access financial tables
+        if is_artem:
+            for tbl in FINANCIAL_TABLES:
+                if tbl.upper() in sql_upper:
+                    return {"ok": False, "answer": "Нет доступа к финансовым данным"}
 
         # Execute SQL with limit safety
         if "LIMIT" not in sql_upper:
