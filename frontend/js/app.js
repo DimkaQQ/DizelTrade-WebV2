@@ -139,7 +139,7 @@
     <div class="pi2">📷</div>
     <div class="pt2">Сфотографировать ТТН</div>
     <div class="ps">Нажми чтобы выбрать или сделать фото</div>
-    <input type="file" id="${inputId}" accept="image/*" capture="environment" style="display:none" onchange="previewPhoto('${inputId}')">
+    <input type="file" id="${inputId}" accept="image/*" style="display:none" onchange="previewPhoto('${inputId}')">
   </label>
   <div id="${inputId}-preview" style="display:none;margin-top:8px">
     <img id="${inputId}-img" style="max-width:100%;border-radius:8px;max-height:200px" src="" alt="ТТН">
@@ -315,7 +315,7 @@
       const fab = document.createElement('button');
       fab.id = 'ai-fab';
       fab.textContent = '✦';
-      fab.style.cssText = 'position:fixed;bottom:80px;right:16px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#000;border:none;font-size:20px;font-weight:700;cursor:pointer;z-index:8000;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center';
+      fab.style.cssText = 'position:fixed;bottom:82px;right:16px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#000;border:none;font-size:24px;font-weight:700;cursor:pointer;z-index:8000;box-shadow:0 4px 18px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;transition:transform .2s,opacity .2s';
       fab.onclick = () => window.openAiChat();
       document.body.appendChild(fab);
     }
@@ -1651,8 +1651,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 @media print{.pbar{display:none}@page{margin:10mm 12mm}}
 </style></head><body>
 <div class="header">
-  <div><div class="logo">DIZELTRADE</div><div class="logo-sub">Diesel Trade Logistic</div><h1>${title}</h1></div>
-  <div class="meta">Сформировано: ${new Date().toLocaleDateString('ru',{day:'2-digit',month:'2-digit',year:'numeric'})} ${new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}<br>ДТЛ Менеджмент v2.0</div>
+  <div><div class="logo">DIZELTRADE</div><h1>${title}</h1></div>
+  <div class="meta">Сформировано: ${new Date().toLocaleDateString('ru',{day:'2-digit',month:'2-digit',year:'numeric'})} ${new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}<br>DTL Менеджмент v2.0</div>
 </div>
 <div class="pbar">
   <button class="pbtn" onclick="window.print()">🖨 Печать / Сохранить PDF</button>
@@ -1664,7 +1664,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   <tbody>${tableRows}</tbody>
   ${tfoot}
 </table>
-<div class="footer">ООО «ДТЛ» · Сперанский Василий · ${new Date().toLocaleDateString('ru',{year:'numeric',month:'long'})}</div>
+<div class="footer">Сперанский Василий · ${new Date().toLocaleDateString('ru',{year:'numeric',month:'long'})}</div>
 </body></html>`);
     w.document.close();
   };
@@ -1693,7 +1693,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
           <div class="lic g">💰</div>
           <div class="lit" style="flex:1">
             <div class="lim">${formatNum(r.amount)} ₽ · ${esc(r.client_name || '—')}</div>
-            <div class="lis">${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}${r.entered_by_name ? ` · ${esc(r.entered_by_name)}` : ''}</div>
+            <div class="lis">${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}${r.volume ? ` · ${r.volume} т` : ''}${r.entered_by_name ? ` · ${esc(r.entered_by_name)}` : ''}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
             ${isPartner() ? `<button onclick="window.correctIncome(${r.id},'${r.income_at ? r.income_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
@@ -2718,6 +2718,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   function showModal(title, bodyHtml, onSubmit) {
     const existing = document.getElementById('modal-overlay');
     if (existing) existing.remove();
+    const fab = document.getElementById('ai-fab');
+    if (fab) { fab.style.transform = 'scale(0)'; fab.style.opacity = '0'; }
     const overlay = document.createElement('div');
     overlay.id = 'modal-overlay';
     overlay.className = 'modal-overlay';
@@ -2741,6 +2743,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   window.closeModal = function () {
     const el = document.getElementById('modal-overlay');
     if (el) el.remove();
+    const fab = document.getElementById('ai-fab');
+    if (fab) { fab.style.transform = 'scale(1)'; fab.style.opacity = '1'; }
   };
 
   // ── Analytics (Phase 3) ───────────────────────────────────────────────────
