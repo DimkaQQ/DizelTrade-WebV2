@@ -366,6 +366,7 @@
     if (h === 'balance' || h.startsWith('balance?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewBalance(); return; }
     if (h === 'annual' || h.startsWith('annual?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnnual(); return; }
     if (h === 'settings') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewSettings(); return; }
+    if (h === 'logs') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewLogs(); return; }
     viewHome();
   }
 
@@ -555,7 +556,7 @@
         ${menuCard({ icon: '⚖️', label: 'Баланс', onClick: "navigate('#balance')" })}
         ${menuCard({ icon: '📅', label: 'Год. итоги', onClick: "navigate('#annual')" })}
         ${menuCard({ icon: '📊', label: 'Дашборд', onClick: "navigate('#dashboard')" })}
-        ${menuCard({ icon: '🕐', label: 'История записей', sub: 'кто, что и когда', wide: true })}
+        ${menuCard({ icon: '🕐', label: 'История записей', sub: 'кто, что и когда', wide: true, onClick: "navigate('#logs')" })}
       </div>
     </div>`;
     setPageContent(html, getTabBar());
@@ -667,6 +668,7 @@
       ...(!isOp() ? [['cash','Наличные']] : []),
       ...(!isOp() ? [['advances','Авансы']] : []),
       ['recon','Сверка'],
+      ['own-usage','Своя заправка'],
     ];
 
     function subTabBar() {
@@ -742,6 +744,8 @@
       tabContent = await buildAdvancesTab();
     } else if (activeTab === 'recon') {
       tabContent = await buildReconTab();
+    } else if (activeTab === 'own-usage') {
+      tabContent = await buildOwnUsageTab();
     }
 
     const html = `
@@ -833,6 +837,53 @@
       ${closedAdvances.length ? sectionHeader('Закрытые') + closedRows : ''}
     `;
   }
+
+  // ── buildOwnUsageTab ──────────────────────────────────────────────────────
+  async function buildOwnUsageTab() {
+    let records = [], trucks = [];
+    try { records = await api.get('/api/base/own-usage') || []; } catch (e) {}
+    try { trucks = await api.get('/api/trucks') || []; } catch (e) {}
+
+    const total = records.reduce((s, r) => s + (parseFloat(r.volume) || 0), 0);
+
+    const rows = records.length ? records.map(r => listItem({
+      icon: '⛽', iconBg: 'g',
+      title: r.truck_name || '—',
+      sub: `${r.used_at ? new Date(r.used_at).toLocaleDateString('ru') : '—'}${r.notes ? ' · ' + esc(r.notes) : ''}`,
+      rightVal: r.volume + ' куб',
+    })).join('') : emptyState('Нет записей');
+
+    const truckOpts = trucks.filter(t => t.status === 'active').map(t => ({ value: String(t.id), label: t.name }));
+
+    return `
+      <div style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Всего заправлено своих машин</div>
+        <div style="font-size:24px;font-weight:700;color:var(--text)">${total.toFixed(1)} куб</div>
+      </div>
+      ${rows}
+      <div style="margin-top:12px;background:var(--card2);border-radius:10px;padding:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">+ Записать заправку</div>
+        ${formField('Машина', chipGroup(truckOpts.length ? truckOpts : [{value:'0',label:'Своя машина'}], truckOpts[0]?.value || '0', 'own-truck'))}
+        ${formField('Объём, куб', `<input class="inp" type="number" id="own-vol" placeholder="5.0" step="0.5">`)}
+        ${formField('Примечание', `<input class="inp" type="text" id="own-notes" placeholder="Необязательно">`)}
+        <button onclick="window.submitOwnUsage()" class="btn-primary" style="width:100%">Записать</button>
+      </div>
+    `;
+  }
+
+  window.submitOwnUsage = async function() {
+    const truckEl = document.querySelector('.chips[data-group="own-truck"] .chip.sel');
+    const truck_id = parseInt(truckEl?.getAttribute('data-val')) || null;
+    const volume = parseFloat(document.getElementById('own-vol')?.value) || 0;
+    const notes = document.getElementById('own-notes')?.value?.trim() || null;
+    if (!volume || volume <= 0) { toast('Укажите объём', 'error'); return; }
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await api.post('/api/base/own-usage', { used_at: today, truck_id, volume, notes });
+      toast('✅ Заправка записана');
+      navigate('#base?tab=own-usage');
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   // ── buildCashArtemTab ─────────────────────────────────────────────────────
   async function buildCashArtemTab() {
@@ -1401,17 +1452,86 @@
   }
 
   async function viewOrderDetail(id) {
-    let order = null;
+    let order = null, dispatches = [];
     try { order = await api.get(`/api/orders/${id}`); } catch (e) {}
     if (!order) { navigate('#orders'); return; }
+    try {
+      const allD = await api.get(`/api/base/dispatches`) || [];
+      dispatches = allD.filter(d => d.order_id == id);
+    } catch (e) {}
+
+    const delivered = dispatches.filter(d => d.status === 'delivered').reduce((s, d) => s + (parseFloat(d.volume) || 0), 0);
+    const inTransit = dispatches.filter(d => ['dispatched','in_transit'].includes(d.status)).reduce((s, d) => s + (parseFloat(d.volume) || 0), 0);
+    const total = parseFloat(order.volume_ordered) || 0;
+    const remaining = Math.max(0, total - delivered - inTransit);
+    const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
+
+    const statusLabels = { dispatched: 'В дороге', in_transit: 'В пути', delivered: 'Доставлено', cancelled: 'Отменён' };
+    const statusColors = { dispatched: 'var(--orange)', in_transit: 'var(--accent)', delivered: 'var(--green)', cancelled: 'var(--red)' };
+
+    const dispatchRows = dispatches.length ? dispatches.map(d => `
+      <div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer">${listItem({
+        icon: '🚛', iconBg: 'tr',
+        title: `${esc(d.truck_name || d.truck_temp || '?')} → ${esc(d.site_name || '?')}`,
+        sub: `${d.volume} куб · ${d.dispatched_at ? new Date(d.dispatched_at).toLocaleDateString('ru') : ''} · ${esc(d.driver_name || d.driver_temp || '')}`,
+        badgeHtml: `<span style="font-size:10px;color:${statusColors[d.status]||'var(--text2)'}">${statusLabels[d.status]||d.status}</span>`
+      })}</div>`).join('') : `<div class="empty-state">Рейсов ещё нет</div>`;
+
     const html = `
     ${!isDesktop() ? statusBar() : ''}
-    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#orders')">Заказы</div><div class="nav-title">${esc(order.client_name)}</div><div style="width:55px"></div></div>` : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#orders')">Заказы</div><div class="nav-title">${esc(order.client_name || '')}</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
-      ${orderCard({ name: order.client_name, date: order.created_at ? new Date(order.created_at).toLocaleDateString('ru') : '', delivered: order.delivered || 0, total: order.volume_ordered || 0, showFinancials: isPartner(), amount: formatNum(order.amount_paid) + ' ₽', sites: order.sites || [] })}
+      <div style="background:var(--card);border-radius:14px;padding:16px;margin-bottom:12px">
+        <div style="font-size:18px;font-weight:700;margin-bottom:4px">${esc(order.client_name || '')}</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">${order.paid_at ? new Date(order.paid_at).toLocaleDateString('ru') : ''}${order.delivery_type ? ' · ' + esc(order.delivery_type) : ''}</div>
+        <div style="background:var(--bg);border-radius:8px;height:8px;margin-bottom:8px;overflow:hidden">
+          <div style="height:100%;border-radius:8px;background:${pct >= 100 ? 'var(--green)' : 'var(--accent)'};width:${Math.min(100,pct)}%;transition:width .4s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:12px">
+          <span>${pct}% доставлено</span><span>Осталось: ${remaining.toFixed(1)} куб</span>
+        </div>
+        <div class="bb" style="margin:0">
+          <div class="bbr"><div class="bbl">Объём заказа</div><div class="bbv">${total} куб</div></div>
+          <div class="bbr"><div class="bbl">Доставлено</div><div class="bbv" style="color:var(--green)">${delivered.toFixed(1)} куб</div></div>
+          <div class="bbr"><div class="bbl">В пути</div><div class="bbv" style="color:var(--orange)">${inTransit.toFixed(1)} куб</div></div>
+          ${isPartner() ? `
+          <div class="bbr"><div class="bbl">Сумма оплаты</div><div class="bbv">${formatNum(order.amount_paid)} ₽</div></div>
+          <div class="bbr"><div class="bbl">Цена за литр</div><div class="bbv">${order.price_per_liter || '—'} ₽/л</div></div>
+          ` : ''}
+          ${order.notes ? `<div class="bbr"><div class="bbl">Примечание</div><div class="bbv">${esc(order.notes)}</div></div>` : ''}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button onclick="window.open('/api/orders/${id}/report')" class="btn-secondary" style="flex:1">🖨 Отчёт для клиента</button>
+        ${isPartner() && order.status === 'active' ? `<button onclick="window.closeOrder(${id})" class="btn-secondary" style="flex:1;color:var(--red)">Закрыть заказ</button>` : ''}
+        ${isPartner() && order.status !== 'closed' ? `<button onclick="window.reconcileOrder(${id})" class="btn-secondary" style="flex:1">✅ Сверен</button>` : ''}
+      </div>
+
+      ${sectionHeader('Рейсы по заказу · ' + dispatches.length)}
+      ${dispatchRows}
     </div>`;
+
     setPageContent(html, getTabBar());
+    if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = (order.client_name || 'Заказ');
   }
+
+  window.closeOrder = async function(id) {
+    if (!confirm('Закрыть заказ? Это действие нельзя отменить.')) return;
+    try {
+      await api.put('/api/orders/' + id + '/close', {});
+      toast('✅ Заказ закрыт');
+      navigate('#orders');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.reconcileOrder = async function(id) {
+    try {
+      await api.put('/api/orders/' + id + '/reconcile', {});
+      toast('✅ Заказ отмечен как сверен');
+      navigate('#orders/' + id);
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   window.showNewOrderModal = async function () {
     let clients = [], sites = [];
