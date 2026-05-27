@@ -188,3 +188,14 @@ def create_client(body: ClientCreate, user: dict = Depends(require_partner)):
         "INSERT INTO clients (name, notes) VALUES (%s, %s) RETURNING *",
         (body.name, body.notes), returning=True
     )
+
+
+@router.put("/clients/{client_id}")
+def update_client(client_id: int, body: ClientCreate, user: dict = Depends(require_partner)):
+    row = query_one("SELECT id FROM clients WHERE id = %s", (client_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return execute(
+        "UPDATE clients SET name=%s, notes=%s WHERE id=%s RETURNING *",
+        (body.name, body.notes, client_id), returning=True
+    )

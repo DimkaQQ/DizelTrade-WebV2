@@ -58,10 +58,13 @@ def list_orders(
     rows = query(f"""
         SELECT {fields},
             COALESCE(SUM(CASE WHEN fd.status='delivered' THEN fd.volume ELSE 0 END),0) AS delivered,
-            COALESCE(SUM(CASE WHEN fd.status IN('dispatched','in_transit') THEN fd.volume ELSE 0 END),0) AS in_transit
+            COALESCE(SUM(CASE WHEN fd.status IN('dispatched','in_transit') THEN fd.volume ELSE 0 END),0) AS in_transit,
+            ARRAY_REMOVE(ARRAY_AGG(DISTINCT s.name), NULL) AS sites
         FROM orders o
         LEFT JOIN clients c ON c.id = o.client_id
         LEFT JOIN fuel_dispatches fd ON fd.order_id = o.id
+        LEFT JOIN order_sites os ON os.order_id = o.id
+        LEFT JOIN sites s ON s.id = os.site_id
         WHERE {where}
         GROUP BY o.id, c.name
         ORDER BY o.created_at DESC
