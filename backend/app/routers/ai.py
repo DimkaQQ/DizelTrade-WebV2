@@ -144,9 +144,29 @@ FROM fuel_receipts, fuel_dispatches
 
 FINANCIAL_TABLES = {"income_records", "company_expenses", "debt_records", "hire_deliveries", "cash_to_artem", "balance_entries"}
 
+APP_NAVIGATION = """
+Навигация в приложении DTL Management:
+- Дашборд (#home) — сводка: остаток на базе, рейсы в пути, выручка
+- База Тында (#base) — вкладки:
+    Главная — баланс базы, рейсы в пути
+    Приёмки (#base?tab=receipts) — оформить приёмку топлива с ТТН
+    Рейсы (#base?tab=trips) — записать новый рейс: кнопка "+ Рейс"
+    Наличные (#base?tab=cash) — выдача наличных Артёму
+    Авансы (#base?tab=advances) — авансы топлива
+    Сверка (#base?tab=reconcile) — сверка остатков
+- Найм (#hire) — доставки по найму (клиент → поставщик → перевозчик, маржа)
+- Доходы (#income) — записи поступлений от клиентов
+- Расходы (#expenses) — общие расходы компании
+- Долги (#debts) — учёт долгов и оплат
+- Автопарк (#fleet) — список машин, архив (прокрути вниз), расходы по машинам
+- Аналитика (#analytics) — клиенты, поставщики, машины, финансовый итог по месяцам
+- Год итоги (#annual) — годовая сводка
+"""
+
+
 @router.post("/ai/query")
 def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
-    """Translate a Russian question to SQL, execute, return formatted answer."""
+    """General assistant: answers app usage questions and data queries via NL→SQL."""
     client = _get_claude_client()
     if not client:
         raise HTTPException(status_code=503, detail="AI-запросы временно недоступны")
@@ -157,79 +177,77 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
     role = user.get("role", "")
     is_artem = role == "artem"
 
-    # Role-based schema: Artem sees fleet/dispatch data, not financial tables
-    if is_artem:
-        schema_note = """
-ВАЖНО: У пользователя роль "artem". Он может видеть только:
-- trucks (только owner='Артём'), drivers, fleet_expenses (только его машины)
-- fuel_dispatches, fuel_receipts, sites, orders, clients, fuel_advances
-НЕ используй таблицы: income_records, company_expenses, debt_records, hire_deliveries, cash_to_artem, balance_entries
-Если вопрос касается этих таблиц — верни: ERROR: нет доступа к финансовым данным"""
-    else:
-        schema_note = ""
+    artem_restriction = """
+ОГРАНИЧЕНИЕ ДОСТУПА: пользователь видит только fleet/dispatch данные (trucks owner='Артём', drivers, fleet_expenses, fuel_dispatches, fuel_receipts).
+Финансовые таблицы (income_records, company_expenses, debt_records, hire_deliveries, cash_to_artem) — недоступны.
+""" if is_artem else ""
 
-    # Step 1: Generate SQL
-    sql_prompt = f"""Ты аналитик базы данных DTL (Diesel Trade Logistic). Схема БД:
+    system_prompt = f"""Ты ИИ-ассистент системы управления DTL (Diesel Trade Logistic).
+{artem_restriction}
+{APP_NAVIGATION}
 
+База данных:
 {DB_SCHEMA_SUMMARY}
-{schema_note}
 
-Пользователь спрашивает: "{body.question}"
-
-Сгенерируй SQL запрос (ТОЛЬКО SELECT, без INSERT/UPDATE/DELETE/DROP).
-Верни ТОЛЬКО SQL запрос без пояснений, без markdown, без ```.
-Если вопрос не про данные или нужен не-SELECT запрос — верни: ERROR: не могу выполнить"""
+Правила:
+1. Если вопрос о том КАК что-то сделать в приложении — ответь текстом, кратко и конкретно (1-3 предложения).
+2. Если вопрос о ДАННЫХ (суммы, статистика, список) — верни JSON: {{"type":"sql","query":"SELECT ..."}}
+3. На вопросы о данных генерируй только SELECT запросы. Если нужен не-SELECT — объясни что это невозможно.
+4. Отвечай только на русском языке.
+5. Будь кратким и конкретным."""
 
     try:
         import anthropic
-        sql_resp = client.messages.create(
+        resp = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=500,
-            messages=[{"role": "user", "content": sql_prompt}]
+            max_tokens=600,
+            system=system_prompt,
+            messages=[{"role": "user", "content": body.question}]
         )
-        sql = sql_resp.content[0].text.strip()
+        text = resp.content[0].text.strip()
 
-        if sql.upper().startswith("ERROR:"):
-            return {"ok": False, "answer": sql.replace("ERROR:", "").strip()}
+        # Check if response is a SQL JSON
+        sql_query = None
+        if text.startswith('{') or '{"type":"sql"' in text or '"type": "sql"' in text:
+            try:
+                # Strip markdown fences if present
+                clean = text
+                if clean.startswith('```'):
+                    clean = clean.split('\n', 1)[1] if '\n' in clean else clean[3:]
+                    clean = clean.rsplit('```', 1)[0].strip()
+                parsed = json.loads(clean)
+                if parsed.get("type") == "sql":
+                    sql_query = parsed.get("query", "").strip()
+            except (json.JSONDecodeError, AttributeError):
+                pass
 
-        # Safety check: only SELECT
-        sql_upper = sql.upper().strip()
-        if not sql_upper.startswith("SELECT") and not sql_upper.startswith("WITH"):
-            return {"ok": False, "answer": "Могу выполнять только SELECT-запросы"}
+        if sql_query:
+            # Safety check
+            sql_upper = sql_query.upper().strip()
+            if not sql_upper.startswith("SELECT") and not sql_upper.startswith("WITH"):
+                return {"ok": True, "answer": "Могу выполнять только SELECT-запросы для получения данных."}
+            for kw in ["INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE", "GRANT"]:
+                if kw in sql_upper:
+                    return {"ok": True, "answer": "Не могу выполнить этот запрос — он изменяет данные."}
+            if is_artem:
+                for tbl in FINANCIAL_TABLES:
+                    if tbl.upper() in sql_upper:
+                        return {"ok": True, "answer": "У вас нет доступа к финансовым данным."}
+            if "LIMIT" not in sql_upper:
+                sql_query = sql_query.rstrip(";") + " LIMIT 100"
 
-        # Disallow dangerous keywords
-        for kw in ["INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE", "GRANT"]:
-            if kw in sql_upper:
-                return {"ok": False, "answer": "Запрос содержит недопустимые операции"}
+            rows = query(sql_query)
+            result_json = json.dumps(rows, ensure_ascii=False, default=str)
 
-        # Role check: Artem cannot access financial tables
-        if is_artem:
-            for tbl in FINANCIAL_TABLES:
-                if tbl.upper() in sql_upper:
-                    return {"ok": False, "answer": "Нет доступа к финансовым данным"}
+            fmt_resp = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=300,
+                messages=[{"role": "user", "content": f'Вопрос: "{body.question}"\nДанные: {result_json[:3000]}\n\nОтветь кратко на русском, 1-3 предложения.'}]
+            )
+            return {"ok": True, "answer": fmt_resp.content[0].text.strip(), "rows_count": len(rows)}
 
-        # Execute SQL with limit safety
-        if "LIMIT" not in sql_upper:
-            sql = sql.rstrip(";") + " LIMIT 100"
-
-        rows = query(sql)
-
-        # Step 2: Format the answer
-        result_json = json.dumps(rows, ensure_ascii=False, default=str)
-
-        format_prompt = f"""Пользователь спросил: "{body.question}"
-SQL вернул результат: {result_json[:3000]}
-
-Ответь кратко на русском языке, используя числа из результата. 1-3 предложения максимум."""
-
-        fmt_resp = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=300,
-            messages=[{"role": "user", "content": format_prompt}]
-        )
-        answer = fmt_resp.content[0].text.strip()
-
-        return {"ok": True, "answer": answer, "rows_count": len(rows)}
+        # Direct text answer
+        return {"ok": True, "answer": text}
 
     except Exception as e:
         logger.warning(f"AI query error: {e}")
