@@ -2076,6 +2076,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="lir" style="display:flex;gap:6px;align-items:center">
           ${t.revenue_month ? `<span style="font-size:13px;font-weight:600">${formatNum(t.revenue_month)} ₽</span>` : ''}
           ${(isPartner() || isArtem()) ? `<button onclick="showEditTruckModal(${t.id},'${esc(t.name)}','${esc(t.plate||'')}',${t.tank_volume||0})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">✏ Изм.</button>` : ''}
+          ${(isPartner() || isArtem()) && t.status === 'active' ? `<button onclick="setTruckForSale(${t.id})" style="background:rgba(255,165,0,.1);border:1px solid rgba(255,165,0,.3);color:var(--orange);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">🏷 Продажа</button>` : ''}
+          ${(isPartner() || isArtem()) && t.status === 'for_sale' ? `<button onclick="activateTruck(${t.id})" style="background:rgba(100,200,100,.1);border:1px solid rgba(100,200,100,.3);color:var(--green);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">✅ Активна</button>` : ''}
           ${(isPartner() || isArtem()) ? `<button onclick="archiveTruck(${t.id})" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.25);color:var(--red);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer">📦 Арх.</button>` : ''}
         </div>
       </div>`).join('') : emptyState('Нет машин')}
@@ -2158,6 +2160,20 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     showModal('Восстановить машину?', `<p style="color:var(--text2)">Машина вернётся в активный список.</p>`, async () => {
       await api.put(`/api/trucks/${id}/unarchive`);
       toast('✅ Машина восстановлена'); viewFleet();
+    });
+  };
+
+  window.setTruckForSale = function (id) {
+    showModal('Выставить на продажу?', `<p style="color:var(--text2)">Машина останется в работе, но будет отмечена как «На продаже».</p>`, async () => {
+      await api.put(`/api/trucks/${id}/for-sale`);
+      toast('🏷 Машина выставлена на продажу'); viewFleet();
+    });
+  };
+
+  window.activateTruck = function (id) {
+    showModal('Снять с продажи?', `<p style="color:var(--text2)">Статус изменится обратно на «Активна».</p>`, async () => {
+      await api.put(`/api/trucks/${id}/activate`);
+      toast('✅ Статус обновлён'); viewFleet();
     });
   };
 

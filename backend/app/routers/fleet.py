@@ -124,6 +124,32 @@ def unarchive_truck(truck_id: int, user: dict = Depends(require_not_operator)):
     )
 
 
+@router.put("/trucks/{truck_id}/for-sale")
+def set_truck_for_sale(truck_id: int, user: dict = Depends(require_not_operator)):
+    existing = query_one("SELECT * FROM trucks WHERE id = %s", (truck_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Truck not found")
+    if user["role"] == "artem" and existing["owner"] != "Артём":
+        raise HTTPException(status_code=403, detail="Artem can only modify his own trucks")
+    return execute(
+        "UPDATE trucks SET status='for_sale' WHERE id=%s RETURNING *",
+        (truck_id,), returning=True
+    )
+
+
+@router.put("/trucks/{truck_id}/activate")
+def activate_truck(truck_id: int, user: dict = Depends(require_not_operator)):
+    existing = query_one("SELECT * FROM trucks WHERE id = %s", (truck_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Truck not found")
+    if user["role"] == "artem" and existing["owner"] != "Артём":
+        raise HTTPException(status_code=403, detail="Artem can only modify his own trucks")
+    return execute(
+        "UPDATE trucks SET status='active' WHERE id=%s RETURNING *",
+        (truck_id,), returning=True
+    )
+
+
 @router.get("/trucks/{truck_id}/stats")
 def truck_stats(
     truck_id: int,
