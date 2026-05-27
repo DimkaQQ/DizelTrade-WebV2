@@ -1,10 +1,11 @@
 import logging
 import os
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional
-from ..deps import get_current_user
+from ..deps import get_current_user, require_partner
+from ..database import query
 
 router = APIRouter()
 
@@ -49,3 +50,15 @@ async def tail_logs(n: int = 100, user=Depends(get_current_user)):
         return "".join(lines[-n:])
     except FileNotFoundError:
         return "(log file empty)"
+
+
+@router.get("/api/logs")
+def get_audit_logs(limit: int = Query(50, ge=1, le=200), user: dict = Depends(require_partner)):
+    rows = query("""
+        SELECT al.*, u.name AS user_name
+        FROM audit_log al
+        LEFT JOIN users u ON u.id = al.user_id
+        ORDER BY al.created_at DESC
+        LIMIT %s
+    """, (limit,))
+    return rows
