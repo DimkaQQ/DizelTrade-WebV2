@@ -293,7 +293,7 @@
           </div>` : ''}
           <div class="topbar-alert" id="tb-alert" style="display:none" onclick="navigate('#base')">⏳ <span id="tb-alert-text">Ожидают</span></div>
         </div>
-        <div class="content" id="content"></div>
+        <div id="content"></div>
       </div>
     </div>`;
 
@@ -1222,7 +1222,7 @@
       <div style="width:55px"></div>
     </div>` : ''}
     <div class="content">
-      <div class="form-wrap">
+      <div class="form-content">
       <div style="color:var(--text2);font-size:11px;margin-bottom:8px">// шаг 1 из 4</div>
       <div style="background:var(--card);border-radius:6px;height:3px;margin-bottom:18px;overflow:hidden"><div style="width:25%;height:100%;background:var(--accent);border-radius:6px"></div></div>
       ${formField('Источник топлива', chipGroup(sources, 'Хабаровск', 'source'))}
@@ -1327,7 +1327,7 @@
       <div style="width:55px"></div>
     </div>` : ''}
     <div class="content">
-      <div class="form-wrap">
+      <div class="form-content">
       ${infoTag('ℹ Это рейс Тында → участок. Найм Хабаровск → Тында — в разделе «Найм»')}
       ${formField('Чья машина', chipGroup(ownerTypes, 'Наш DTL', 'owner'))}
       ${formField('Машина', chipGroup(truckOpts, truckOpts[0]?.value || '', 'truck'))}
