@@ -130,22 +130,31 @@ def analytics_clients(
     year: int = Query(default=2026),
     user: dict = Depends(require_partner),
 ):
-    """Client revenue breakdown for the year."""
+    """Client revenue breakdown for the year (dispatches + hire)."""
     rows = query(
         """
-        SELECT
-          c.name AS client_name,
-          COALESCE(SUM(fd.tariff), 0) AS revenue,
-          COALESCE(SUM(fd.volume), 0)  AS volume
-        FROM fuel_dispatches fd
-        JOIN orders o ON o.id = fd.order_id
-        JOIN clients c ON c.id = o.client_id
-        WHERE fd.status = 'delivered'
-          AND EXTRACT(YEAR FROM fd.dispatched_at) = %s
-        GROUP BY c.name
+        SELECT client_name, SUM(revenue) AS revenue, SUM(volume) AS volume
+        FROM (
+            SELECT c.name AS client_name,
+                   COALESCE(fd.tariff, 0) AS revenue,
+                   COALESCE(fd.volume, 0) AS volume
+            FROM fuel_dispatches fd
+            JOIN orders o ON o.id = fd.order_id
+            JOIN clients c ON c.id = o.client_id
+            WHERE fd.status = 'delivered'
+              AND EXTRACT(YEAR FROM fd.dispatched_at) = %s
+            UNION ALL
+            SELECT c.name AS client_name,
+                   COALESCE(hd.amount_client, 0) AS revenue,
+                   COALESCE(hd.volume_liters / 1000.0, 0) AS volume
+            FROM hire_deliveries hd
+            JOIN clients c ON c.id = hd.client_id
+            WHERE EXTRACT(YEAR FROM hd.delivery_at) = %s
+        ) t
+        GROUP BY client_name
         ORDER BY revenue DESC
         """,
-        (year,),
+        (year, year),
     )
 
     total_rev = sum(_safe_float(r["revenue"]) for r in rows)
@@ -177,20 +186,19 @@ def analytics_trucks(
         SELECT
           t.name AS truck_name,
           COUNT(*) AS trips,
-          COALESCE(SUM(fd.volume), 0)   AS volume,
-          COALESCE(SUM(fd.tariff), 0)  AS revenue
+          COALESCE(SUM(fd.volume), 0)  AS volume,
+          COALESCE(SUM(fd.tariff), 0) AS revenue
         FROM fuel_dispatches fd
         JOIN trucks t ON t.id = fd.truck_id
         WHERE fd.status = 'delivered'
           AND EXTRACT(YEAR  FROM fd.dispatched_at) = %s
           AND EXTRACT(MONTH FROM fd.dispatched_at) = %s
         GROUP BY t.name
-        ORDER BY revenue DESC
         """,
         (year, month),
     )
+    disp_map = {r["truck_name"]: r for r in disp_rows}
 
-    # Expenses per truck
     exp_rows = query(
         """
         SELECT
@@ -201,25 +209,30 @@ def analytics_trucks(
         WHERE EXTRACT(YEAR  FROM fe.expense_at) = %s
           AND EXTRACT(MONTH FROM fe.expense_at) = %s
         GROUP BY t.name
+        ORDER BY expenses DESC
         """,
         (year, month),
     )
+
+    all_trucks = set(r["truck_name"] for r in exp_rows) | set(disp_map.keys())
     exp_map = {r["truck_name"]: _safe_float(r["expenses"]) for r in exp_rows}
 
     result = []
-    for r in disp_rows:
-        rev = _safe_float(r["revenue"])
-        exp = exp_map.get(r["truck_name"], 0.0)
+    for truck_name in sorted(all_trucks):
+        d = disp_map.get(truck_name, {})
+        rev = _safe_float(d.get("revenue", 0))
+        exp = exp_map.get(truck_name, 0.0)
         profit = rev - exp
         margin_pct = round((profit / rev * 100), 1) if rev > 0 else 0.0
         result.append({
-            "truck_name": r["truck_name"],
-            "trips": _safe_int(r["trips"]),
-            "volume": round(_safe_float(r["volume"]), 2),
+            "truck_name": truck_name,
+            "trips": _safe_int(d.get("trips", 0)),
+            "volume": round(_safe_float(d.get("volume", 0)), 2),
             "revenue": round(rev, 2),
             "expenses": round(exp, 2),
             "margin_pct": margin_pct,
         })
+    result.sort(key=lambda x: x["expenses"], reverse=True)
     return result
 
 
@@ -232,18 +245,18 @@ def analytics_suppliers(
     year: int = Query(default=2026),
     user: dict = Depends(require_partner),
 ):
-    """Supplier purchase share for the year."""
+    """Supplier purchase share for the year (hire deliveries)."""
     rows = query(
         """
         SELECT
-          COALESCE(s.name, fr.source_custom) AS supplier_name,
-          COALESCE(SUM(fr.volume_adjusted), 0)        AS volume,
-          COALESCE(SUM(0), 0)        AS cost
-        FROM fuel_receipts fr
-        LEFT JOIN suppliers s ON s.id = fr.supplier_id
-        WHERE EXTRACT(YEAR FROM fr.received_at) = %s
-          AND fr.ttn_confirmed = TRUE
-        GROUP BY COALESCE(s.name, fr.source_custom)
+          COALESCE(s.name, 'Неизвестно') AS supplier_name,
+          COALESCE(SUM(hd.volume_liters), 0) AS volume,
+          COALESCE(SUM(hd.amount_supplier), 0) AS cost
+        FROM hire_deliveries hd
+        LEFT JOIN suppliers s ON s.id = hd.supplier_id
+        WHERE EXTRACT(YEAR FROM hd.delivery_at) = %s
+          AND hd.amount_supplier IS NOT NULL
+        GROUP BY COALESCE(s.name, 'Неизвестно')
         ORDER BY cost DESC
         """,
         (year,),
