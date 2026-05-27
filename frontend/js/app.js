@@ -718,7 +718,7 @@
         ${menuCard({ icon: '📥', label: 'Принял топливо', accent: true, onClick: "navigate('#base/receipts/new')" })}
         ${menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" })}
         ${!isOp() ? menuCard({ icon: '💸', label: 'Авансы', sub: 'топливо в долг', onClick: "navigate('#base?tab=advances')" }) : ''}
-        ${menuCard({ icon: '🔋', label: 'Заправка', sub: 'своих машин' })}
+        ${menuCard({ icon: '🔋', label: 'Заправка', sub: 'своих машин', onClick: "navigate('#base?tab=own-usage')" })}
         ${!isOp() ? menuCard({ icon: '💵', label: 'Наличные', sub: 'Артёму', onClick: "navigate('#base?tab=cash')" }) : ''}
         ${menuCard({ icon: '📊', label: 'Сверка', onClick: "navigate('#base?tab=recon')" })}
       </div>
