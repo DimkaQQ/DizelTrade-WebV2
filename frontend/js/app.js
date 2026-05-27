@@ -296,10 +296,7 @@
           <div class="topbar-stat">
             <div><div class="ts-val" style="color:var(--orange)" id="tb-trips">—</div><div class="ts-lbl">Рейса в пути</div></div>
           </div>
-          ${isPartner() ? `<div class="topbar-ai" id="topbar-ai" style="display:flex;align-items:center;gap:8px;flex:1;max-width:320px">
-            <input id="ai-input" placeholder="Спросить ИИ..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')window.askClaude()">
-            <button onclick="window.askClaude()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:700">ИИ</button>
-          </div>` : ''}
+          ${isPartner() || isArtem() ? `<button onclick="window.openAiChat()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap">✦ ИИ</button>` : ''}
           <div class="topbar-alert" id="tb-alert" style="display:none" onclick="navigate('#base')">⏳ <span id="tb-alert-text">Ожидают</span></div>
         </div>
         <div id="content"></div>
@@ -313,6 +310,15 @@
   function buildMobileLayout() {
     const el = document.getElementById('app');
     el.innerHTML = `<div class="app-shell" id="mobile-shell"></div>`;
+    // Floating AI button for mobile (only for partner/artem)
+    if (isPartner() || isArtem()) {
+      const fab = document.createElement('button');
+      fab.id = 'ai-fab';
+      fab.textContent = '✦';
+      fab.style.cssText = 'position:fixed;bottom:80px;right:16px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#000;border:none;font-size:20px;font-weight:700;cursor:pointer;z-index:8000;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center';
+      fab.onclick = () => window.openAiChat();
+      document.body.appendChild(fab);
+    }
   }
 
   async function loadTopbarStats() {
@@ -2207,50 +2213,76 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   };
 
   // ── AI ────────────────────────────────────────────────────────────────────
-  window.askClaude = async function() {
-    const input = document.getElementById('ai-input');
+  // ── AI Chat ───────────────────────────────────────────────────────────────
+  let _aiMessages = [];
+
+  function _renderAiPanel() {
+    document.getElementById('ai-panel')?.remove();
+    const mob = !isDesktop();
+    const panel = document.createElement('div');
+    panel.id = 'ai-panel';
+    panel.style.cssText = mob
+      ? 'position:fixed;inset:0;background:var(--bg);z-index:9100;display:flex;flex-direction:column'
+      : 'position:fixed;top:56px;right:16px;width:360px;height:calc(100vh - 72px);background:var(--card);border:1px solid var(--border);border-radius:16px;z-index:9100;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.4)';
+
+    const msgs = _aiMessages.map(m => {
+      const isUser = m.role === 'user';
+      return `<div style="display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'}">
+        <div style="max-width:85%;background:${isUser ? 'var(--accent)' : 'var(--card2)'};color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '14px 14px 3px 14px' : '14px 14px 14px 3px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:pre-wrap">${esc(m.text)}${m.loading ? '<span style="opacity:.5"> ...</span>' : ''}</div>
+      </div>`;
+    }).join('');
+
+    const empty = _aiMessages.length === 0
+      ? `<div style="color:var(--text3);font-size:13px;text-align:center;margin:auto;padding:24px">
+          Спросите о данных или как пользоваться приложением.<br><br>
+          <span style="color:var(--text2)">Примеры:</span><br>
+          «Как записать новый рейс?»<br>
+          «Сколько выручки за май?»<br>
+          «Кто самый крупный клиент?»
+        </div>` : '';
+
+    panel.innerHTML = `
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <div style="font-size:15px;font-weight:700">✦ ИИ-ассистент</div>
+        <button onclick="window.closeAiChat()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>
+      </div>
+      <div id="ai-msgs" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px">${empty}${msgs}</div>
+      <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0">
+        <input id="ai-chat-input" placeholder="Спросить ИИ..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.sendAiMessage()}">
+        <button id="ai-chat-btn" onclick="window.sendAiMessage()" style="background:var(--accent);color:#000;border:none;border-radius:11px;padding:11px 16px;font-size:15px;font-weight:700;cursor:pointer;flex-shrink:0">↑</button>
+      </div>`;
+    document.body.appendChild(panel);
+    const msgsEl = document.getElementById('ai-msgs');
+    if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
+    if (!_aiMessages.length || _aiMessages[_aiMessages.length - 1].role === 'assistant') {
+      setTimeout(() => document.getElementById('ai-chat-input')?.focus(), 50);
+    }
+  }
+
+  window.openAiChat = function() { _renderAiPanel(); };
+  window.closeAiChat = function() { document.getElementById('ai-panel')?.remove(); };
+
+  window.sendAiMessage = async function() {
+    const input = document.getElementById('ai-chat-input');
     if (!input) return;
     const q = input.value.trim();
     if (!q) return;
+    input.value = '';
+    const btn = document.getElementById('ai-chat-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
 
-    const btn = input.nextElementSibling;
-    if (btn) { btn.textContent = '...'; btn.disabled = true; }
-    input.disabled = true;
+    _aiMessages.push({ role: 'user', text: q });
+    _aiMessages.push({ role: 'assistant', text: '', loading: true });
+    _renderAiPanel();
 
     try {
       const res = await api.post('/api/ai/query', { question: q });
-      if (res.ok) {
-        showAiAnswer(q, res.answer);
-      } else {
-        toast('AI: ' + (res.answer || 'Нет ответа'), 'error');
-      }
+      _aiMessages[_aiMessages.length - 1] = { role: 'assistant', text: res.answer || 'Нет ответа' };
     } catch (e) {
-      toast('AI недоступен: ' + e.message, 'error');
-    } finally {
-      if (btn) { btn.textContent = 'AI'; btn.disabled = false; }
-      input.disabled = false;
-      input.value = '';
+      _aiMessages[_aiMessages.length - 1] = { role: 'assistant', text: 'Ошибка: ' + e.message };
     }
+    _renderAiPanel();
   };
-
-  function showAiAnswer(question, answer) {
-    const existing = document.getElementById('ai-overlay');
-    if (existing) existing.remove();
-
-    const overlay = document.createElement('div');
-    overlay.id = 'ai-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-    overlay.innerHTML = `
-      <div style="background:var(--card);border-radius:16px;padding:24px;max-width:500px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)">
-        <div style="color:var(--text2);font-size:12px;margin-bottom:8px">Вопрос:</div>
-        <div style="font-size:14px;margin-bottom:16px;color:var(--text)">${esc(question)}</div>
-        <div style="color:var(--accent);font-size:12px;margin-bottom:8px">Ответ Клода:</div>
-        <div style="font-size:15px;line-height:1.5;color:var(--text)">${esc(answer)}</div>
-        <button onclick="document.getElementById('ai-overlay').remove()" style="margin-top:20px;width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text);cursor:pointer;font-size:14px">Закрыть</button>
-      </div>`;
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    document.body.appendChild(overlay);
-  }
 
   window.scanTTN = async function(inputId) {
     const file = document.getElementById(inputId)?.files[0];
