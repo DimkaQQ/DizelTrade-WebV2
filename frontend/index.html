@@ -141,7 +141,7 @@ body{display:flex;flex-direction:column;min-height:100vh}
 .pr:last-child{border:none;padding-bottom:0}
 .pr .prt{font-size:13px;color:var(--text)}
 .pr .prs{font-size:11px;color:var(--text2);margin-top:1px}
-.prb{background:var(--orange);color:#000;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.prb{background:var(--card2);color:var(--text2);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .pr .prb{margin-left:8px}
 
 /* ── FORM ────────────────────────────────────────────────────────────── */
@@ -194,7 +194,7 @@ body{display:flex;flex-direction:column;min-height:100vh}
 /* ── BADGE ───────────────────────────────────────────────────────────── */
 .badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px}
 .badge::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0}
-.badge.transit{background:rgba(10,132,255,.14);color:var(--blue)}
+.badge.transit{background:rgba(10,132,255,.18);color:var(--blue);border:1px solid rgba(10,132,255,.35);font-size:12px;padding:3px 10px}
 .badge.done{background:rgba(50,215,75,.12);color:var(--green)}
 .badge.pending{background:rgba(255,149,0,.14);color:var(--orange)}
 .badge.cancelled{background:rgba(255,69,58,.12);color:var(--red)}
