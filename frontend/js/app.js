@@ -1682,12 +1682,18 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${statCard(records.length, 'Записей')}
         ${statCard(formatNum(monthTotal) + ' ₽', 'За этот месяц', 'g')}
       </div>
-      ${records.length ? records.map(r => `<div class="li">
-        <div class="lic g">💰</div>
-        <div class="lit"><div class="lim">${formatNum(r.amount)} ₽</div><div class="lis">${esc(r.client_name || '')} · ${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}</div></div>
-        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          ${isPartner() ? `<button onclick="window.correctIncome(${r.id},'${r.income_at ? r.income_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+      ${records.length ? records.map(r => `<div class="li" style="flex-direction:column;align-items:stretch;gap:4px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="lic g">💰</div>
+          <div class="lit" style="flex:1">
+            <div class="lim">${formatNum(r.amount)} ₽ · ${esc(r.client_name || '—')}</div>
+            <div class="lis">${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}${r.entered_by_name ? ` · ${esc(r.entered_by_name)}` : ''}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+            ${isPartner() ? `<button onclick="window.correctIncome(${r.id},'${r.income_at ? r.income_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+          </div>
         </div>
+        ${r.comment ? `<div style="font-size:12px;color:var(--text2);padding:4px 8px;background:var(--card2);border-radius:6px;margin-left:42px">${esc(r.comment)}</div>` : ''}
       </div>`).join('') : emptyState('Нет доходов')}
       ${!isDesktop() ? `<button class="btn-primary" style="margin-top:12px" onclick="showIncomeModal()">+ Добавить</button>` : ''}
       ${printBtn('Распечатать / PDF')}
@@ -1748,12 +1754,18 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${statCard(formatNum(expMonthTotal) + ' ₽', 'За этот месяц', 'o')}
         ${statCard(uniqueCats || records.length, 'Категорий')}
       </div>
-      ${records.length ? records.map(r => `<div class="li">
-        <div class="lic o">📋</div>
-        <div class="lit"><div class="lim">${formatNum(r.amount)} ₽</div><div class="lis">${esc(r.category || '')} · ${r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : ''}</div></div>
-        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          ${isPartner() ? `<button onclick="window.correctExpense(${r.id},'${r.expense_at ? r.expense_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.category||'')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+      ${records.length ? records.map(r => `<div class="li" style="flex-direction:column;align-items:stretch;gap:4px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="lic o">📋</div>
+          <div class="lit" style="flex:1">
+            <div class="lim">${formatNum(r.amount)} ₽ · ${esc(r.category || '—')}</div>
+            <div class="lis">${r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : ''}${r.entered_by_name ? ` · ${esc(r.entered_by_name)}` : ''}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+            ${isPartner() ? `<button onclick="window.correctExpense(${r.id},'${r.expense_at ? r.expense_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.category||'')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+          </div>
         </div>
+        ${r.comment ? `<div style="font-size:12px;color:var(--text2);padding:4px 8px;background:var(--card2);border-radius:6px;margin-left:42px">${esc(r.comment)}</div>` : ''}
       </div>`).join('') : emptyState('Нет расходов')}
       <button class="btn-primary" style="margin-top:12px" onclick="showExpenseModal()">+ Добавить</button>
       ${printBtn('Распечатать / PDF')}
