@@ -37,7 +37,26 @@ def period_clause(column: str, period: Optional[str]) -> tuple:
 def get_balance(user: dict = Depends(get_current_user)):
     row = query_one("SELECT balance_cubic FROM v_base_balance")
     balance = float(row["balance_cubic"]) if row and row["balance_cubic"] is not None else 0.0
-    return {"balance_cubic": balance}
+
+    # Get breakdown
+    received = query_one("SELECT COALESCE(SUM(volume_adjusted), 0) as total FROM fuel_receipts WHERE ttn_confirmed = TRUE")
+    dispatched = query_one("""
+        SELECT
+            COALESCE(SUM(CASE WHEN status IN ('dispatched','in_transit') THEN volume ELSE 0 END), 0) as in_transit,
+            COALESCE(SUM(CASE WHEN status = 'delivered' THEN volume ELSE 0 END), 0) as delivered
+        FROM fuel_dispatches WHERE status != 'cancelled'
+    """)
+    received_today = query_one(
+        "SELECT COALESCE(SUM(volume_adjusted), 0) as total FROM fuel_receipts WHERE ttn_confirmed = TRUE AND received_at::date = CURRENT_DATE"
+    )
+
+    return {
+        "balance_cubic": balance,
+        "total_received": float(received["total"]) if received else 0,
+        "total_dispatched": float(dispatched["delivered"]) if dispatched else 0,
+        "in_transit": float(dispatched["in_transit"]) if dispatched else 0,
+        "received_today": float(received_today["total"]) if received_today else 0,
+    }
 
 
 # ===========================================================================

@@ -134,6 +134,7 @@
   </label>
   <div id="${inputId}-preview" style="display:none;margin-top:8px">
     <img id="${inputId}-img" style="max-width:100%;border-radius:8px;max-height:200px" src="" alt="ТТН">
+    <button id="${inputId}-scan" class="btn-secondary" style="display:none;width:100%;margin-top:8px;font-size:12px" onclick="window.scanTTN('${inputId}')">🔍 Распознать ТТН (Claude AI)</button>
   </div>`;
   }
 
@@ -148,6 +149,12 @@
       if (preview) preview.style.display = 'block';
       const label = document.querySelector(`label[for="${inputId}"] .pt2`);
       if (label) label.textContent = '✅ Фото выбрано';
+      // Show scan button if present
+      const scanBtn = document.getElementById(inputId + '-scan');
+      if (scanBtn) {
+        scanBtn.style.display = 'block';
+        scanBtn.onclick = () => window.scanTTN(inputId);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -280,6 +287,10 @@
           <div class="topbar-stat">
             <div><div class="ts-val" style="color:var(--orange)" id="tb-trips">—</div><div class="ts-lbl">Рейса в пути</div></div>
           </div>
+          ${isPartner() ? `<div class="topbar-ai" id="topbar-ai" style="display:flex;align-items:center;gap:8px;flex:1;max-width:320px">
+            <input id="ai-input" placeholder="Задать вопрос Клоду..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')window.askClaude()">
+            <button onclick="window.askClaude()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:700">AI</button>
+          </div>` : ''}
           <div class="topbar-alert" id="tb-alert" style="display:none" onclick="navigate('#base')">⏳ <span id="tb-alert-text">Ожидают</span></div>
         </div>
         <div class="content" id="content"></div>
@@ -287,6 +298,7 @@
     </div>`;
 
     loadTopbarStats();
+    setInterval(loadTopbarStats, 60000);
   }
 
   function buildMobileLayout() {
@@ -662,6 +674,14 @@
         ${statCard(balance ? '+' + (balance.received_today || 0) : '—', 'Принято сегодня')}
         ${statCard(inTransit.length, 'Рейса в пути', 'o')}
       </div>
+      ${balance ? balanceBox(
+        [
+          { label: 'Принято (всего)', val: (balance.total_received || 0) + ' куб', color: 'green' },
+          { label: 'Доставлено', val: (balance.total_dispatched || 0) + ' куб' },
+          { label: 'В пути', val: (balance.in_transit || 0) + ' куб', color: 'orange' },
+        ],
+        'Остаток на базе', (balance.balance_cubic || 0) + ' куб', 'accent'
+      ) : ''}
       ${pending.length ? `<div class="pending-block">
         <div class="pt">⏳ Ожидают подтверждения приёмки (${pending.length})</div>
         ${pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source_custom || r.supplier_name || ''} ${r.volume_nominal} куб`, sub: r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : '', btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })).join('')}
@@ -676,19 +696,19 @@
         ${menuCard({ icon: '📊', label: 'Состояние базы', onClick: "navigate('#base?tab=main')" })}
       </div>
       ${sectionHeader('Рейсы в пути')}
-      ${inTransit.length ? inTransit.map(d => listItem({ icon: '🚚', iconBg: 'tr', title: `${d.truck_name || ''} → ${d.site_name || ''}`, sub: `${d.volume} куб · ${d.driver_name || ''} · ${d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : ''}`, badgeHtml: badge('В пути', 'transit') })).join('') : emptyState('Нет рейсов в пути')}`;
+      ${inTransit.length ? inTransit.map(d => `<div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer">${listItem({ icon: '🚚', iconBg: 'tr', title: `${d.truck_name || ''} → ${d.site_name || ''}`, sub: `${d.volume} куб · ${d.driver_name || ''} · ${d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : ''}`, badgeHtml: badge('В пути', 'transit') })}</div>`).join('') : emptyState('Нет рейсов в пути')}`;
 
     } else if (activeTab === 'receipts') {
       let receipts = [];
       try { receipts = await api.get('/api/base/receipts?limit=20') || []; } catch (e) {}
       tabContent = `
       <button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="navigate('#base/receipts/new')">+ Принял топливо</button>
-      ${receipts.length ? receipts.map(r => listItem({
+      ${receipts.length ? receipts.map(r => `<div onclick="window.showReceiptDetail(${r.id})" style="cursor:pointer">${listItem({
         icon: '📥', iconBg: r.ttn_confirmed === true ? 'g' : 'o',
         title: `${r.source_custom || r.supplier_name || '—'} — ${r.volume_nominal} куб`,
         sub: `${r.ttn_number || '—'} · ${r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : ''}`,
         badgeHtml: badge(r.ttn_confirmed === true ? 'Подтверждено' : 'Ожидает', r.ttn_confirmed === true ? 'done' : 'pending')
-      })).join('') : emptyState('Нет приёмок')}`;
+      })}</div>`).join('') : emptyState('Нет приёмок')}`;
 
     } else if (activeTab === 'trips') {
       tabContent = `
@@ -696,14 +716,14 @@
       ${dispatches.length ? dispatches.map(d => {
         const isDone = d.status === 'delivered';
         const isTransit = d.status === 'dispatched' || d.status === 'in_transit';
-        return `<div class="li">
+        return `<div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer"><div class="li">
           <div class="lic tr">🚚</div>
           <div class="lit"><div class="lim">${esc((d.truck_name || ''))} → ${esc(d.site_name || '')}</div><div class="lis">${esc(d.volume + ' куб · ' + (d.driver_name || ''))}</div></div>
           <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
             ${isDone ? badge('Доставлено', 'done') : badge('В пути', 'transit')}
-            ${isTransit && (isArtem() || isOp()) ? `<button class="prb" onclick="confirmDispatch(${d.id})">Доставлено</button>` : ''}
+            ${isTransit && (isArtem() || isOp()) ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id})">Доставлено</button>` : ''}
           </div>
-        </div>`;
+        </div></div>`;
       }).join('') : emptyState('Нет рейсов')}`;
 
     } else if (activeTab === 'cash') {
@@ -1405,6 +1425,101 @@
     } catch (e) { toast(e.message, 'error'); }
   };
 
+  // ── AI ────────────────────────────────────────────────────────────────────
+  window.askClaude = async function() {
+    const input = document.getElementById('ai-input');
+    if (!input) return;
+    const q = input.value.trim();
+    if (!q) return;
+
+    const btn = input.nextElementSibling;
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    input.disabled = true;
+
+    try {
+      const res = await api.post('/api/ai/query', { question: q });
+      if (res.ok) {
+        showAiAnswer(q, res.answer);
+      } else {
+        toast('AI: ' + (res.answer || 'Нет ответа'), 'error');
+      }
+    } catch (e) {
+      toast('AI недоступен: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.textContent = 'AI'; btn.disabled = false; }
+      input.disabled = false;
+      input.value = '';
+    }
+  };
+
+  function showAiAnswer(question, answer) {
+    const existing = document.getElementById('ai-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'ai-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:16px;padding:24px;max-width:500px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+        <div style="color:var(--text2);font-size:12px;margin-bottom:8px">Вопрос:</div>
+        <div style="font-size:14px;margin-bottom:16px;color:var(--text)">${esc(question)}</div>
+        <div style="color:var(--accent);font-size:12px;margin-bottom:8px">Ответ Клода:</div>
+        <div style="font-size:15px;line-height:1.5;color:var(--text)">${esc(answer)}</div>
+        <button onclick="document.getElementById('ai-overlay').remove()" style="margin-top:20px;width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text);cursor:pointer;font-size:14px">Закрыть</button>
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+
+  window.scanTTN = async function(inputId) {
+    const file = document.getElementById(inputId)?.files[0];
+    if (!file) return;
+    const btn = document.getElementById(inputId + '-scan');
+    if (btn) { btn.textContent = '⏳ Распознаём...'; btn.disabled = true; }
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const upRes = await fetch('/api/upload/ttn', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + api.getToken() },
+        body: fd,
+      });
+      if (!upRes.ok) throw new Error('Ошибка загрузки фото');
+      const { url } = await upRes.json();
+
+      const scanRes = await fetch('/api/ai/scan-ttn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + api.getToken() },
+        body: JSON.stringify({ image_url: url }),
+      });
+      if (!scanRes.ok) throw new Error('AI недоступен');
+      const { data } = await scanRes.json();
+
+      if (data.ttn_number) {
+        const ttnInput = document.getElementById('f-ttn') || document.getElementById('f-ttn-d');
+        if (ttnInput) { ttnInput.value = data.ttn_number; ttnInput.style.borderColor = 'var(--green)'; }
+      }
+      if (data.temperature) {
+        const tempInput = document.getElementById('f-temp');
+        if (tempInput) { tempInput.value = data.temperature; tempInput.style.borderColor = 'var(--green)'; if (window.recalcReceipt) recalcReceipt(); }
+      }
+      if (data.density) {
+        const densInput = document.getElementById('f-density');
+        if (densInput) { densInput.value = data.density; densInput.style.borderColor = 'var(--green)'; if (window.recalcReceipt) recalcReceipt(); }
+      }
+      if (data.volume_cubic) {
+        const volInput = document.getElementById('f-volume');
+        if (volInput) { volInput.value = data.volume_cubic; volInput.style.borderColor = 'var(--green)'; if (window.recalcReceipt) recalcReceipt(); }
+      }
+
+      toast('✅ ТТН распознан! Проверьте поля.');
+      if (btn) { btn.textContent = '✅ Распознан'; btn.disabled = false; }
+    } catch (e) {
+      toast('AI: ' + e.message, 'error');
+      if (btn) { btn.textContent = '🔍 Распознать ТТН (Claude AI)'; btn.disabled = false; }
+    }
+  };
+
   // ── Settings ──────────────────────────────────────────────────────────────
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -1492,15 +1607,31 @@
       </div>`).join('')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addCarrierModal()">+ Добавить перевозчика</button>` : ''}
 
-      ${sectionHeader('Тарифы — история')}
-      ${tariffs.length ? tariffs.map(t => `<div class="li">
-        <div class="lic y">💰</div>
-        <div class="lit">
-          <div class="lim">${esc(t.site_name || '')} · ${esc(t.truck_owner || '')}</div>
-          <div class="lis">${t.valid_from ? 'с ' + t.valid_from : ''}${t.comment ? ' · ' + esc(t.comment) : ''}</div>
-        </div>
-        <div class="lir"><div class="lival" style="color:var(--accent)">${formatNum(t.amount)} ₽</div></div>
-      </div>`).join('') : emptyState('Нет тарифов')}
+      ${sectionHeader('Тарифы')}
+      ${(() => {
+        const tariffMatrix = {};
+        tariffs.forEach(t => {
+          const key = t.site_id;
+          if (!tariffMatrix[key]) tariffMatrix[key] = { site_name: t.site_name, DTL: null, 'Артём': null, 'наёмная': null };
+          tariffMatrix[key][t.truck_owner] = t;
+        });
+        const tariffRows = Object.values(tariffMatrix).map(row => `
+          <div class="li" style="align-items:flex-start;flex-direction:column;gap:6px;padding:12px">
+            <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(row.site_name || '?')}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              ${['DTL','Артём','наёмная'].map(owner => {
+                const t = row[owner];
+                return `<div style="background:var(--card2);border-radius:8px;padding:6px 10px;min-width:80px">
+                  <div style="font-size:10px;color:var(--text3)">${owner}</div>
+                  <div style="font-size:15px;font-weight:700;color:var(--accent)">${t ? formatNum(t.amount) + ' ₽' : '—'}</div>
+                  ${isPartner() && t ? `<div onclick="window.editTariffModal(${t.id},${t.site_id},'${esc(row.site_name || '')}','${owner}',${t.amount})" style="font-size:10px;color:var(--text2);cursor:pointer;margin-top:2px">изменить</div>` : ''}
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+        `).join('');
+        return tariffRows || emptyState('Нет тарифов');
+      })()}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addTariffModal()">+ Добавить тариф</button>` : ''}
 
       ${sectionHeader('Параметры базы')}
@@ -1578,6 +1709,39 @@
         await api.post('/api/tariffs', { site_id, truck_owner: ownerEl?.dataset.val || 'DTL', amount, valid_from, comment });
         toast('✅ Тариф добавлен'); viewSettings();
       });
+  };
+
+  window.editTariffModal = function(tariffId, siteId, siteName, owner, currentAmount) {
+    const overlay = document.createElement('div');
+    overlay.id = 'edit-tariff-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:16px;padding:24px;max-width:340px;width:100%">
+        <div style="font-size:16px;font-weight:700;margin-bottom:16px">Изменить тариф</div>
+        <div style="color:var(--text2);font-size:13px;margin-bottom:12px">${esc(siteName)} · ${esc(owner)}</div>
+        <input id="edit-tariff-val" type="number" class="inp" value="${currentAmount}" placeholder="Тариф ₽" style="width:100%;margin-bottom:16px">
+        <input type="hidden" id="edit-tariff-site" value="${siteId}">
+        <input type="hidden" id="edit-tariff-owner" value="${esc(owner)}">
+        <div style="display:flex;gap:10px">
+          <button onclick="document.getElementById('edit-tariff-overlay').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+          <button onclick="window.saveTariff(${tariffId})" class="btn-primary" style="flex:1">Сохранить</button>
+        </div>
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window.saveTariff = async function(tariffId) {
+    const val = parseFloat(document.getElementById('edit-tariff-val')?.value);
+    if (!val || val <= 0) { toast('Введите сумму', 'error'); return; }
+    const siteId = parseInt(document.getElementById('edit-tariff-site')?.value);
+    const owner = document.getElementById('edit-tariff-owner')?.value || 'DTL';
+    try {
+      await api.put('/api/tariffs/' + tariffId, { site_id: siteId, truck_owner: owner, amount: val });
+      toast('✅ Тариф обновлён!');
+      document.getElementById('edit-tariff-overlay')?.remove();
+      viewSettings();
+    } catch (e) { toast(e.message, 'error'); }
   };
 
   window.editSettingsModal = function() {
@@ -1986,6 +2150,115 @@
 
 
   window.navigate = navigate;
+
+  // ── Receipt / Dispatch detail views ──────────────────────────────────────
+
+  window.showReceiptDetail = async function(receiptId) {
+    let r;
+    try {
+      r = await api.get('/api/base/receipts/' + receiptId);
+    } catch (e) { toast('Ошибка загрузки', 'error'); return; }
+
+    const statusHtml = r.ttn_confirmed
+      ? '<span style="color:var(--green)">✅ Подтверждено</span>'
+      : '<span style="color:var(--orange)">⏳ Ожидает подтверждения</span>';
+
+    const photoHtml = r.ttn_photo_url
+      ? `<img src="${esc(r.ttn_photo_url)}" style="width:100%;border-radius:8px;margin-top:12px;cursor:pointer" onclick="window.open('${esc(r.ttn_photo_url)}')" title="Нажмите для просмотра">`
+      : '<div style="color:var(--text3);font-size:12px;margin-top:8px">Фото не прикреплено</div>';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:16px 16px 0 0;padding:24px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700">Приёмка #${r.id}</div>
+          <button onclick="this.closest('[style*=position]').remove()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <div class="bb">
+          <div class="bbr"><div class="bbl">Источник</div><div class="bbv">${esc(r.source_name || r.source_custom || r.supplier_name || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Объём номинал</div><div class="bbv">${esc(String(r.volume_nominal || '—'))} куб</div></div>
+          <div class="bbr"><div class="bbl">Объём приведённый</div><div class="bbv" style="color:var(--accent)">${esc(String(r.volume_adjusted || '—'))} куб</div></div>
+          <div class="bbr"><div class="bbl">Температура</div><div class="bbv">${r.temperature !== null && r.temperature !== undefined ? esc(String(r.temperature)) + ' °C' : '—'}</div></div>
+          <div class="bbr"><div class="bbl">Плотность</div><div class="bbv">${r.density ? esc(String(r.density)) + ' г/см³' : '—'}</div></div>
+          <div class="bbr"><div class="bbl">Номер ТТН</div><div class="bbv">${esc(r.ttn_number || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Статус</div><div class="bbv">${statusHtml}</div></div>
+          <div class="bbr"><div class="bbl">Дата</div><div class="bbv">${esc(r.received_at ? new Date(r.received_at).toLocaleString('ru') : '—')}</div></div>
+          ${r.notes ? `<div class="bbr"><div class="bbl">Примечание</div><div class="bbv">${esc(r.notes)}</div></div>` : ''}
+        </div>
+        ${photoHtml}
+        ${!r.ttn_confirmed && (isArtem() || isOp() || isPartner()) ? `
+          <button onclick="window.confirmReceiptFromDetail(${r.id})" class="btn-primary" style="width:100%;margin-top:16px">✅ Подтвердить приёмку</button>
+        ` : ''}
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window.confirmReceiptFromDetail = async function(receiptId) {
+    try {
+      await api.put('/api/base/receipts/' + receiptId + '/confirm', {});
+      toast('✅ Приёмка подтверждена!');
+      document.querySelector('[style*="position:fixed"][style*="z-index:9999"]')?.remove();
+      navigate('#base');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.showDispatchDetail = async function(dispatchId) {
+    let d;
+    try {
+      d = await api.get('/api/base/dispatches/' + dispatchId);
+    } catch (e) { toast('Ошибка загрузки', 'error'); return; }
+
+    const statusLabels = { dispatched: 'Отправлен', in_transit: 'В пути', delivered: 'Доставлено', cancelled: 'Отменён' };
+    const statusColors = { dispatched: 'var(--orange)', in_transit: 'var(--accent)', delivered: 'var(--green)', cancelled: 'var(--red)' };
+    const st = d.status || 'dispatched';
+
+    const photoHtml = d.ttn_photo_url
+      ? `<img src="${esc(d.ttn_photo_url)}" style="width:100%;border-radius:8px;margin-top:12px;cursor:pointer" onclick="window.open('${esc(d.ttn_photo_url)}')" title="Фото ТТН">`
+      : '<div style="color:var(--text3);font-size:12px;margin-top:8px">Фото не прикреплено</div>';
+
+    const actionsHtml = st !== 'delivered' && st !== 'cancelled' ? `
+      ${(isArtem() || isOp() || isPartner()) ? `<button onclick="window.updateDispatchStatus(${d.id},'delivered')" class="btn-primary" style="width:100%;margin-top:12px">✅ Водитель вернулся — Доставлено</button>` : ''}
+      ${isPartner() && st !== 'cancelled' ? `<button onclick="window.updateDispatchStatus(${d.id},'cancelled')" class="btn-secondary" style="width:100%;margin-top:8px;color:var(--red)">Отменить рейс</button>` : ''}
+    ` : '';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:16px 16px 0 0;padding:24px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700">Рейс #${d.id}</div>
+          <button onclick="this.closest('[style*=position]').remove()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <div class="bb">
+          <div class="bbr"><div class="bbl">Машина</div><div class="bbv">${esc(d.truck_name || d.truck_temp || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Водитель</div><div class="bbv">${esc(d.driver_name || d.driver_temp || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Участок</div><div class="bbv">${esc(d.site_name || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Объём</div><div class="bbv" style="color:var(--accent)">${esc(String(d.volume || '—'))} куб</div></div>
+          <div class="bbr"><div class="bbl">Тариф</div><div class="bbv">${d.tariff ? formatNum(d.tariff) + ' ₽' : '—'}</div></div>
+          <div class="bbr"><div class="bbl">ТТН</div><div class="bbv">${esc(d.ttn_number || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Статус</div><div class="bbv" style="color:${statusColors[st]}">${statusLabels[st] || st}</div></div>
+          <div class="bbr"><div class="bbl">Дата отправки</div><div class="bbv">${esc(d.dispatched_at ? new Date(d.dispatched_at).toLocaleString('ru') : '—')}</div></div>
+          ${d.delivered_at ? `<div class="bbr"><div class="bbl">Доставлено</div><div class="bbv">${esc(new Date(d.delivered_at).toLocaleString('ru'))}</div></div>` : ''}
+          ${d.notes ? `<div class="bbr"><div class="bbl">Примечание</div><div class="bbv">${esc(d.notes)}</div></div>` : ''}
+        </div>
+        ${photoHtml}
+        ${actionsHtml}
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window.updateDispatchStatus = async function(dispatchId, status) {
+    try {
+      await api.put('/api/base/dispatches/' + dispatchId + '/status', { status });
+      const labels = { delivered: '✅ Доставлено!', cancelled: 'Рейс отменён' };
+      toast(labels[status] || 'Статус обновлён');
+      document.querySelector('[style*="position:fixed"][style*="z-index:9999"]')?.remove();
+      navigate('#base?tab=trips');
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   // ── Global error logging ──────────────────────────────────────────────────
   function sendLog(level, message, stack) {
