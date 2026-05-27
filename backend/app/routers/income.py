@@ -69,6 +69,33 @@ def create_income(body: IncomeCreate, user: dict = Depends(require_partner)):
     return row
 
 
+class IncomeCorrection(BaseModel):
+    income_at: Optional[str] = None
+    amount: Optional[float] = None
+    comment: Optional[str] = None
+    reason: str  # mandatory
+
+
+@router.put("/income/{income_id}/correct")
+def correct_income(income_id: int, body: IncomeCorrection, user: dict = Depends(require_partner)):
+    row = query_one("SELECT * FROM income_records WHERE id = %s", (income_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    updates = {}
+    if body.income_at: updates["income_at"] = body.income_at
+    if body.amount is not None: updates["amount"] = body.amount
+    if body.comment is not None: updates["comment"] = body.comment
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    vals = list(updates.values()) + [income_id]
+    with get_db() as conn:
+        updated = execute(f"UPDATE income_records SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
+        log_action(conn, "income_records", income_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        conn.commit()
+    return updated
+
+
 @router.put("/income/{income_id}")
 def update_income(income_id: int, body: IncomeCreate, user: dict = Depends(require_partner)):
     existing = query_one("SELECT * FROM income_records WHERE id = %s", (income_id,))

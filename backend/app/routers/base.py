@@ -241,6 +241,42 @@ def confirm_receipt(receipt_id: int, user: dict = Depends(require_not_operator))
     return updated
 
 
+class ReceiptCorrection(BaseModel):
+    volume_nominal: Optional[float] = None
+    density: Optional[float] = None
+    temperature: Optional[float] = None
+    ttn_number: Optional[str] = None
+    notes: Optional[str] = None
+    reason: str  # mandatory
+
+
+@router.put("/receipts/{receipt_id}/correct")
+def correct_receipt(receipt_id: int, body: ReceiptCorrection, user: dict = Depends(require_not_operator)):
+    row = query_one("SELECT * FROM fuel_receipts WHERE id = %s", (receipt_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    updates = {}
+    if body.volume_nominal is not None: updates["volume_nominal"] = body.volume_nominal
+    if body.density is not None: updates["density"] = body.density
+    if body.temperature is not None: updates["temperature"] = body.temperature
+    if body.ttn_number is not None: updates["ttn_number"] = body.ttn_number
+    if body.notes is not None: updates["notes"] = body.notes
+    # Recalculate volume_adjusted if volume_nominal or density changed
+    if body.volume_nominal is not None or body.density is not None:
+        vol = body.volume_nominal if body.volume_nominal is not None else row["volume_nominal"]
+        dens = body.density if body.density is not None else (row["density"] or 0.840)
+        updates["volume_adjusted"] = round(vol * dens / 0.840, 3)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    vals = list(updates.values()) + [receipt_id]
+    with get_db() as conn:
+        updated = execute(f"UPDATE fuel_receipts SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
+        log_action(conn, "fuel_receipts", receipt_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        conn.commit()
+    return updated
+
+
 @router.post("/receipts/{receipt_id}/photo")
 def set_receipt_photo(receipt_id: int, photo_url: str, user: dict = Depends(get_current_user)):
     row = query_one("SELECT id FROM fuel_receipts WHERE id = %s", (receipt_id,))
@@ -417,6 +453,35 @@ def update_dispatch_status(
         )
         log_action(conn, "fuel_dispatches", dispatch_id, "UPDATE", user["id"],
                    old_data=dict(row), new_data=dict(updated))
+    return updated
+
+
+class DispatchCorrection(BaseModel):
+    volume: Optional[float] = None
+    tariff: Optional[float] = None
+    ttn_number: Optional[str] = None
+    notes: Optional[str] = None
+    reason: str  # mandatory
+
+
+@router.put("/dispatches/{dispatch_id}/correct")
+def correct_dispatch(dispatch_id: int, body: DispatchCorrection, user: dict = Depends(require_not_operator)):
+    row = query_one("SELECT * FROM fuel_dispatches WHERE id = %s", (dispatch_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    updates = {}
+    if body.volume is not None: updates["volume"] = body.volume
+    if body.tariff is not None: updates["tariff"] = body.tariff
+    if body.ttn_number is not None: updates["ttn_number"] = body.ttn_number
+    if body.notes is not None: updates["notes"] = body.notes
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    vals = list(updates.values()) + [dispatch_id]
+    with get_db() as conn:
+        updated = execute(f"UPDATE fuel_dispatches SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
+        log_action(conn, "fuel_dispatches", dispatch_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        conn.commit()
     return updated
 
 

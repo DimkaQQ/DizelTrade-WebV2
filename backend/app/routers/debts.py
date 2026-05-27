@@ -103,11 +103,40 @@ def update_debt(debt_id: int, body: DebtCreate, user: dict = Depends(require_par
     return row
 
 
+class DebtCorrection(BaseModel):
+    recorded_at: Optional[str] = None
+    amount: Optional[float] = None
+    type: Optional[str] = None
+    comment: Optional[str] = None
+    reason: str  # mandatory
+
+
+@router.put("/debts/{debt_id}/correct")
+def correct_debt(debt_id: int, body: DebtCorrection, user: dict = Depends(require_partner)):
+    row = query_one("SELECT * FROM debt_records WHERE id = %s", (debt_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    updates = {}
+    if body.recorded_at: updates["recorded_at"] = body.recorded_at
+    if body.amount is not None: updates["amount"] = body.amount
+    if body.type is not None: updates["type"] = body.type
+    if body.comment is not None: updates["comment"] = body.comment
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    vals = list(updates.values()) + [debt_id]
+    with get_db() as conn:
+        updated = execute(f"UPDATE debt_records SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
+        log_action(conn, "debt_records", debt_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        conn.commit()
+    return updated
+
+
 @router.get("/reports/export")
 def export_csv(
     section: str = Query(...),
     period: Optional[str] = Query(None),
-    user: dict = Depends(require_partner),
+    user: dict = Depends(get_current_user),
 ):
     section_map = {
         "hire": ("hire_deliveries", "delivery_at"),
@@ -115,9 +144,16 @@ def export_csv(
         "expenses": ("company_expenses", "expense_at"),
         "debts": ("debt_records", "recorded_at"),
         "fleet_expenses": ("fleet_expenses", "expense_at"),
+        "receipts": ("fuel_receipts", "received_at"),
+        "dispatches": ("fuel_dispatches", "dispatched_at"),
+        "orders": ("orders", "paid_at"),
     }
     if section not in section_map:
         raise HTTPException(status_code=400, detail=f"section must be one of {list(section_map)}")
+
+    partner_only_sections = {"hire", "income", "expenses", "debts", "fleet_expenses"}
+    if section in partner_only_sections and user["role"] not in ("partner",):
+        raise HTTPException(status_code=403, detail="Partners only")
 
     table, date_col = section_map[section]
     params = []

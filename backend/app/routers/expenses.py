@@ -73,6 +73,35 @@ def create_expense(body: ExpenseCreate, user: dict = Depends(require_partner)):
     return row
 
 
+class ExpenseCorrection(BaseModel):
+    expense_at: Optional[str] = None
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    comment: Optional[str] = None
+    reason: str  # mandatory
+
+
+@router.put("/expenses/{expense_id}/correct")
+def correct_expense(expense_id: int, body: ExpenseCorrection, user: dict = Depends(require_partner)):
+    row = query_one("SELECT * FROM company_expenses WHERE id = %s", (expense_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    updates = {}
+    if body.expense_at: updates["expense_at"] = body.expense_at
+    if body.amount is not None: updates["amount"] = body.amount
+    if body.category is not None: updates["category"] = body.category
+    if body.comment is not None: updates["comment"] = body.comment
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    vals = list(updates.values()) + [expense_id]
+    with get_db() as conn:
+        updated = execute(f"UPDATE company_expenses SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
+        log_action(conn, "company_expenses", expense_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        conn.commit()
+    return updated
+
+
 @router.put("/expenses/{expense_id}")
 def update_expense(expense_id: int, body: ExpenseCreate, user: dict = Depends(require_partner)):
     existing = query_one("SELECT * FROM company_expenses WHERE id = %s", (expense_id,))
