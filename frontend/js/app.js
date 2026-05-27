@@ -125,12 +125,58 @@
     return `<div class="fsec"><div class="fl">${esc(label)}</div>${inputHtml}</div>`;
   }
 
-  function photoButton() {
-    return `<div class="photo-btn">
-      <div class="pi2">📷</div>
-      <div class="pt2">Сфотографировать ТТН</div>
-      <div class="ps">или добавить позже — запись сохранится без фото</div>
-    </div>`;
+  function photoButton(inputId) {
+    return `<label class="photo-btn" for="${inputId}">
+    <div class="pi2">📷</div>
+    <div class="pt2">Сфотографировать ТТН</div>
+    <div class="ps">Нажми чтобы выбрать или сделать фото</div>
+    <input type="file" id="${inputId}" accept="image/*" capture="environment" style="display:none" onchange="previewPhoto('${inputId}')">
+  </label>
+  <div id="${inputId}-preview" style="display:none;margin-top:8px">
+    <img id="${inputId}-img" style="max-width:100%;border-radius:8px;max-height:200px" src="" alt="ТТН">
+    <button id="${inputId}-scan" class="btn-secondary" style="display:none;width:100%;margin-top:8px;font-size:12px" onclick="window.scanTTN('${inputId}')">🔍 Распознать ТТН (Claude AI)</button>
+  </div>`;
+  }
+
+  window.previewPhoto = function(inputId) {
+    const file = document.getElementById(inputId)?.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = document.getElementById(inputId + '-img');
+      const preview = document.getElementById(inputId + '-preview');
+      if (img) img.src = e.target.result;
+      if (preview) preview.style.display = 'block';
+      const label = document.querySelector(`label[for="${inputId}"] .pt2`);
+      if (label) label.textContent = '✅ Фото выбрано';
+      // Show scan button if present
+      const scanBtn = document.getElementById(inputId + '-scan');
+      if (scanBtn) {
+        scanBtn.style.display = 'block';
+        scanBtn.onclick = () => window.scanTTN(inputId);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  async function uploadTtnPhoto(inputId) {
+    const input = document.getElementById(inputId);
+    const file = input?.files[0];
+    if (!file) return null;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const resp = await fetch('/api/upload/ttn', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + api.getToken() },
+        body: formData,
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return data.url || null;
+    } catch (e) {
+      return null;
+    }
   }
 
   function sectionHeader(text) {
@@ -187,6 +233,7 @@
           <div class="version">Управление · v2.0</div>
         </div>
         <div class="sidebar-nav">
+          <div class="nav-item" data-page="home" onclick="navigate('#home')"><span class="ni-icon">🏠</span> Главная</div>
           <div class="nav-group-label">Главное</div>
           <div class="nav-item" data-page="dashboard" onclick="navigate('#dashboard')"><span class="ni-icon">📊</span> Дашборд</div>
           <div class="nav-item" data-page="base" onclick="navigate('#base')"><span class="ni-icon">⛽</span> База Тында<span class="ni-badge" id="sb-pending-badge" style="display:none">0</span></div>
@@ -240,6 +287,10 @@
           <div class="topbar-stat">
             <div><div class="ts-val" style="color:var(--orange)" id="tb-trips">—</div><div class="ts-lbl">Рейса в пути</div></div>
           </div>
+          ${isPartner() ? `<div class="topbar-ai" id="topbar-ai" style="display:flex;align-items:center;gap:8px;flex:1;max-width:320px">
+            <input id="ai-input" placeholder="Задать вопрос Клоду..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')window.askClaude()">
+            <button onclick="window.askClaude()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:700">AI</button>
+          </div>` : ''}
           <div class="topbar-alert" id="tb-alert" style="display:none" onclick="navigate('#base')">⏳ <span id="tb-alert-text">Ожидают</span></div>
         </div>
         <div class="content" id="content"></div>
@@ -247,6 +298,7 @@
     </div>`;
 
     loadTopbarStats();
+    setInterval(loadTopbarStats, 60000);
   }
 
   function buildMobileLayout() {
@@ -304,15 +356,15 @@
     if (h === 'base/dispatches/new') { viewBaseDispatchNew(); return; }
     if (h === 'orders') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewOrders(); return; }
     if (h.startsWith('orders/')) { viewOrderDetail(h.split('/')[1]); return; }
-    if (h === 'income') { viewIncome(); return; }
-    if (h === 'expenses') { viewExpenses(); return; }
-    if (h === 'hire') { viewHire(); return; }
-    if (h === 'debts') { viewDebts(); return; }
+    if (h === 'income') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewIncome(); return; }
+    if (h === 'expenses') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewExpenses(); return; }
+    if (h === 'hire') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewHire(); return; }
+    if (h === 'debts') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewDebts(); return; }
     if (h === 'dashboard') { viewDashboard(); return; }
     if (h === 'fleet') { viewFleet(); return; }
-    if (h === 'analytics' || h.startsWith('analytics?')) { viewAnalytics(); return; }
-    if (h === 'balance' || h.startsWith('balance?')) { viewBalance(); return; }
-    if (h === 'annual' || h.startsWith('annual?')) { viewAnnual(); return; }
+    if (h === 'analytics' || h.startsWith('analytics?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnalytics(); return; }
+    if (h === 'balance' || h.startsWith('balance?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewBalance(); return; }
+    if (h === 'annual' || h.startsWith('annual?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnnual(); return; }
     if (h === 'settings') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewSettings(); return; }
     viewHome();
   }
@@ -373,6 +425,21 @@
     } catch (e) { user = null; }
     setupLayout();
     render(location.hash || '#home');
+    // Re-register push subscription if already granted
+    if (user && 'Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) {
+          const j = existing.toJSON();
+          await fetch('/api/notifications/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + api.getToken() },
+            body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }),
+          });
+        }
+      } catch (e) { /* non-critical */ }
+    }
     setInterval(() => {
       document.querySelectorAll('#sb-time').forEach(el => { el.textContent = currentTime(); });
     }, 30000);
@@ -576,7 +643,7 @@
   async function viewBase(tab) {
     const activeTab = tab || 'main';
 
-    const tabTitles = { main: 'База Тында', receipts: 'Приёмки', trips: 'Журнал рейсов', cash: 'Наличные' };
+    const tabTitles = { main: 'База Тында', receipts: 'Приёмки', trips: 'Рейсы', cash: 'Наличные', advances: 'Авансы', recon: 'Сверка' };
     const pageTitle = tabTitles[activeTab] || 'База Тында';
 
     let balance = null, pending = [], dispatches = [], cashData = null;
@@ -592,7 +659,15 @@
 
     const inTransit = dispatches.filter(d => d.status === 'dispatched' || d.status === 'in_transit');
 
-    const tabDefs = [['main','Главная'],['receipts','Приёмки'],['trips','Рейсы'],['cash','Наличные']];
+    // Build tab list based on role
+    const tabDefs = [
+      ['main','Главная'],
+      ['receipts','Приёмки'],
+      ['trips','Рейсы'],
+      ...(!isOp() ? [['cash','Наличные']] : []),
+      ...(!isOp() ? [['advances','Авансы']] : []),
+      ['recon','Сверка'],
+    ];
 
     function subTabBar() {
       return `<div class="sub-tabs">${tabDefs.map(([t, l]) => `<div class="sub-tab${activeTab === t ? ' active' : ''}" onclick="navigate('#base?tab=${t}')">${l}</div>`).join('')}</div>`;
@@ -607,6 +682,14 @@
         ${statCard(balance ? '+' + (balance.received_today || 0) : '—', 'Принято сегодня')}
         ${statCard(inTransit.length, 'Рейса в пути', 'o')}
       </div>
+      ${balance ? balanceBox(
+        [
+          { label: 'Принято (всего)', val: (balance.total_received || 0) + ' куб', color: 'green' },
+          { label: 'Доставлено', val: (balance.total_dispatched || 0) + ' куб' },
+          { label: 'В пути', val: (balance.in_transit || 0) + ' куб', color: 'orange' },
+        ],
+        'Остаток на базе', (balance.balance_cubic || 0) + ' куб', 'accent'
+      ) : ''}
       ${pending.length ? `<div class="pending-block">
         <div class="pt">⏳ Ожидают подтверждения приёмки (${pending.length})</div>
         ${pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source_custom || r.supplier_name || ''} ${r.volume_nominal} куб`, sub: r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : '', btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })).join('')}
@@ -615,25 +698,26 @@
       <div class="menu-grid">
         ${menuCard({ icon: '📥', label: 'Принял топливо', accent: true, onClick: "navigate('#base/receipts/new')" })}
         ${menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" })}
-        ${menuCard({ icon: '💸', label: 'Аванс', sub: 'топливо в долг' })}
+        ${!isOp() ? menuCard({ icon: '💸', label: 'Авансы', sub: 'топливо в долг', onClick: "navigate('#base?tab=advances')" }) : ''}
         ${menuCard({ icon: '🔋', label: 'Заправка', sub: 'своих машин' })}
-        ${menuCard({ icon: '💵', label: 'Наличные', sub: 'Артёму' })}
-        ${menuCard({ icon: '📊', label: 'Состояние базы', onClick: "navigate('#base?tab=main')" })}
+        ${!isOp() ? menuCard({ icon: '💵', label: 'Наличные', sub: 'Артёму', onClick: "navigate('#base?tab=cash')" }) : ''}
+        ${menuCard({ icon: '📊', label: 'Сверка', onClick: "navigate('#base?tab=recon')" })}
       </div>
       ${sectionHeader('Рейсы в пути')}
-      ${inTransit.length ? inTransit.map(d => listItem({ icon: '🚚', iconBg: 'tr', title: `${d.truck_name || ''} → ${d.site_name || ''}`, sub: `${d.volume} куб · ${d.driver_name || ''} · ${d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : ''}`, badgeHtml: badge('В пути', 'transit') })).join('') : emptyState('Нет рейсов в пути')}`;
+      ${inTransit.length ? inTransit.map(d => `<div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer">${listItem({ icon: '🚚', iconBg: 'tr', title: `${d.truck_name || ''} → ${d.site_name || ''}`, sub: `${d.volume} куб · ${d.driver_name || ''} · ${d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : ''}`, badgeHtml: badge('В пути', 'transit') })}</div>`).join('') : emptyState('Нет рейсов в пути')}`;
 
     } else if (activeTab === 'receipts') {
       let receipts = [];
       try { receipts = await api.get('/api/base/receipts?limit=20') || []; } catch (e) {}
       tabContent = `
       <button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="navigate('#base/receipts/new')">+ Принял топливо</button>
-      ${receipts.length ? receipts.map(r => listItem({
+      ${receipts.length ? receipts.map(r => `<div onclick="window.showReceiptDetail(${r.id})" style="cursor:pointer">${listItem({
         icon: '📥', iconBg: r.ttn_confirmed === true ? 'g' : 'o',
         title: `${r.source_custom || r.supplier_name || '—'} — ${r.volume_nominal} куб`,
         sub: `${r.ttn_number || '—'} · ${r.received_at ? new Date(r.received_at).toLocaleDateString('ru') : ''}`,
         badgeHtml: badge(r.ttn_confirmed === true ? 'Подтверждено' : 'Ожидает', r.ttn_confirmed === true ? 'done' : 'pending')
-      })).join('') : emptyState('Нет приёмок')}`;
+      })}</div>`).join('') : emptyState('Нет приёмок')}
+      ${exportCsvBtn('receipts')}`;
 
     } else if (activeTab === 'trips') {
       tabContent = `
@@ -641,26 +725,23 @@
       ${dispatches.length ? dispatches.map(d => {
         const isDone = d.status === 'delivered';
         const isTransit = d.status === 'dispatched' || d.status === 'in_transit';
-        return `<div class="li">
+        return `<div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer"><div class="li">
           <div class="lic tr">🚚</div>
           <div class="lit"><div class="lim">${esc((d.truck_name || ''))} → ${esc(d.site_name || '')}</div><div class="lis">${esc(d.volume + ' куб · ' + (d.driver_name || ''))}</div></div>
           <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
             ${isDone ? badge('Доставлено', 'done') : badge('В пути', 'transit')}
-            ${isTransit && (isArtem() || isOp()) ? `<button class="prb" onclick="confirmDispatch(${d.id})">Доставлено</button>` : ''}
+            ${isTransit && (isArtem() || isOp()) ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id})">Доставлено</button>` : ''}
           </div>
-        </div>`;
-      }).join('') : emptyState('Нет рейсов')}`;
+        </div></div>`;
+      }).join('') : emptyState('Нет рейсов')}
+      ${exportCsvBtn('dispatches')}`;
 
     } else if (activeTab === 'cash') {
-      let cashList = [];
-      try { cashList = await api.get('/api/base/cash-artem') || []; } catch (e) {}
-      tabContent = `
-      ${cashData ? balanceBox(
-        [{ label: 'Выдано', val: formatNum(cashData.total_given) + ' ₽' }, { label: 'Освоено', val: '−' + formatNum(cashData.total_spent) + ' ₽', color: 'green' }],
-        'Остаток у Артёма', formatNum(cashData.balance) + ' ₽', 'orange'
-      ) : '<div class="empty-state">Нет данных по наличным</div>'}
-      ${isPartner() ? `<button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="showCashForm()">+ Выдать наличные</button>` : ''}
-      ${cashList.length ? cashList.map(c => listItem({ icon: '💵', iconBg: 'o', title: formatNum(c.amount_given) + ' ₽', sub: c.purpose || (c.created_at ? new Date(c.created_at).toLocaleDateString('ru') : '') })).join('') : emptyState('Нет записей')}`;
+      tabContent = await buildCashArtemTab();
+    } else if (activeTab === 'advances') {
+      tabContent = await buildAdvancesTab();
+    } else if (activeTab === 'recon') {
+      tabContent = await buildReconTab();
     }
 
     const html = `
@@ -677,6 +758,162 @@
     setPageContent(html, getTabBar());
     updateTabBar('base');
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = pageTitle;
+
+    // Load recon history asynchronously after page render
+    if (activeTab === 'recon') {
+      (async () => {
+        const histEl = document.getElementById('recon-history');
+        if (!histEl) return;
+        const histPeriods = [];
+        const now2 = new Date();
+        for (let i = 1; i <= 5; i++) {
+          const d = new Date(now2.getFullYear(), now2.getMonth() - i, 1);
+          histPeriods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        }
+        const months2 = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+        const rows2 = await Promise.all(histPeriods.map(p => api.get('/api/base/reconciliation/' + p).catch(() => null)));
+        histEl.innerHTML = rows2.map((r2, i) => {
+          const p = histPeriods[i];
+          const mo = months2[parseInt(p.split('-')[1]) - 1];
+          const yr = p.split('-')[0];
+          if (!r2 || r2.physical_stock == null) return `<div class="li"><div class="lic"><span style="color:var(--text3)">—</span></div><div class="lit"><div class="lim">${mo} ${yr}</div><div class="lis">Не проводилась</div></div></div>`;
+          const diff = parseFloat(r2.difference || 0);
+          const color = Math.abs(diff) > 5 ? 'var(--red)' : 'var(--green)';
+          return `<div class="li"><div class="lic g">✓</div><div class="lit"><div class="lim">${mo} ${yr}</div><div class="lis">Физ: ${parseFloat(r2.physical_stock).toFixed(1)} куб</div></div><div class="lir"><div class="lival" style="color:${color}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)}</div></div></div>`;
+        }).join('') || '<div class="empty-state">Нет данных</div>';
+      })();
+    }
+  }
+
+  // ── buildAdvancesTab ──────────────────────────────────────────────────────
+  async function buildAdvancesTab() {
+    let advances = [];
+    try { advances = await api.get('/api/base/advances') || []; } catch (e) {}
+
+    const openAdvances = advances.filter(a => a.status === 'open');
+    const closedAdvances = advances.filter(a => a.status === 'returned');
+
+    const fmt = n => n ? formatNum(Math.round(n)) : '—';
+
+    const totalOpen = openAdvances.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
+    const totalVolOpen = openAdvances.reduce((s, a) => s + (parseFloat(a.volume) || 0), 0);
+
+    const openRows = openAdvances.length ? openAdvances.map(a => `
+      <div class="li">
+        <div class="lic y">⛽</div>
+        <div class="lit">
+          <div class="lim">${esc(a.recipient || '—')}</div>
+          <div class="lis">${a.given_at ? new Date(a.given_at).toLocaleDateString('ru') : '—'}${a.volume ? ' · ' + a.volume + ' куб' : ''}</div>
+          ${a.notes ? `<div class="lis" style="color:var(--text3)">${esc(a.notes)}</div>` : ''}
+        </div>
+        <div class="lir">
+          ${a.amount ? `<div class="lival">${fmt(a.amount)} ₽</div>` : ''}
+          ${!isOp() ? `<button onclick="window.returnAdvance(${a.id})" style="margin-top:4px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">Вернули</button>` : ''}
+        </div>
+      </div>`).join('') : `<div class="empty-state">Нет открытых авансов</div>`;
+
+    const closedRows = closedAdvances.slice(0, 10).map(a => `
+      <div class="li" style="opacity:.6">
+        <div class="lic g">✓</div>
+        <div class="lit">
+          <div class="lim">${esc(a.recipient || '—')}</div>
+          <div class="lis">${a.given_at ? new Date(a.given_at).toLocaleDateString('ru') : '—'} · возвращено</div>
+        </div>
+        <div class="lir"><div class="lival">${fmt(a.amount)} ₽</div></div>
+      </div>`).join('');
+
+    return `
+      ${totalOpen > 0 ? `<div style="background:rgba(255,165,0,.1);border:1px solid var(--orange);border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:13px">
+        <span style="color:var(--orange);font-weight:700">Открытых авансов: ${openAdvances.length} · ${fmt(totalOpen)} ₽</span>
+        ${totalVolOpen > 0 ? ` · ${totalVolOpen} куб` : ''}
+      </div>` : ''}
+      ${sectionHeader('Открытые авансы')}
+      ${openRows}
+      ${isPartner() || isArtem() ? `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="window.addAdvanceModal()">+ Новый аванс</button>` : ''}
+      ${closedAdvances.length ? sectionHeader('Закрытые') + closedRows : ''}
+    `;
+  }
+
+  // ── buildCashArtemTab ─────────────────────────────────────────────────────
+  async function buildCashArtemTab() {
+    let records = [], artemBalance = null;
+    try { records = await api.get('/api/base/cash-artem') || []; } catch (e) {}
+    try { artemBalance = await api.get('/api/base/artem-balance'); } catch (e) {}
+
+    const fmt = n => n != null ? formatNum(Math.round(n)) : '—';
+    const balance = artemBalance ? parseFloat(artemBalance.balance || 0) : 0;
+
+    const rows = records.length ? records.map(r => {
+      const settled = r.is_settled;
+      return `<div class="li${settled ? '" style="opacity:.55' : ''}">
+        <div class="lic ${settled ? 'g' : 'y'}">${settled ? '✓' : '💵'}</div>
+        <div class="lit">
+          <div class="lim">${r.purpose ? esc(r.purpose) : 'Наличные Артёму'}</div>
+          <div class="lis">${r.given_at ? new Date(r.given_at).toLocaleDateString('ru') : '—'}
+            ${r.amount_spent ? ' · потрачено: ' + fmt(r.amount_spent) + ' ₽' : ''}
+            ${r.fuel_received ? ' · получено: ' + r.fuel_received + ' куб' : ''}
+          </div>
+        </div>
+        <div class="lir">
+          <div class="lival">${fmt(r.amount_given)} ₽</div>
+          ${!settled && isArtem() ? `<button onclick="window.reportCashArtem(${r.id})" style="margin-top:4px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">Отчёт</button>` : ''}
+          ${!settled && isPartner() && r.amount_spent ? `<button onclick="window.settleCashArtem(${r.id})" style="margin-top:4px;background:var(--card2);border:1px solid var(--border);color:var(--green);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">Закрыть</button>` : ''}
+        </div>
+      </div>`;
+    }).join('') : `<div class="empty-state">Нет записей</div>`;
+
+    return `
+      <div style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Остаток у Артёма (не освоено)</div>
+        <div style="font-size:28px;font-weight:700;color:${balance > 0 ? 'var(--orange)' : 'var(--text)'}">${fmt(balance)} ₽</div>
+      </div>
+      ${rows}
+      ${isPartner() ? `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="window.addCashArtemModal()">+ Выдать наличные</button>` : ''}
+    `;
+  }
+
+  // ── buildReconTab ─────────────────────────────────────────────────────────
+  async function buildReconTab() {
+    const now = new Date();
+    const thisPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    let recon = null, balance = null;
+    try { recon = await api.get('/api/base/reconciliation/' + thisPeriod); } catch (e) {}
+    try { balance = await api.get('/api/base/balance'); } catch (e) {}
+
+    const calcStock = balance ? parseFloat(balance.balance_cubic || 0) : 0;
+    const fmt = n => n != null ? parseFloat(n).toFixed(1) : '—';
+
+    const diffHtml = recon && recon.physical_stock != null ? (() => {
+      const diff = parseFloat(recon.difference || 0);
+      const color = Math.abs(diff) > 5 ? 'var(--red)' : 'var(--green)';
+      return `<div class="bbr"><div class="bbl">Расхождение</div><div class="bbv" style="color:${color}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)} куб</div></div>`;
+    })() : '';
+
+    const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    const monthName = months[parseInt(thisPeriod.split('-')[1]) - 1];
+    const yearName = thisPeriod.split('-')[0];
+
+    return `
+      ${sectionHeader('Сверка за ' + monthName + ' ' + yearName)}
+      <div class="bb">
+        <div class="bbr"><div class="bbl">Расчётный остаток (система)</div><div class="bbv" style="color:var(--accent)">${fmt(calcStock)} куб</div></div>
+        <div class="bbr"><div class="bbl">Физический замер</div><div class="bbv">${recon && recon.physical_stock != null ? fmt(recon.physical_stock) + ' куб' : '<span style="color:var(--text3)">Не внесён</span>'}</div></div>
+        ${diffHtml}
+        ${recon && recon.notes ? `<div class="bbr"><div class="bbl">Примечание</div><div class="bbv">${esc(recon.notes)}</div></div>` : ''}
+      </div>
+
+      ${!isOp() ? `
+      <div style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">Ввести физический замер</div>
+        <input id="recon-physical" class="inp" type="number" step="0.1" placeholder="Замер в кубах" value="${recon && recon.physical_stock != null ? recon.physical_stock : ''}" style="width:100%;margin-bottom:10px">
+        <input id="recon-notes" class="inp" placeholder="Примечание (опционально)" value="${recon && recon.notes ? esc(recon.notes) : ''}" style="width:100%;margin-bottom:10px">
+        <button onclick="window.submitReconciliation('${thisPeriod}', ${calcStock})" class="btn-primary" style="width:100%">Сохранить замер</button>
+      </div>` : ''}
+
+      ${sectionHeader('История сверок')}
+      <div id="recon-history">Загрузка...</div>
+    `;
   }
 
   window.confirmReceipt = async function (id) {
@@ -708,6 +945,212 @@
     });
   };
 
+  // ── Advances global functions ─────────────────────────────────────────────
+  window.returnAdvance = async function(advanceId) {
+    if (!confirm('Отметить аванс как возвращённый?')) return;
+    try {
+      await api.put('/api/base/advances/' + advanceId + '/return', {});
+      toast('✅ Аванс закрыт');
+      navigate('#base?tab=advances');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.addAdvanceModal = function() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+    overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">Новый аванс топлива</div>
+      <input id="adv-recipient" class="inp" placeholder="Кому (Максим, другое)" style="width:100%;margin-bottom:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="adv-volume" class="inp" type="number" placeholder="Объём куб" style="flex:1">
+        <input id="adv-amount" class="inp" type="number" placeholder="Сумма ₽" style="flex:1">
+      </div>
+      <input id="adv-notes" class="inp" placeholder="Примечание (опционально)" style="width:100%;margin-bottom:16px">
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('[style*=z-index]').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+        <button onclick="window._submitAdvance()" class="btn-primary" style="flex:1">Записать</button>
+      </div>
+    </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window._submitAdvance = async function() {
+    const recipient = document.getElementById('adv-recipient')?.value?.trim();
+    const volume = parseFloat(document.getElementById('adv-volume')?.value) || null;
+    const amount = parseFloat(document.getElementById('adv-amount')?.value) || null;
+    const notes = document.getElementById('adv-notes')?.value?.trim() || null;
+    if (!recipient) { toast('Укажите кому', 'error'); return; }
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await api.post('/api/base/advances', { given_at: today, recipient, volume, amount, notes });
+      toast('✅ Аванс записан');
+      document.querySelector('[style*="z-index:9999"]')?.remove();
+      navigate('#base?tab=advances');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Cash Artem global functions ───────────────────────────────────────────
+  window.addCashArtemModal = function() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+    overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">Выдать наличные Артёму</div>
+      <input id="cash-amount" class="inp" type="number" placeholder="Сумма ₽" style="width:100%;margin-bottom:10px">
+      <input id="cash-purpose" class="inp" placeholder="Назначение (закупка Ангарск, прочее)" style="width:100%;margin-bottom:16px">
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('[style*=z-index]').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+        <button onclick="window._submitCashArtem()" class="btn-primary" style="flex:1">Записать</button>
+      </div>
+    </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window._submitCashArtem = async function() {
+    const amount = parseFloat(document.getElementById('cash-amount')?.value);
+    const purpose = document.getElementById('cash-purpose')?.value?.trim() || null;
+    if (!amount || amount <= 0) { toast('Укажите сумму', 'error'); return; }
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await api.post('/api/base/cash-artem', { given_at: today, amount_given: amount, purpose });
+      toast('✅ Записано');
+      document.querySelector('[style*="z-index:9999"]')?.remove();
+      navigate('#base?tab=cash');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.reportCashArtem = function(recordId) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+    overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">Отчёт по расходованию</div>
+      <input id="report-spent" class="inp" type="number" placeholder="Потрачено ₽" style="width:100%;margin-bottom:10px">
+      <input id="report-fuel" class="inp" type="number" placeholder="Получено топлива куб" style="width:100%;margin-bottom:10px">
+      <input id="report-notes" class="inp" placeholder="Примечание" style="width:100%;margin-bottom:16px">
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('[style*=z-index]').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+        <button onclick="window._submitCashReport(${recordId})" class="btn-primary" style="flex:1">Отправить</button>
+      </div>
+    </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window._submitCashReport = async function(recordId) {
+    const amount_spent = parseFloat(document.getElementById('report-spent')?.value) || 0;
+    const fuel_received = parseFloat(document.getElementById('report-fuel')?.value) || 0;
+    const notes = document.getElementById('report-notes')?.value?.trim() || null;
+    try {
+      await api.put('/api/base/cash-artem/' + recordId + '/report', { amount_spent, fuel_received, notes });
+      toast('✅ Отчёт отправлен');
+      document.querySelector('[style*="z-index:9999"]')?.remove();
+      navigate('#base?tab=cash');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.settleCashArtem = async function(recordId) {
+    if (!confirm('Закрыть эту запись? Деньги освоены и проверены.')) return;
+    try {
+      await api.put('/api/base/cash-artem/' + recordId + '/settle', {});
+      toast('✅ Запись закрыта');
+      navigate('#base?tab=cash');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Reconciliation global functions ───────────────────────────────────────
+  window.submitReconciliation = async function(period, calcStock) {
+    const physical = parseFloat(document.getElementById('recon-physical')?.value);
+    const notes = document.getElementById('recon-notes')?.value?.trim() || null;
+    if (!physical || isNaN(physical)) { toast('Введите замер', 'error'); return; }
+    try {
+      await api.post('/api/base/reconciliation', { period: period, physical_stock: physical, notes });
+      toast('✅ Замер сохранён');
+      navigate('#base?tab=recon');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Correction modal ──────────────────────────────────────────────────────
+  function showCorrectionModal({ title, fields, onSubmit }) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+    const fieldsHtml = fields.map(f => `
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${esc(f.label)}</div>
+        <input id="corr-${f.id}" class="inp" type="${f.type || 'text'}" value="${esc(String(f.value || ''))}" placeholder="${esc(f.label)}" style="width:100%">
+      </div>`).join('');
+    overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%;max-height:85vh;overflow-y:auto">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">${esc(title)}</div>
+      ${fieldsHtml}
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;color:var(--orange);margin-bottom:4px;font-weight:600">Причина исправления (обязательно)</div>
+        <input id="corr-reason" class="inp" placeholder="Например: ошибка при вводе, уточнённые данные..." style="width:100%;border-color:var(--orange)">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('[style*=z-index]').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+        <button onclick="window._submitCorrection()" class="btn-primary" style="flex:1">Исправить</button>
+      </div>
+    </div>`;
+
+    window._correctionOnSubmit = onSubmit;
+    window._correctionFields = fields;
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+
+  window._submitCorrection = async function() {
+    const reason = document.getElementById('corr-reason')?.value?.trim();
+    if (!reason) { toast('Укажите причину исправления', 'error'); return; }
+    const data = { reason };
+    (window._correctionFields || []).forEach(f => {
+      const el = document.getElementById('corr-' + f.id);
+      if (el && el.value !== String(f.value || '')) {
+        data[f.id] = f.type === 'number' ? (parseFloat(el.value) || null) : el.value;
+      }
+    });
+    try {
+      await window._correctionOnSubmit(data);
+      toast('✅ Исправлено и записано в аудит-лог');
+      document.querySelector('[style*="z-index:9999"]')?.remove();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Receipt correction modal ──────────────────────────────────────────────
+  window.correctReceiptModal = function(id, vol, density, temp, ttn, notes) {
+    showCorrectionModal({
+      title: 'Исправить приёмку',
+      fields: [
+        { id: 'volume_nominal', label: 'Объём номинал (куб)', type: 'number', value: vol },
+        { id: 'density', label: 'Плотность (г/см³)', type: 'number', value: density },
+        { id: 'temperature', label: 'Температура (°C)', type: 'number', value: temp },
+        { id: 'ttn_number', label: 'Номер ТТН', value: ttn },
+        { id: 'notes', label: 'Примечание', value: notes },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/base/receipts/' + id + '/correct', data);
+        navigate('#base');
+      },
+    });
+  };
+
+  // ── Dispatch correction modal ─────────────────────────────────────────────
+  window.correctDispatchModal = function(id, volume, tariff, ttn, notes) {
+    showCorrectionModal({
+      title: 'Исправить рейс',
+      fields: [
+        { id: 'volume', label: 'Объём (куб)', type: 'number', value: volume },
+        { id: 'tariff', label: 'Тариф ₽', type: 'number', value: tariff },
+        { id: 'ttn_number', label: 'Номер ТТН', value: ttn },
+        { id: 'notes', label: 'Примечание', value: notes },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/base/dispatches/' + id + '/correct', data);
+        navigate('#base?tab=trips');
+      },
+    });
+  };
+
   // ── Receipt form ──────────────────────────────────────────────────────────
   async function viewBaseReceiptNew() {
     const sources = ['Хабаровск', 'Ангарск', 'Коля', 'Восточка', 'Артём закупил', 'Другое'];
@@ -730,7 +1173,7 @@
       </div>
       <div class="auto-calc" id="auto-calc">→ Пересчитано: <strong>200.0 куб</strong> при 20°C</div>`)}
       ${formField('Номер ТТН', `<input class="inp" type="text" id="f-ttn" placeholder="ТТН-2026-...">`)}
-      ${formField('Фото ТТН', photoButton())}
+      ${formField('Фото ТТН', photoButton('f-photo-r'))}
       <button class="btn-primary" onclick="submitReceiptForm()">Далее →</button>
       <button class="btn-secondary" onclick="navigate('#base')">Отмена</button>
     </div>
@@ -766,7 +1209,9 @@
     const source = sourceEl ? sourceEl.getAttribute('data-val') : '';
     const converted = (parseFloat(vol) * parseFloat(density) / 0.840).toFixed(1);
     const sub = document.getElementById('conf-sub');
-    if (sub) sub.innerHTML = `📥 <strong>${esc(source)} → База Тында</strong><br>Объём: <strong>${esc(vol)} куб</strong> (${esc(converted)} приведённых)<br>Плотность: ${esc(density)} · Темп: +${esc(temp)}°C<br>ТТН: ${ttn ? esc(ttn) : '<span style="color:var(--text3)">не указан</span>'}<br><span style="color:var(--orange)">⚠ Фото не прикреплено</span>`;
+    const hasPhoto = document.getElementById('f-photo-r')?.files?.length > 0;
+    const photoLine = hasPhoto ? '<span style="color:var(--green)">✅ Фото прикреплено</span>' : '<span style="color:var(--orange)">⚠ Фото не прикреплено</span>';
+    if (sub) sub.innerHTML = `📥 <strong>${esc(source)} → База Тында</strong><br>Объём: <strong>${esc(vol)} куб</strong> (${esc(converted)} приведённых)<br>Плотность: ${esc(density)} · Темп: +${esc(temp)}°C<br>ТТН: ${ttn ? esc(ttn) : '<span style="color:var(--text3)">не указан</span>'}<br>${photoLine}`;
     const overlay = document.getElementById('conf-overlay');
     if (overlay) overlay.style.display = 'flex';
   };
@@ -779,9 +1224,20 @@
     const sourceEl = document.querySelector('.chips[data-group="source"] .chip.sel');
     const source = sourceEl ? sourceEl.getAttribute('data-val') : '';
     try {
-      await api.post('/api/base/receipts', { source_custom: source, volume_nominal: vol, density, temperature: temp, ttn_number: ttn });
+      const res = await api.post('/api/base/receipts', { source_custom: source, volume_nominal: vol, density, temperature: temp, ttn_number: ttn });
       const overlay = document.getElementById('conf-overlay');
       if (overlay) overlay.style.display = 'none';
+      if (res && res.id) {
+        const photoUrl = await uploadTtnPhoto('f-photo-r');
+        if (photoUrl) {
+          try {
+            await fetch(`/api/base/receipts/${res.id}/photo?photo_url=${encodeURIComponent(photoUrl)}`, {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + api.getToken() },
+            });
+          } catch (e2) { /* photo upload failed, not critical */ }
+        }
+      }
       toast('✅ Записано! Артём получит уведомление.');
       navigate('#base');
     } catch (e) { toast(e.message, 'error'); }
@@ -823,7 +1279,7 @@
         <div class="tariff-val" id="tariff-val">—</div>
       </div>
       ${formField('Номер ТТН', `<input class="inp" type="text" id="f-ttn-d" placeholder="ТТН-2026-...">`)}
-      ${formField('Фото ТТН', photoButton())}
+      ${formField('Фото ТТН', photoButton('f-photo-d'))}
       <div style="background:rgba(50,215,75,.06);border:1px solid rgba(50,215,75,.15);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:var(--green)">
         «Доставлено» отмечает Артём или приёмщик, когда водитель вернулся с подписанным ТТН
       </div>
@@ -889,7 +1345,7 @@
     const ownerMap = { 'Наш DTL': 'DTL', 'Автопарк Артёма': 'Артём', 'Наёмная': 'наёмная' };
     const ownerRaw = ownerEl ? ownerEl.getAttribute('data-val') : 'Наш DTL';
     try {
-      await api.post('/api/base/dispatches', {
+      const res = await api.post('/api/base/dispatches', {
         truck_id: truckEl ? parseInt(truckEl.getAttribute('data-val')) || null : null,
         driver_id: driverEl ? parseInt(driverEl.getAttribute('data-val')) || null : null,
         site_id: siteEl ? parseInt(siteEl.getAttribute('data-val')) : null,
@@ -897,6 +1353,17 @@
         volume: vol,
         ttn_number: ttn
       });
+      if (res && res.id) {
+        const photoUrl = await uploadTtnPhoto('f-photo-d');
+        if (photoUrl) {
+          try {
+            await fetch(`/api/base/dispatches/${res.id}/photo?photo_url=${encodeURIComponent(photoUrl)}`, {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + api.getToken() },
+            });
+          } catch (e2) { /* photo upload failed, not critical */ }
+        }
+      }
       toast('✅ Рейс зафиксирован!');
       navigate('#base?tab=trips');
     } catch (e) { toast(e.message, 'error'); }
@@ -983,6 +1450,12 @@
     });
   };
 
+  // ── Export CSV helper ─────────────────────────────────────────────────────
+  function exportCsvBtn(section, period) {
+    const url = `/api/reports/export?section=${section}${period ? '&period=' + period : ''}`;
+    return `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="window.open('${url}')">⬇ Экспорт CSV</button>`;
+  }
+
   // ── Income ────────────────────────────────────────────────────────────────
   async function viewIncome() {
     if (!isPartner()) { navigate('#home'); return; }
@@ -1000,12 +1473,34 @@
         ${statCard(records.length, 'Записей')}
         ${statCard('—', 'Маржа')}
       </div>
-      ${records.length ? records.map(r => listItem({ icon: '💰', iconBg: 'g', title: formatNum(r.amount) + ' ₽', sub: `${r.client_name || ''} · ${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}` })).join('') : emptyState('Нет доходов')}
+      ${records.length ? records.map(r => `<div class="li">
+        <div class="lic g">💰</div>
+        <div class="lit"><div class="lim">${formatNum(r.amount)} ₽</div><div class="lis">${esc(r.client_name || '')} · ${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}</div></div>
+        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${isPartner() ? `<button onclick="window.correctIncome(${r.id},'${r.income_at ? r.income_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+        </div>
+      </div>`).join('') : emptyState('Нет доходов')}
       ${!isDesktop() ? `<button class="btn-primary" style="margin-top:12px" onclick="showIncomeModal()">+ Добавить</button>` : ''}
+      ${exportCsvBtn('income')}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Доходы';
   }
+
+  window.correctIncome = function(id, income_at, amount, comment) {
+    showCorrectionModal({
+      title: 'Исправить запись доходов',
+      fields: [
+        { id: 'income_at', label: 'Дата', type: 'date', value: income_at },
+        { id: 'amount', label: 'Сумма ₽', type: 'number', value: amount },
+        { id: 'comment', label: 'Комментарий', value: comment || '' },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/income/' + id + '/correct', data);
+        viewIncome();
+      },
+    });
+  };
 
   window.showIncomeModal = function () {
     showModal('Добавить доход', `
@@ -1038,12 +1533,35 @@
         ${statCard(records.length, 'Записей')}
         ${statCard('—', 'Категорий')}
       </div>
-      ${records.length ? records.map(r => listItem({ icon: '📋', iconBg: 'o', title: formatNum(r.amount) + ' ₽', sub: `${r.category || ''} · ${r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : ''}` })).join('') : emptyState('Нет расходов')}
+      ${records.length ? records.map(r => `<div class="li">
+        <div class="lic o">📋</div>
+        <div class="lit"><div class="lim">${formatNum(r.amount)} ₽</div><div class="lis">${esc(r.category || '')} · ${r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : ''}</div></div>
+        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${isPartner() ? `<button onclick="window.correctExpense(${r.id},'${r.expense_at ? r.expense_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.category||'')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+        </div>
+      </div>`).join('') : emptyState('Нет расходов')}
       <button class="btn-primary" style="margin-top:12px" onclick="showExpenseModal()">+ Добавить</button>
+      ${exportCsvBtn('expenses')}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Расходы';
   }
+
+  window.correctExpense = function(id, expense_at, amount, category, comment) {
+    showCorrectionModal({
+      title: 'Исправить расход',
+      fields: [
+        { id: 'expense_at', label: 'Дата', type: 'date', value: expense_at },
+        { id: 'amount', label: 'Сумма ₽', type: 'number', value: amount },
+        { id: 'category', label: 'Категория', value: category || '' },
+        { id: 'comment', label: 'Комментарий', value: comment || '' },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/expenses/' + id + '/correct', data);
+        viewExpenses();
+      },
+    });
+  };
 
   window.showExpenseModal = function () {
     const categories = ['Бухгалтерия', 'Аренда', 'Кредиты (тело)', 'Проценты по кредитам', 'Налоги/штрафы', 'Командировочные', 'Зарплата партнёрам', 'Финансовые расходы (налоги/вывод)', 'Прочие'];
@@ -1082,15 +1600,36 @@
       ${deals.length ? deals.map(d => `<div class="oc">
         <div class="och">
           <div><div class="ocn">${esc(d.client_name || '')} → ${esc(d.carrier_name || d.carrier_custom || '')}</div><div class="ocd">${[d.delivery_at ? new Date(d.delivery_at).toLocaleDateString('ru') : '', d.supplier_name || ''].filter(Boolean).join(' · ')}</div></div>
-          <div><div class="oca">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <div><div class="oca">${d.margin_pct ? d.margin_pct + '%' : '—'}</div><div class="ocsub">маржа</div></div>
+            ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+          </div>
         </div>
         ${d.volume_liters ? `<div class="ocp-labels"><span>${formatNum(d.volume_liters)} л</span><span>${d.price_client ? d.price_client + ' ₽/л' : ''}</span><span style="color:var(--accent)">${d.price_supplier ? d.price_supplier + ' ₽/л поставщику' : ''}</span></div>` : ''}
       </div>`).join('') : emptyState('Нет сделок')}
       <button class="btn-primary" style="margin-top:12px" onclick="showHireModal()">+ Новая сделка</button>
+      ${exportCsvBtn('hire')}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Найм';
   }
+
+  window.correctHire = function(id, delivery_at, volume_liters, price_client, price_carrier, comment) {
+    showCorrectionModal({
+      title: 'Исправить сделку по найму',
+      fields: [
+        { id: 'delivery_at', label: 'Дата', type: 'date', value: delivery_at },
+        { id: 'volume_liters', label: 'Объём литров', type: 'number', value: volume_liters },
+        { id: 'price_client', label: 'Цена клиенту ₽/л', type: 'number', value: price_client },
+        { id: 'price_carrier', label: 'Цена перевозчику ₽/л', type: 'number', value: price_carrier },
+        { id: 'comment', label: 'Комментарий', value: comment || '' },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/hire/' + id + '/correct', data);
+        viewHire();
+      },
+    });
+  };
 
   window.showHireModal = async function () {
     let clients = [], suppliers = [], carriers = [];
@@ -1157,12 +1696,35 @@
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
       ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
-      ${records.length ? records.map(r => listItem({ icon: '📄', iconBg: r.type === 'ДОЛГ' ? 'o' : 'g', title: `${r.debtor} — ${formatNum(Math.abs(r.amount))} ₽`, sub: [r.type === 'ОПЛАТА' ? 'Оплата' : '', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ') })).join('') : emptyState('Нет записей')}
+      ${records.length ? records.map(r => `<div class="li">
+        <div class="lic ${r.type === 'ДОЛГ' ? 'o' : 'g'}">📄</div>
+        <div class="lit"><div class="lim">${esc(r.debtor)} — ${formatNum(Math.abs(r.amount))} ₽</div><div class="lis">${[r.type === 'ОПЛАТА' ? 'Оплата' : '', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ')}</div></div>
+        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${isPartner() ? `<button onclick="window.correctDebt(${r.id},'${r.recorded_at ? r.recorded_at.slice(0,10) : ''}',${r.amount||0},'${esc(r.type||'ДОЛГ')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+        </div>
+      </div>`).join('') : emptyState('Нет записей')}
       ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
+      ${isPartner() ? exportCsvBtn('debts') : ''}
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Долги';
   }
+
+  window.correctDebt = function(id, recorded_at, amount, type, comment) {
+    showCorrectionModal({
+      title: 'Исправить запись долга',
+      fields: [
+        { id: 'recorded_at', label: 'Дата', type: 'date', value: recorded_at },
+        { id: 'amount', label: 'Сумма ₽', type: 'number', value: amount },
+        { id: 'type', label: 'Тип (ДОЛГ / ОПЛАТА)', value: type || 'ДОЛГ' },
+        { id: 'comment', label: 'Комментарий', value: comment || '' },
+      ],
+      onSubmit: async (data) => {
+        await api.put('/api/debts/' + id + '/correct', data);
+        viewDebts();
+      },
+    });
+  };
 
   window.showDebtModal = function () {
     showModal('Добавить запись долга', `
@@ -1326,7 +1888,135 @@
     } catch (e) { toast(e.message, 'error'); }
   };
 
+  // ── AI ────────────────────────────────────────────────────────────────────
+  window.askClaude = async function() {
+    const input = document.getElementById('ai-input');
+    if (!input) return;
+    const q = input.value.trim();
+    if (!q) return;
+
+    const btn = input.nextElementSibling;
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    input.disabled = true;
+
+    try {
+      const res = await api.post('/api/ai/query', { question: q });
+      if (res.ok) {
+        showAiAnswer(q, res.answer);
+      } else {
+        toast('AI: ' + (res.answer || 'Нет ответа'), 'error');
+      }
+    } catch (e) {
+      toast('AI недоступен: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.textContent = 'AI'; btn.disabled = false; }
+      input.disabled = false;
+      input.value = '';
+    }
+  };
+
+  function showAiAnswer(question, answer) {
+    const existing = document.getElementById('ai-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'ai-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:16px;padding:24px;max-width:500px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+        <div style="color:var(--text2);font-size:12px;margin-bottom:8px">Вопрос:</div>
+        <div style="font-size:14px;margin-bottom:16px;color:var(--text)">${esc(question)}</div>
+        <div style="color:var(--accent);font-size:12px;margin-bottom:8px">Ответ Клода:</div>
+        <div style="font-size:15px;line-height:1.5;color:var(--text)">${esc(answer)}</div>
+        <button onclick="document.getElementById('ai-overlay').remove()" style="margin-top:20px;width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text);cursor:pointer;font-size:14px">Закрыть</button>
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+
+  window.scanTTN = async function(inputId) {
+    const file = document.getElementById(inputId)?.files[0];
+    if (!file) return;
+    const btn = document.getElementById(inputId + '-scan');
+    if (btn) { btn.textContent = '⏳ Распознаём...'; btn.disabled = true; }
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const upRes = await fetch('/api/upload/ttn', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + api.getToken() },
+        body: fd,
+      });
+      if (!upRes.ok) throw new Error('Ошибка загрузки фото');
+      const { url } = await upRes.json();
+
+      const scanRes = await fetch('/api/ai/scan-ttn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + api.getToken() },
+        body: JSON.stringify({ image_url: url }),
+      });
+      if (!scanRes.ok) throw new Error('AI недоступен');
+      const { data } = await scanRes.json();
+
+      if (data.ttn_number) {
+        const ttnInput = document.getElementById('f-ttn') || document.getElementById('f-ttn-d');
+        if (ttnInput) { ttnInput.value = data.ttn_number; ttnInput.style.borderColor = 'var(--green)'; }
+      }
+      if (data.temperature) {
+        const tempInput = document.getElementById('f-temp');
+        if (tempInput) { tempInput.value = data.temperature; tempInput.style.borderColor = 'var(--green)'; if (window.recalcReceipt) recalcReceipt(); }
+      }
+      if (data.density) {
+        const densInput = document.getElementById('f-density');
+        if (densInput) { densInput.value = data.density; densInput.style.borderColor = 'var(--green)'; if (window.recalcReceipt) recalcReceipt(); }
+      }
+      if (data.volume_cubic) {
+        const volInput = document.getElementById('f-volume');
+        if (volInput) { volInput.value = data.volume_cubic; volInput.style.borderColor = 'var(--green)'; if (window.recalcReceipt) recalcReceipt(); }
+      }
+
+      toast('✅ ТТН распознан! Проверьте поля.');
+      if (btn) { btn.textContent = '✅ Распознан'; btn.disabled = false; }
+    } catch (e) {
+      toast('AI: ' + e.message, 'error');
+      if (btn) { btn.textContent = '🔍 Распознать ТТН (Claude AI)'; btn.disabled = false; }
+    }
+  };
+
   // ── Settings ──────────────────────────────────────────────────────────────
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) { outputArray[i] = rawData.charCodeAt(i); }
+    return outputArray;
+  }
+
+  window.subscribePush = async function() {
+    const btn = document.getElementById('push-subscribe-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { toast('Уведомления заблокированы', 'error'); if (btn) btn.disabled = false; return; }
+      const reg = await navigator.serviceWorker.ready;
+      const keyResp = await fetch('/api/notifications/vapid-public-key');
+      const { key } = await keyResp.json();
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+      const j = sub.toJSON();
+      await fetch('/api/notifications/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + api.getToken() },
+        body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }),
+      });
+      toast('✅ Push-уведомления подключены!');
+      if (btn) { btn.textContent = '✅ Подключено'; btn.disabled = false; }
+    } catch (e) {
+      toast('Ошибка подписки: ' + e.message, 'error');
+      if (btn) btn.disabled = false;
+    }
+  };
+
   async function viewSettings() {
     let sites = [], tariffs = [], suppliers = [], carriers = [], settings = [];
     try { sites = await api.get('/api/sites') || []; } catch (e) {}
@@ -1337,10 +2027,22 @@
 
     const getSetting = (key, def) => { const s = settings.find(x => x.key === key); return s ? s.value : def; };
 
+    const pushSupported = ('Notification' in window && 'serviceWorker' in navigator);
+    let pushPermState = pushSupported ? Notification.permission : 'unsupported';
+    let pushBtnLabel = 'Подключить уведомления';
+    if (pushPermState === 'granted') pushBtnLabel = '✅ Подключено (обновить)';
+    if (pushPermState === 'denied') pushBtnLabel = '🚫 Заблокировано в браузере';
+
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">⚙️ Настройки</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
+
+      ${sectionHeader('Push-уведомления')}
+      ${pushSupported ? `<div class="bb">
+        <div class="bbr"><div class="bbl">Статус</div><div class="bbv">${pushPermState === 'granted' ? '<span style="color:var(--green)">✅ Разрешены</span>' : pushPermState === 'denied' ? '<span style="color:var(--red)">🚫 Заблокированы</span>' : '<span style="color:var(--text2)">Не запрошено</span>'}</div></div>
+      </div>
+      <button id="push-subscribe-btn" class="btn-secondary" style="width:100%;margin-top:8px" onclick="subscribePush()" ${pushPermState === 'denied' ? 'disabled' : ''}>${pushBtnLabel}</button>` : `<div class="info-tag">Push-уведомления не поддерживаются в этом браузере</div>`}
 
       ${sectionHeader('Участки')}
       ${sites.map(s => `<div class="li">
@@ -1368,15 +2070,31 @@
       </div>`).join('')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addCarrierModal()">+ Добавить перевозчика</button>` : ''}
 
-      ${sectionHeader('Тарифы — история')}
-      ${tariffs.length ? tariffs.map(t => `<div class="li">
-        <div class="lic y">💰</div>
-        <div class="lit">
-          <div class="lim">${esc(t.site_name || '')} · ${esc(t.truck_owner || '')}</div>
-          <div class="lis">${t.valid_from ? 'с ' + t.valid_from : ''}${t.comment ? ' · ' + esc(t.comment) : ''}</div>
-        </div>
-        <div class="lir"><div class="lival" style="color:var(--accent)">${formatNum(t.amount)} ₽</div></div>
-      </div>`).join('') : emptyState('Нет тарифов')}
+      ${sectionHeader('Тарифы')}
+      ${(() => {
+        const tariffMatrix = {};
+        tariffs.forEach(t => {
+          const key = t.site_id;
+          if (!tariffMatrix[key]) tariffMatrix[key] = { site_name: t.site_name, DTL: null, 'Артём': null, 'наёмная': null };
+          tariffMatrix[key][t.truck_owner] = t;
+        });
+        const tariffRows = Object.values(tariffMatrix).map(row => `
+          <div class="li" style="align-items:flex-start;flex-direction:column;gap:6px;padding:12px">
+            <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(row.site_name || '?')}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              ${['DTL','Артём','наёмная'].map(owner => {
+                const t = row[owner];
+                return `<div style="background:var(--card2);border-radius:8px;padding:6px 10px;min-width:80px">
+                  <div style="font-size:10px;color:var(--text3)">${owner}</div>
+                  <div style="font-size:15px;font-weight:700;color:var(--accent)">${t ? formatNum(t.amount) + ' ₽' : '—'}</div>
+                  ${isPartner() && t ? `<div onclick="window.editTariffModal(${t.id},${t.site_id},'${esc(row.site_name || '')}','${owner}',${t.amount})" style="font-size:10px;color:var(--text2);cursor:pointer;margin-top:2px">изменить</div>` : ''}
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+        `).join('');
+        return tariffRows || emptyState('Нет тарифов');
+      })()}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addTariffModal()">+ Добавить тариф</button>` : ''}
 
       ${sectionHeader('Параметры базы')}
@@ -1454,6 +2172,39 @@
         await api.post('/api/tariffs', { site_id, truck_owner: ownerEl?.dataset.val || 'DTL', amount, valid_from, comment });
         toast('✅ Тариф добавлен'); viewSettings();
       });
+  };
+
+  window.editTariffModal = function(tariffId, siteId, siteName, owner, currentAmount) {
+    const overlay = document.createElement('div');
+    overlay.id = 'edit-tariff-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:16px;padding:24px;max-width:340px;width:100%">
+        <div style="font-size:16px;font-weight:700;margin-bottom:16px">Изменить тариф</div>
+        <div style="color:var(--text2);font-size:13px;margin-bottom:12px">${esc(siteName)} · ${esc(owner)}</div>
+        <input id="edit-tariff-val" type="number" class="inp" value="${currentAmount}" placeholder="Тариф ₽" style="width:100%;margin-bottom:16px">
+        <input type="hidden" id="edit-tariff-site" value="${siteId}">
+        <input type="hidden" id="edit-tariff-owner" value="${esc(owner)}">
+        <div style="display:flex;gap:10px">
+          <button onclick="document.getElementById('edit-tariff-overlay').remove()" class="btn-secondary" style="flex:1">Отмена</button>
+          <button onclick="window.saveTariff(${tariffId})" class="btn-primary" style="flex:1">Сохранить</button>
+        </div>
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window.saveTariff = async function(tariffId) {
+    const val = parseFloat(document.getElementById('edit-tariff-val')?.value);
+    if (!val || val <= 0) { toast('Введите сумму', 'error'); return; }
+    const siteId = parseInt(document.getElementById('edit-tariff-site')?.value);
+    const owner = document.getElementById('edit-tariff-owner')?.value || 'DTL';
+    try {
+      await api.put('/api/tariffs/' + tariffId, { site_id: siteId, truck_owner: owner, amount: val });
+      toast('✅ Тариф обновлён!');
+      document.getElementById('edit-tariff-overlay')?.remove();
+      viewSettings();
+    } catch (e) { toast(e.message, 'error'); }
   };
 
   window.editSettingsModal = function() {
@@ -1862,6 +2613,117 @@
 
 
   window.navigate = navigate;
+
+  // ── Receipt / Dispatch detail views ──────────────────────────────────────
+
+  window.showReceiptDetail = async function(receiptId) {
+    let r;
+    try {
+      r = await api.get('/api/base/receipts/' + receiptId);
+    } catch (e) { toast('Ошибка загрузки', 'error'); return; }
+
+    const statusHtml = r.ttn_confirmed
+      ? '<span style="color:var(--green)">✅ Подтверждено</span>'
+      : '<span style="color:var(--orange)">⏳ Ожидает подтверждения</span>';
+
+    const photoHtml = r.ttn_photo_url
+      ? `<img src="${esc(r.ttn_photo_url)}" style="width:100%;border-radius:8px;margin-top:12px;cursor:pointer" onclick="window.open('${esc(r.ttn_photo_url)}')" title="Нажмите для просмотра">`
+      : '<div style="color:var(--text3);font-size:12px;margin-top:8px">Фото не прикреплено</div>';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:16px 16px 0 0;padding:24px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700">Приёмка #${r.id}</div>
+          <button onclick="this.closest('[style*=position]').remove()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <div class="bb">
+          <div class="bbr"><div class="bbl">Источник</div><div class="bbv">${esc(r.source_name || r.source_custom || r.supplier_name || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Объём номинал</div><div class="bbv">${esc(String(r.volume_nominal || '—'))} куб</div></div>
+          <div class="bbr"><div class="bbl">Объём приведённый</div><div class="bbv" style="color:var(--accent)">${esc(String(r.volume_adjusted || '—'))} куб</div></div>
+          <div class="bbr"><div class="bbl">Температура</div><div class="bbv">${r.temperature !== null && r.temperature !== undefined ? esc(String(r.temperature)) + ' °C' : '—'}</div></div>
+          <div class="bbr"><div class="bbl">Плотность</div><div class="bbv">${r.density ? esc(String(r.density)) + ' г/см³' : '—'}</div></div>
+          <div class="bbr"><div class="bbl">Номер ТТН</div><div class="bbv">${esc(r.ttn_number || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Статус</div><div class="bbv">${statusHtml}</div></div>
+          <div class="bbr"><div class="bbl">Дата</div><div class="bbv">${esc(r.received_at ? new Date(r.received_at).toLocaleString('ru') : '—')}</div></div>
+          ${r.notes ? `<div class="bbr"><div class="bbl">Примечание</div><div class="bbv">${esc(r.notes)}</div></div>` : ''}
+        </div>
+        ${photoHtml}
+        ${!r.ttn_confirmed && (isArtem() || isOp() || isPartner()) ? `
+          <button onclick="window.confirmReceiptFromDetail(${r.id})" class="btn-primary" style="width:100%;margin-top:16px">✅ Подтвердить приёмку</button>
+        ` : ''}
+        ${isPartner() || isArtem() ? `<button onclick="window.correctReceiptModal(${r.id},${r.volume_nominal||0},${r.density||0.840},${r.temperature||15},'${esc(r.ttn_number||'')}','${esc(r.notes||'')}')" class="btn-secondary" style="width:100%;margin-top:8px">✏ Исправить запись</button>` : ''}
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window.confirmReceiptFromDetail = async function(receiptId) {
+    try {
+      await api.put('/api/base/receipts/' + receiptId + '/confirm', {});
+      toast('✅ Приёмка подтверждена!');
+      document.querySelector('[style*="position:fixed"][style*="z-index:9999"]')?.remove();
+      navigate('#base');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.showDispatchDetail = async function(dispatchId) {
+    let d;
+    try {
+      d = await api.get('/api/base/dispatches/' + dispatchId);
+    } catch (e) { toast('Ошибка загрузки', 'error'); return; }
+
+    const statusLabels = { dispatched: 'Отправлен', in_transit: 'В пути', delivered: 'Доставлено', cancelled: 'Отменён' };
+    const statusColors = { dispatched: 'var(--orange)', in_transit: 'var(--accent)', delivered: 'var(--green)', cancelled: 'var(--red)' };
+    const st = d.status || 'dispatched';
+
+    const photoHtml = d.ttn_photo_url
+      ? `<img src="${esc(d.ttn_photo_url)}" style="width:100%;border-radius:8px;margin-top:12px;cursor:pointer" onclick="window.open('${esc(d.ttn_photo_url)}')" title="Фото ТТН">`
+      : '<div style="color:var(--text3);font-size:12px;margin-top:8px">Фото не прикреплено</div>';
+
+    const actionsHtml = st !== 'delivered' && st !== 'cancelled' ? `
+      ${(isArtem() || isOp() || isPartner()) ? `<button onclick="window.updateDispatchStatus(${d.id},'delivered')" class="btn-primary" style="width:100%;margin-top:12px">✅ Водитель вернулся — Доставлено</button>` : ''}
+      ${isPartner() && st !== 'cancelled' ? `<button onclick="window.updateDispatchStatus(${d.id},'cancelled')" class="btn-secondary" style="width:100%;margin-top:8px;color:var(--red)">Отменить рейс</button>` : ''}
+    ` : '';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:16px 16px 0 0;padding:24px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700">Рейс #${d.id}</div>
+          <button onclick="this.closest('[style*=position]').remove()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <div class="bb">
+          <div class="bbr"><div class="bbl">Машина</div><div class="bbv">${esc(d.truck_name || d.truck_temp || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Водитель</div><div class="bbv">${esc(d.driver_name || d.driver_temp || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Участок</div><div class="bbv">${esc(d.site_name || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Объём</div><div class="bbv" style="color:var(--accent)">${esc(String(d.volume || '—'))} куб</div></div>
+          <div class="bbr"><div class="bbl">Тариф</div><div class="bbv">${d.tariff ? formatNum(d.tariff) + ' ₽' : '—'}</div></div>
+          <div class="bbr"><div class="bbl">ТТН</div><div class="bbv">${esc(d.ttn_number || '—')}</div></div>
+          <div class="bbr"><div class="bbl">Статус</div><div class="bbv" style="color:${statusColors[st]}">${statusLabels[st] || st}</div></div>
+          <div class="bbr"><div class="bbl">Дата отправки</div><div class="bbv">${esc(d.dispatched_at ? new Date(d.dispatched_at).toLocaleString('ru') : '—')}</div></div>
+          ${d.delivered_at ? `<div class="bbr"><div class="bbl">Доставлено</div><div class="bbv">${esc(new Date(d.delivered_at).toLocaleString('ru'))}</div></div>` : ''}
+          ${d.notes ? `<div class="bbr"><div class="bbl">Примечание</div><div class="bbv">${esc(d.notes)}</div></div>` : ''}
+        </div>
+        ${photoHtml}
+        ${actionsHtml}
+        ${isPartner() || isArtem() ? `<button onclick="window.correctDispatchModal(${d.id},${d.volume||0},${d.tariff||0},'${esc(d.ttn_number||'')}','${esc(d.notes||'')}')" class="btn-secondary" style="width:100%;margin-top:8px">✏ Исправить запись</button>` : ''}
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  window.updateDispatchStatus = async function(dispatchId, status) {
+    try {
+      await api.put('/api/base/dispatches/' + dispatchId + '/status', { status });
+      const labels = { delivered: '✅ Доставлено!', cancelled: 'Рейс отменён' };
+      toast(labels[status] || 'Статус обновлён');
+      document.querySelector('[style*="position:fixed"][style*="z-index:9999"]')?.remove();
+      navigate('#base?tab=trips');
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   // ── Global error logging ──────────────────────────────────────────────────
   function sendLog(level, message, stack) {

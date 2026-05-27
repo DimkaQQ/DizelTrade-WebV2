@@ -105,6 +105,37 @@ def create_hire(body: HireCreate, user: dict = Depends(require_partner)):
     return row
 
 
+class HireCorrection(BaseModel):
+    delivery_at: Optional[str] = None
+    volume_liters: Optional[float] = None
+    price_client: Optional[float] = None
+    price_carrier: Optional[float] = None
+    comment: Optional[str] = None
+    reason: str  # mandatory
+
+
+@router.put("/hire/{hire_id}/correct")
+def correct_hire(hire_id: int, body: HireCorrection, user: dict = Depends(require_partner)):
+    row = query_one("SELECT * FROM hire_deliveries WHERE id = %s", (hire_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    updates = {}
+    if body.delivery_at: updates["delivery_at"] = body.delivery_at
+    if body.volume_liters is not None: updates["volume_liters"] = body.volume_liters
+    if body.price_client is not None: updates["price_client"] = body.price_client
+    if body.price_carrier is not None: updates["price_carrier"] = body.price_carrier
+    if body.comment is not None: updates["comment"] = body.comment
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    vals = list(updates.values()) + [hire_id]
+    with get_db() as conn:
+        updated = execute(f"UPDATE hire_deliveries SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
+        log_action(conn, "hire_deliveries", hire_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        conn.commit()
+    return updated
+
+
 @router.put("/hire/{hire_id}")
 def update_hire(hire_id: int, body: HireCreate, user: dict = Depends(require_partner)):
     existing = query_one("SELECT * FROM hire_deliveries WHERE id = %s", (hire_id,))

@@ -79,3 +79,30 @@ self.addEventListener('fetch', (e) => {
     })
   );
 });
+
+// Push notifications
+self.addEventListener('push', (e) => {
+  let data = { title: 'DTL', body: 'Новое событие', url: '/' };
+  try { data = e.data ? JSON.parse(e.data.text()) : data; } catch (_) {}
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icon.png',
+      badge: '/icon.png',
+      data: { url: data.url },
+      vibrate: [200, 100, 200],
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = e.notification.data?.url || '/';
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cls) => {
+      const c = cls.find(c => c.url.includes(self.location.origin));
+      if (c) { c.focus(); c.postMessage({ type: 'navigate', url }); }
+      else clients.openWindow(self.location.origin + url);
+    })
+  );
+});

@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     ALLOWED_ORIGINS: str = "http://localhost:3000"
+    ANTHROPIC_API_KEY: str = ""
 
     @property
     def origins_list(self):
