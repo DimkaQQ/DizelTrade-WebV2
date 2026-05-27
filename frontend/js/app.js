@@ -1222,6 +1222,7 @@
       <div style="width:55px"></div>
     </div>` : ''}
     <div class="content">
+      <div class="form-wrap">
       <div style="color:var(--text2);font-size:11px;margin-bottom:8px">// шаг 1 из 4</div>
       <div style="background:var(--card);border-radius:6px;height:3px;margin-bottom:18px;overflow:hidden"><div style="width:25%;height:100%;background:var(--accent);border-radius:6px"></div></div>
       ${formField('Источник топлива', chipGroup(sources, 'Хабаровск', 'source'))}
@@ -1235,6 +1236,7 @@
       ${formField('Фото ТТН', photoButton('f-photo-r'))}
       <button class="btn-primary" onclick="submitReceiptForm()">Далее →</button>
       <button class="btn-secondary" onclick="navigate('#base')">Отмена</button>
+      </div>
     </div>
     <div class="conf-overlay" id="conf-overlay" style="display:none">
       <div class="conf-sheet">
@@ -1325,6 +1327,7 @@
       <div style="width:55px"></div>
     </div>` : ''}
     <div class="content">
+      <div class="form-wrap">
       ${infoTag('ℹ Это рейс Тында → участок. Найм Хабаровск → Тында — в разделе «Найм»')}
       ${formField('Чья машина', chipGroup(ownerTypes, 'Наш DTL', 'owner'))}
       ${formField('Машина', chipGroup(truckOpts, truckOpts[0]?.value || '', 'truck'))}
@@ -1344,6 +1347,7 @@
       </div>
       <button class="btn-primary" onclick="doSubmitDispatch()">Записать рейс</button>
       <button class="btn-secondary" onclick="navigate('#base')">Отмена</button>
+      </div>
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Рейс на участок';
