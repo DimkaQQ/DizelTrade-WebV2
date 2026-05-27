@@ -570,7 +570,7 @@ def return_advance(advance_id: int, user: dict = Depends(get_current_user)):
 
 class OwnUsageCreate(BaseModel):
     used_at: Optional[str] = None
-    truck_id: int
+    truck_id: Optional[int] = None
     volume: float
     notes: Optional[str] = None
 
@@ -606,13 +606,14 @@ def list_own_usage(
 @router.post("/own-usage", status_code=201)
 def create_own_usage(body: OwnUsageCreate, user: dict = Depends(get_current_user)):
     used_at = body.used_at or datetime.utcnow().isoformat()
+    truck_id = body.truck_id if body.truck_id and body.truck_id > 0 else None
     row = execute(
         """
         INSERT INTO fuel_own_usage (used_at, truck_id, volume, entered_by, notes)
         VALUES (%s, %s, %s, %s, %s)
         RETURNING *
         """,
-        (used_at, body.truck_id, body.volume, user["id"], body.notes),
+        (used_at, truck_id, body.volume, user["id"], body.notes),
         returning=True,
     )
     return row
