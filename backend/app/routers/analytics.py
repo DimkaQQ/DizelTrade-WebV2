@@ -466,6 +466,57 @@ def balance_current(user: dict = Depends(require_partner)):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# /api/balance/entries  (GET – itemized balance entries)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/balance/entries")
+def get_balance_entries(
+    year: int = Query(...),
+    month: int = Query(...),
+    user: dict = Depends(require_partner),
+):
+    """Get itemized balance entries for a given month/year."""
+    return query("""
+        SELECT * FROM balance_detail_entries
+        WHERE EXTRACT(YEAR FROM period) = %s AND EXTRACT(MONTH FROM period) = %s
+        ORDER BY category, object_name
+    """, (year, month))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /api/balance  (POST – create/upsert itemized balance entry)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/balance")
+def balance_detail_create(
+    payload: dict,
+    user: dict = Depends(require_partner),
+):
+    """Create or update an itemized balance detail entry."""
+    from ..database import execute
+    period = payload.get("period")  # YYYY-MM-DD
+    category = payload.get("category", "Прочее")
+    object_name = payload.get("object_name", "")
+    amount = float(payload.get("amount", 0))
+    entry_type = payload.get("entry_type", "asset")
+    notes = payload.get("notes")
+
+    if not period or not object_name:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="period and object_name are required")
+
+    execute("""
+        INSERT INTO balance_detail_entries (period, category, object_name, amount, entry_type, notes, entered_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (period, category, object_name) DO UPDATE
+          SET amount = EXCLUDED.amount,
+              entry_type = EXCLUDED.entry_type,
+              notes = EXCLUDED.notes
+    """, (period, category, object_name, amount, entry_type, notes, user["id"]))
+    return {"ok": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # /api/balance/entry  (POST – create new entry)
 # ─────────────────────────────────────────────────────────────────────────────
 
