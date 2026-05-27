@@ -1820,7 +1820,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 
     const totalRevenue = deals.reduce((s, d) => s + (parseFloat(d.amount_client) || 0), 0);
     const totalMargin = deals.reduce((s, d) => s + (parseFloat(d.margin) || 0), 0);
-    const avgMarginPct = deals.length ? Math.round(deals.reduce((s, d) => s + (parseFloat(d.margin_pct) || 0), 0) / deals.length) : 0;
+    const avgMarginPct = totalRevenue > 0 ? Math.round(totalMargin / totalRevenue * 100) : 0;
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
