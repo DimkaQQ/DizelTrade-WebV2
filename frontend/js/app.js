@@ -310,8 +310,8 @@
   function buildMobileLayout() {
     const el = document.getElementById('app');
     el.innerHTML = `<div class="app-shell" id="mobile-shell"></div>`;
-    // Floating AI button for mobile (only for partner/artem)
-    if (isPartner() || isArtem()) {
+    // Floating AI button for mobile — add only once
+    if ((isPartner() || isArtem()) && !document.getElementById('ai-fab')) {
       const fab = document.createElement('button');
       fab.id = 'ai-fab';
       fab.textContent = '✦';
@@ -2212,55 +2212,94 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     } catch (e) { toast(e.message, 'error'); }
   };
 
-  // ── AI ────────────────────────────────────────────────────────────────────
   // ── AI Chat ───────────────────────────────────────────────────────────────
-  let _aiMessages = [];
+  const AI_STORAGE_KEY = 'dtl_ai_chat';
+  let _aiMessages = (() => {
+    try { return JSON.parse(localStorage.getItem(AI_STORAGE_KEY) || '[]'); } catch { return []; }
+  })();
+  let _aiPanelOpen = false;
+
+  function _saveAiMessages() {
+    try { localStorage.setItem(AI_STORAGE_KEY, JSON.stringify(_aiMessages.slice(-60))); } catch {}
+  }
+
+  function _timeLabel(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  }
 
   function _renderAiPanel() {
-    document.getElementById('ai-panel')?.remove();
+    let panel = document.getElementById('ai-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'ai-panel';
+      document.body.appendChild(panel);
+    }
     const mob = !isDesktop();
-    const panel = document.createElement('div');
-    panel.id = 'ai-panel';
     panel.style.cssText = mob
       ? 'position:fixed;inset:0;background:var(--bg);z-index:9100;display:flex;flex-direction:column'
-      : 'position:fixed;top:56px;right:16px;width:360px;height:calc(100vh - 72px);background:var(--card);border:1px solid var(--border);border-radius:16px;z-index:9100;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.4)';
+      : 'position:fixed;top:56px;right:16px;width:370px;height:calc(100vh - 72px);background:var(--card);border:1px solid var(--border);border-radius:16px;z-index:9100;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.4)';
 
-    const msgs = _aiMessages.map(m => {
+    const msgs = _aiMessages.filter(m => !m.loading).map(m => {
       const isUser = m.role === 'user';
-      return `<div style="display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'}">
-        <div style="max-width:85%;background:${isUser ? 'var(--accent)' : 'var(--card2)'};color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '14px 14px 3px 14px' : '14px 14px 14px 3px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:pre-wrap">${esc(m.text)}${m.loading ? '<span style="opacity:.5"> ...</span>' : ''}</div>
+      const loadingDots = m.loading ? `<span class="ai-typing">●●●</span>` : '';
+      return `<div style="display:flex;flex-direction:column;align-items:${isUser ? 'flex-end' : 'flex-start'};gap:2px">
+        <div style="max-width:86%;background:${isUser ? 'var(--accent)' : 'var(--card2)'};color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word">${esc(m.text)}${loadingDots}</div>
+        <div style="font-size:10px;color:var(--text3);padding:0 4px">${_timeLabel(m.ts)}</div>
       </div>`;
     }).join('');
 
+    const hasLoading = _aiMessages.some(m => m.loading);
+    const loadingBubble = hasLoading ? `<div style="display:flex;align-items:flex-start;gap:2px;flex-direction:column">
+      <div style="background:var(--card2);border-radius:4px 16px 16px 16px;padding:12px 16px;font-size:18px;color:var(--text2);letter-spacing:2px">●●●</div>
+    </div>` : '';
+
     const empty = _aiMessages.length === 0
-      ? `<div style="color:var(--text3);font-size:13px;text-align:center;margin:auto;padding:24px">
-          Спросите о данных или как пользоваться приложением.<br><br>
-          <span style="color:var(--text2)">Примеры:</span><br>
-          «Как записать новый рейс?»<br>
-          «Сколько выручки за май?»<br>
-          «Кто самый крупный клиент?»
+      ? `<div style="color:var(--text3);font-size:13px;text-align:center;margin:auto;padding:24px;line-height:1.8">
+          Привет! Я ИИ-ассистент DTL.<br>Могу помочь с данными или подсказать как пользоваться системой.<br><br>
+          <span style="color:var(--text2);font-size:12px">Например:</span><br>
+          Как записать новый рейс?<br>
+          Сколько выручки за май?<br>
+          Кто самый крупный клиент?
         </div>` : '';
 
     panel.innerHTML = `
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-        <div style="font-size:15px;font-weight:700">✦ ИИ-ассистент</div>
-        <button onclick="window.closeAiChat()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0">
+        ${mob ? `<button onclick="window.closeAiChat()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;padding:0;line-height:1">‹</button>` : ''}
+        <div style="flex:1">
+          <div style="font-size:15px;font-weight:700">ИИ-ассистент</div>
+          <div style="font-size:11px;color:var(--green)">● онлайн</div>
+        </div>
+        <button onclick="_aiClearChat()" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:4px 8px">Очистить</button>
+        ${!mob ? `<button onclick="window.closeAiChat()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>` : ''}
       </div>
-      <div id="ai-msgs" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px">${empty}${msgs}</div>
-      <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0">
-        <input id="ai-chat-input" placeholder="Спросить ИИ..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.sendAiMessage()}">
-        <button id="ai-chat-btn" onclick="window.sendAiMessage()" style="background:var(--accent);color:#000;border:none;border-radius:11px;padding:11px 16px;font-size:15px;font-weight:700;cursor:pointer;flex-shrink:0">↑</button>
+      <div id="ai-msgs" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth">${empty}${msgs}${loadingBubble}</div>
+      <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;align-items:flex-end">
+        <textarea id="ai-chat-input" placeholder="Написать..." rows="1" style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;font-family:inherit;resize:none;max-height:100px;line-height:1.4;overflow:hidden" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.sendAiMessage()}"></textarea>
+        <button id="ai-chat-btn" onclick="window.sendAiMessage()" style="background:var(--accent);color:#000;border:none;border-radius:12px;width:40px;height:40px;font-size:18px;font-weight:700;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">↑</button>
       </div>`;
-    document.body.appendChild(panel);
+
     const msgsEl = document.getElementById('ai-msgs');
-    if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
-    if (!_aiMessages.length || _aiMessages[_aiMessages.length - 1].role === 'assistant') {
-      setTimeout(() => document.getElementById('ai-chat-input')?.focus(), 50);
-    }
+    if (msgsEl) setTimeout(() => { msgsEl.scrollTop = msgsEl.scrollHeight; }, 0);
+    if (!hasLoading) setTimeout(() => document.getElementById('ai-chat-input')?.focus(), 50);
   }
 
-  window.openAiChat = function() { _renderAiPanel(); };
-  window.closeAiChat = function() { document.getElementById('ai-panel')?.remove(); };
+  window._aiClearChat = function() {
+    _aiMessages = [];
+    _saveAiMessages();
+    _renderAiPanel();
+  };
+
+  window.openAiChat = function() {
+    _aiPanelOpen = true;
+    _renderAiPanel();
+  };
+
+  window.closeAiChat = function() {
+    _aiPanelOpen = false;
+    document.getElementById('ai-panel')?.remove();
+  };
 
   window.sendAiMessage = async function() {
     const input = document.getElementById('ai-chat-input');
@@ -2268,19 +2307,20 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     const q = input.value.trim();
     if (!q) return;
     input.value = '';
-    const btn = document.getElementById('ai-chat-btn');
-    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    input.style.height = 'auto';
 
-    _aiMessages.push({ role: 'user', text: q });
-    _aiMessages.push({ role: 'assistant', text: '', loading: true });
+    _aiMessages.push({ role: 'user', text: q, ts: Date.now() });
+    _aiMessages.push({ role: 'assistant', text: '', loading: true, ts: Date.now() });
+    _saveAiMessages();
     _renderAiPanel();
 
     try {
       const res = await api.post('/api/ai/query', { question: q });
-      _aiMessages[_aiMessages.length - 1] = { role: 'assistant', text: res.answer || 'Нет ответа' };
+      _aiMessages[_aiMessages.length - 1] = { role: 'assistant', text: res.answer || 'Нет ответа', ts: Date.now() };
     } catch (e) {
-      _aiMessages[_aiMessages.length - 1] = { role: 'assistant', text: 'Ошибка: ' + e.message };
+      _aiMessages[_aiMessages.length - 1] = { role: 'assistant', text: 'Ошибка соединения. Попробуйте ещё раз.', ts: Date.now() };
     }
+    _saveAiMessages();
     _renderAiPanel();
   };
 
