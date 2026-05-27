@@ -113,6 +113,9 @@ def get_order(order_id: int, user: dict = Depends(get_current_user)):
 
 @router.get("/orders/{order_id}/report")
 def order_report(order_id: int, user: dict = Depends(require_partner)):
+    from fastapi.responses import HTMLResponse
+    from datetime import datetime as _dt
+
     order = query_one("""
         SELECT o.*, c.name AS client_name
         FROM orders o LEFT JOIN clients c ON c.id = o.client_id
@@ -128,37 +131,97 @@ def order_report(order_id: int, user: dict = Depends(require_partner)):
         LEFT JOIN drivers d ON d.id = fd.driver_id
         LEFT JOIN sites s ON s.id = fd.site_id
         WHERE fd.order_id = %s AND fd.status = 'delivered'
-        ORDER BY fd.delivered_at
+        ORDER BY fd.delivered_at, fd.dispatched_at
     """, (order_id,))
 
-    total_vol = sum(d["volume"] for d in dispatches)
-    rows_html = "".join(f"""
-        <tr>
-          <td>{d['delivered_at'] or d['dispatched_at']}</td>
-          <td>{d['site_name'] or ''}</td>
-          <td>{d['truck_name'] or d['truck_temp'] or ''}</td>
-          <td>{d['driver_name'] or d['driver_temp'] or ''}</td>
-          <td>{d['ttn_number'] or ''}</td>
-          <td>{d['volume']}</td>
-        </tr>
-    """ for d in dispatches)
+    def fmt_date(val):
+        if not val:
+            return "—"
+        try:
+            if hasattr(val, "strftime"):
+                return val.strftime("%d.%m.%Y")
+            return str(val)[:10].replace("-", ".")
+        except Exception:
+            return str(val)
 
-    html = f"""<!DOCTYPE html><html lang="ru"><head>
-<meta charset="UTF-8"><title>Отчёт #{order_id}</title>
-<style>body{{font-family:Arial,sans-serif;padding:20px}}
-table{{border-collapse:collapse;width:100%}}
-th,td{{border:1px solid #ccc;padding:8px;text-align:left}}
-th{{background:#f5f5f5}}</style></head>
+    total_vol = float(sum(d["volume"] for d in dispatches))
+    vol_ordered = float(order.get("volume_ordered") or 0)
+    pct = round(total_vol / vol_ordered * 100) if vol_ordered else 0
+
+    rows_html = "".join(f"""<tr>
+      <td>{i+1}</td>
+      <td>{fmt_date(d['delivered_at'] or d['dispatched_at'])}</td>
+      <td>{d['site_name'] or '—'}</td>
+      <td>{d['truck_name'] or d['truck_temp'] or '—'}</td>
+      <td>{d['driver_name'] or d['driver_temp'] or '—'}</td>
+      <td>{d['ttn_number'] or '—'}</td>
+      <td style="text-align:right;font-weight:600">{d['volume']}</td>
+    </tr>""" for i, d in enumerate(dispatches))
+
+    now_str = _dt.now().strftime("%d.%m.%Y %H:%M")
+
+    html = f"""<!DOCTYPE html>
+<html lang="ru"><head>
+<meta charset="UTF-8"><title>Акт сверки — {order['client_name']}</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:-apple-system,Arial,sans-serif;color:#111;padding:18mm 18mm 12mm;font-size:12px}}
+.header{{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:18px}}
+.logo{{font-size:22px;font-weight:900;letter-spacing:-1px}}
+.logo-sub{{font-size:10px;color:#666;margin-top:2px}}
+.meta{{font-size:11px;color:#666;text-align:right}}
+h1{{font-size:17px;font-weight:700;margin:4px 0 0}}
+.info-grid{{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap}}
+.info-box{{flex:1;min-width:100px;background:#f5f5f5;border-radius:8px;padding:10px 12px}}
+.info-box .lbl{{font-size:10px;color:#888;margin-bottom:2px;text-transform:uppercase}}
+.info-box .val{{font-size:14px;font-weight:700}}
+table{{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px}}
+th{{background:#f2f2f2;border:1px solid #bbb;padding:7px 8px;text-align:left;font-weight:600}}
+td{{border:1px solid #ddd;padding:6px 8px;vertical-align:top}}
+tr:nth-child(even) td{{background:#fafafa}}
+.total-row td{{background:#e8e8e8;font-weight:700;border:1px solid #bbb;font-size:12px}}
+.pbar-track{{height:8px;background:#eee;border-radius:4px;overflow:hidden;margin-bottom:18px;margin-top:4px}}
+.pbar-fill{{height:100%;background:#c8ff00;border-radius:4px}}
+.sign-area{{display:flex;gap:40px;margin-top:32px}}
+.sign-box .sign-line{{border-top:1px solid #555;margin-top:32px;font-size:10px;color:#666;padding-top:4px}}
+.footer{{margin-top:16px;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:8px;display:flex;justify-content:space-between}}
+.print-bar{{margin-bottom:14px;display:flex;gap:8px}}
+.pbtn{{background:#c8ff00;border:none;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;border-radius:6px}}
+.cbtn{{background:#f0f0f0;border:none;padding:9px 14px;font-size:12px;cursor:pointer;border-radius:6px;color:#666}}
+@media print{{.print-bar{{display:none}}@page{{margin:10mm 12mm;size:A4}}}}
+</style></head>
 <body>
-<h2>Отчёт по заказу #{order['id']} — {order['client_name']}</h2>
-<p>Дата оплаты: {order['paid_at']} | Объём заказа: {order.get('volume_ordered', '—')} куб</p>
+<div class="header">
+  <div><div class="logo">DIZELTRADE</div><div class="logo-sub">Diesel Trade Logistic</div>
+  <h1>Акт сверки · Заказ #{order['id']}</h1></div>
+  <div class="meta">Сформировано: {now_str}<br>ДТЛ Менеджмент v2.0</div>
+</div>
+<div class="print-bar">
+  <button class="pbtn" onclick="window.print()">🖨 Печать / Сохранить PDF</button>
+  <button class="cbtn" onclick="window.close()">✕ Закрыть</button>
+</div>
+<div class="info-grid">
+  <div class="info-box"><div class="lbl">Клиент</div><div class="val">{order['client_name']}</div></div>
+  <div class="info-box"><div class="lbl">Дата оплаты</div><div class="val">{fmt_date(order['paid_at'])}</div></div>
+  <div class="info-box"><div class="lbl">Заказано</div><div class="val">{vol_ordered:.0f} куб</div></div>
+  <div class="info-box"><div class="lbl">Доставлено</div><div class="val" style="color:#1a7a1a">{total_vol:.1f} куб</div></div>
+  <div class="info-box"><div class="lbl">Выполнение</div><div class="val">{pct}%</div></div>
+</div>
+<div class="pbar-track"><div class="pbar-fill" style="width:{min(pct,100)}%"></div></div>
 <table>
-<tr><th>Дата</th><th>Участок</th><th>Машина</th><th>Водитель</th><th>ТТН</th><th>Объём (куб)</th></tr>
-{rows_html}
-<tr><td colspan="5"><strong>ИТОГО</strong></td><td><strong>{total_vol}</strong></td></tr>
+<thead><tr><th>#</th><th>Дата доставки</th><th>Участок</th><th>Машина</th><th>Водитель</th><th>ТТН №</th><th>Объём (куб)</th></tr></thead>
+<tbody>{rows_html}</tbody>
+<tfoot><tr class="total-row"><td colspan="6" style="text-align:right">ИТОГО ДОСТАВЛЕНО:</td><td style="text-align:right">{total_vol:.1f} куб</td></tr></tfoot>
 </table>
+<div class="sign-area">
+  <div class="sign-box" style="flex:1"><div class="sign-line">Представитель ООО «ДТЛ» / Подпись / Дата</div></div>
+  <div class="sign-box" style="flex:1"><div class="sign-line">Клиент / Подпись / Дата</div></div>
+</div>
+<div class="footer">
+  <span>ООО «ДТЛ» · Сперанский В.А. · Diesel Trade Logistic</span>
+  <span>г. Тында · {now_str}</span>
+</div>
 </body></html>"""
-    from fastapi.responses import HTMLResponse
     return HTMLResponse(content=html)
 
 
