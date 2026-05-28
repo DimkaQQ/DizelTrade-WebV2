@@ -2024,6 +2024,10 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     const artemDebt = dash?.artem_debt || 0;
     const alerts = dash?.alerts || [];
 
+    const clientDebts = dash?.client_debts || [];
+    const trucksMonth = dash?.trucks_month || [];
+    const curMonthName = new Date().toLocaleString('ru',{month:'long'});
+
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📊 Дашборд</div><div style="width:55px"></div></div>` : ''}
@@ -2033,7 +2037,37 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${statCard(tripsInTransit != null ? tripsInTransit : '—', 'Рейсов в пути', 'o')}
         ${statCard(pendingReceipts != null ? pendingReceipts : '—', 'Ждут подтвержд.')}
       </div>
-      ${orders.slice(0, 2).map(o => listItem({ icon: '🚛', iconBg: 'y', title: o.client_name, sub: `${o.delivered || 0} куб из ${o.volume_ordered || 0}`, rightVal: o.volume_ordered > 0 ? Math.round(((o.delivered || 0) / o.volume_ordered) * 100) + '%' : '—' })).join('')}
+
+      ${clientDebts.length ? `
+        ${sectionHeader('Долги клиентов')}
+        ${clientDebts.map(c => {
+          const debt = c.debt;
+          const color = debt > 0 ? 'var(--red)' : debt < 0 ? 'var(--green)' : 'var(--text2)';
+          return `<div class="li">
+            <div class="lic r">💸</div>
+            <div class="lit">
+              <div class="lim">${esc(c.name)}</div>
+              <div class="lis">Отгружено ${formatNum(c.total_hire)} ₽ · Оплачено ${formatNum(c.total_paid)} ₽</div>
+            </div>
+            <div class="lir"><div style="font-size:14px;font-weight:700;color:${color}">${debt > 0 ? '+' : ''}${formatNum(Math.round(debt))} ₽</div></div>
+          </div>`;
+        }).join('')}
+      ` : ''}
+
+      ${trucksMonth.length ? `
+        ${sectionHeader('Машины · ' + curMonthName)}
+        ${trucksMonth.map(t => `<div class="li">
+          <div class="lic y">🚛</div>
+          <div class="lit">
+            <div class="lim">${esc(t.name)}${t.status === 'for_sale' ? ' <span style="font-size:10px;color:var(--orange)">на продаже</span>' : ''}</div>
+            <div class="lis">${t.trips ? t.trips + ' рейсов' : 'рейсов нет'}${t.revenue ? ' · ' + formatNum(t.revenue) + ' ₽' : ''}</div>
+          </div>
+          <div class="lir" style="text-align:right">
+            ${t.expenses ? `<div style="font-size:12px;color:var(--red)">−${formatNum(t.expenses)} ₽</div>` : '<div style="font-size:12px;color:var(--text3)">—</div>'}
+          </div>
+        </div>`).join('')}
+      ` : ''}
+
       ${sectionHeader('Долг DTL перед Артёмом')}
       ${balanceBox(
         [{ label: 'Задолженность по рейсам', val: formatNum(artemDebt) + ' ₽', color: 'red' }, { label: 'Остаток наличных у Артёма', val: formatNum(artemCashBalance) + ' ₽', color: 'green' }],
@@ -2241,11 +2275,14 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ? 'position:fixed;inset:0;background:var(--bg);z-index:9100;display:flex;flex-direction:column'
       : 'position:fixed;top:56px;right:16px;width:370px;height:calc(100vh - 72px);background:var(--card);border:1px solid var(--border);border-radius:16px;z-index:9100;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.4)';
 
-    const msgs = _aiMessages.filter(m => !m.loading).map(m => {
+    const msgs = _aiMessages.filter(m => !m.loading).map((m, i) => {
       const isUser = m.role === 'user';
-      const loadingDots = m.loading ? `<span class="ai-typing">●●●</span>` : '';
+      const confirmBtns = m.action ? `<div style="display:flex;gap:8px;margin-top:10px">
+        <button id="ai-confirm-${i}" onclick="window.confirmAiAction(${i})" style="flex:1;background:var(--accent);color:#000;border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer">✅ Подтвердить</button>
+        <button onclick="window.cancelAiAction(${i})" style="flex:1;background:var(--card);border:1px solid var(--border);color:var(--text2);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer">Отмена</button>
+      </div>` : '';
       return `<div style="display:flex;flex-direction:column;align-items:${isUser ? 'flex-end' : 'flex-start'};gap:2px">
-        <div style="max-width:86%;background:${isUser ? 'var(--accent)' : 'var(--card2)'};color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word">${esc(m.text)}${loadingDots}</div>
+        <div style="max-width:86%;background:${isUser ? 'var(--accent)' : m.action ? 'rgba(196,180,84,.12)' : 'var(--card2)'};${m.action ? 'border:1px solid rgba(196,180,84,.4);' : ''}color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word">${esc(m.text)}${confirmBtns}</div>
         <div style="font-size:10px;color:var(--text3);padding:0 4px">${_timeLabel(m.ts)}</div>
       </div>`;
     }).join('');
@@ -2269,14 +2306,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${mob ? `<button onclick="window.closeAiChat()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;padding:0;line-height:1">‹</button>` : ''}
         <div style="flex:1">
           <div style="font-size:15px;font-weight:700">ИИ-ассистент</div>
-          <div style="font-size:11px;color:var(--green)">● онлайн</div>
+          <div style="font-size:11px;color:var(--green)">● claude opus</div>
         </div>
         <button onclick="_aiClearChat()" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:4px 8px">Очистить</button>
         ${!mob ? `<button onclick="window.closeAiChat()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>` : ''}
       </div>
       <div id="ai-msgs" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth">${empty}${msgs}${loadingBubble}</div>
       <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;align-items:flex-end">
-        <textarea id="ai-chat-input" placeholder="Написать..." rows="1" style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;font-family:inherit;resize:none;max-height:100px;line-height:1.4;overflow:hidden" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.sendAiMessage()}"></textarea>
+        <button id="ai-voice-btn" onclick="window.startVoiceInput()" title="Голосовой ввод" style="background:var(--card2);border:1px solid var(--border);border-radius:12px;width:40px;height:40px;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">🎤</button>
+        <textarea id="ai-chat-input" placeholder="Написать или нажать 🎤..." rows="1" style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;font-family:inherit;resize:none;max-height:100px;line-height:1.4;overflow:hidden" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.sendAiMessage()}"></textarea>
         <button id="ai-chat-btn" onclick="window.sendAiMessage()" style="background:var(--accent);color:#000;border:none;border-radius:12px;width:40px;height:40px;font-size:18px;font-weight:700;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">↑</button>
       </div>`;
 
@@ -2316,12 +2354,57 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 
     try {
       const res = await api.post('/api/ai/query', { question: q });
-      _aiMessages[_aiMessages.length - 1] = { role: 'assistant', text: res.answer || 'Нет ответа', ts: Date.now() };
+      const idx = _aiMessages.length - 1;
+      if (res.type === 'action') {
+        _aiMessages[idx] = { role: 'assistant', text: res.description || 'Записать?', action: res.action, actionData: res.data, ts: Date.now() };
+      } else {
+        _aiMessages[idx] = { role: 'assistant', text: res.answer || 'Нет ответа', ts: Date.now() };
+      }
     } catch (e) {
       _aiMessages[_aiMessages.length - 1] = { role: 'assistant', text: 'Ошибка соединения. Попробуйте ещё раз.', ts: Date.now() };
     }
     _saveAiMessages();
     _renderAiPanel();
+  };
+
+  window.confirmAiAction = async function(idx) {
+    const msg = _aiMessages[idx];
+    if (!msg || !msg.action) return;
+    const btn = document.getElementById('ai-confirm-' + idx);
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    try {
+      const res = await api.post('/api/ai/execute', { action: msg.action, data: msg.actionData });
+      delete _aiMessages[idx].action; delete _aiMessages[idx].actionData;
+      _aiMessages.push({ role: 'assistant', text: '✅ ' + (res.message || 'Записано!'), ts: Date.now() });
+      _saveAiMessages(); _renderAiPanel();
+      toast('✅ ' + (res.message || 'Записано'));
+    } catch (e) { toast('Ошибка: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = 'Подтвердить'; } }
+  };
+
+  window.cancelAiAction = function(idx) {
+    const msg = _aiMessages[idx];
+    if (!msg) return;
+    delete msg.action; delete msg.actionData;
+    _aiMessages.push({ role: 'assistant', text: 'Хорошо, отменено.', ts: Date.now() });
+    _saveAiMessages(); _renderAiPanel();
+  };
+
+  window.startVoiceInput = function() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast('Голосовой ввод недоступен в этом браузере', 'error'); return; }
+    const recog = new SR();
+    recog.lang = 'ru-RU'; recog.continuous = false; recog.interimResults = false;
+    const btn = document.getElementById('ai-voice-btn');
+    if (btn) { btn.textContent = '🔴'; btn.style.background = 'rgba(255,59,48,.15)'; btn.style.borderColor = 'var(--red)'; }
+    recog.onresult = (e) => {
+      const t = e.results[0][0].transcript;
+      const input = document.getElementById('ai-chat-input');
+      if (input) { input.value = t; input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight,100)+'px'; }
+      if (btn) { btn.textContent = '🎤'; btn.style.background=''; btn.style.borderColor=''; }
+      window.sendAiMessage();
+    };
+    recog.onerror = recog.onend = () => { if (btn) { btn.textContent='🎤'; btn.style.background=''; btn.style.borderColor=''; } };
+    recog.start();
   };
 
   window.scanTTN = async function(inputId) {
