@@ -33,6 +33,40 @@ def get_dashboard(user: dict = Depends(get_current_user)):
 
     alerts = _build_alerts(base_balance, pending_receipts)
 
+    # Client debts: total hire revenue - total income received
+    client_debts = query("""
+        SELECT c.name,
+               COALESCE(h.total_hire, 0) AS total_hire,
+               COALESCE(i.total_paid, 0) AS total_paid,
+               COALESCE(h.total_hire, 0) - COALESCE(i.total_paid, 0) AS debt
+        FROM clients c
+        LEFT JOIN (
+            SELECT client_id, SUM(amount_client) AS total_hire FROM hire_deliveries GROUP BY client_id
+        ) h ON h.client_id = c.id
+        LEFT JOIN (
+            SELECT client_id, SUM(amount) AS total_paid FROM income_records GROUP BY client_id
+        ) i ON i.client_id = c.id
+        WHERE COALESCE(h.total_hire, 0) > 0
+        ORDER BY debt DESC
+    """)
+
+    # Trucks monthly summary
+    import datetime
+    now = datetime.datetime.now()
+    trucks_month = query("""
+        SELECT t.name, t.status,
+               COALESCE(SUM(fe.amount), 0) AS expenses,
+               COALESCE(MAX(CASE WHEN fe.category = 'Зарплата' THEN fe.trips END), 0) AS trips,
+               COALESCE(MAX(CASE WHEN fe.category = 'Зарплата' THEN fe.revenue END), 0) AS revenue
+        FROM trucks t
+        LEFT JOIN fleet_expenses fe ON fe.truck_id = t.id
+            AND EXTRACT(YEAR FROM fe.expense_at) = %s
+            AND EXTRACT(MONTH FROM fe.expense_at) = %s
+        WHERE t.status IN ('active','for_sale')
+        GROUP BY t.id, t.name, t.status
+        ORDER BY t.name
+    """, (now.year, now.month))
+
     return {
         "base_balance": base_balance,
         "trips_in_transit": trips_in_transit,
@@ -40,6 +74,8 @@ def get_dashboard(user: dict = Depends(get_current_user)):
         "artem_cash_balance": artem_cash_balance,
         "artem_debt": artem_debt,
         "alerts": alerts,
+        "client_debts": [{"name": r["name"], "debt": float(r["debt"]), "total_hire": float(r["total_hire"]), "total_paid": float(r["total_paid"])} for r in client_debts],
+        "trucks_month": [{"name": r["name"], "status": r["status"], "expenses": float(r["expenses"]), "trips": int(r["trips"] or 0), "revenue": float(r["revenue"] or 0)} for r in trucks_month],
     }
 
 

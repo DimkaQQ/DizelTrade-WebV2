@@ -1,10 +1,10 @@
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from ..database import query, query_one
+from ..database import query, query_one, execute
 from ..deps import get_current_user, require_partner, require_not_operator
 from ..config import settings
 
@@ -90,7 +90,7 @@ def scan_ttn(body: TTNScanRequest, user: dict = Depends(get_current_user)):
     try:
         import anthropic
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-opus-4-7",
             max_tokens=500,
             system=system_prompt,
             messages=[{"role": "user", "content": message_content}]
@@ -182,36 +182,47 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
 Финансовые таблицы (income_records, company_expenses, debt_records, hire_deliveries, cash_to_artem) — недоступны.
 """ if is_artem else ""
 
+    write_actions = """
+Ты также можешь ЗАПИСЫВАТЬ данные. Если пользователь просит что-то записать/добавить/зафиксировать — верни JSON действия:
+{{"type":"action","action":"ИМЯ_ДЕЙСТВИЯ","description":"Описание того что будет записано (для подтверждения пользователем)","data":{{...}}}}
+
+Доступные действия:
+- create_income: записать поступление денег. data: {{income_at (YYYY-MM-DD), amount (число), client_name (строка), volume (число тонн, если есть), comment}}
+- create_expense: записать расход компании. data: {{expense_at, category (одна из: Топливо, Зарплата, Ремонт, ТО, Аренда, Прочие), amount, comment}}
+- create_hire: записать найм-доставку. data: {{delivery_at, client_name, supplier_name (поставщик, может быть null), carrier_name (перевозчик, может быть null), volume_liters, price_client, amount_client, margin, comment}}
+- create_debt: записать долг или оплату долга. data: {{recorded_at, debtor (имя должника), amount, type ("ДОЛГ" или "ОПЛАТА"), comment}}
+- create_fleet_expense: расход по машине. data: {{truck_name, expense_at, category (Ремонт/ТО/Зарплата/Топливо/Резина/Страховка/Прочие), amount, comment}}
+""" if not is_artem else ""
+
     system_prompt = f"""Ты ИИ-ассистент системы управления DTL (Diesel Trade Logistic).
 {artem_restriction}
 {APP_NAVIGATION}
 
 База данных:
 {DB_SCHEMA_SUMMARY}
-
+{write_actions}
 Правила:
-1. Если вопрос о том КАК что-то сделать в приложении — ответь текстом, кратко и конкретно (1-3 предложения).
-2. Если вопрос о ДАННЫХ (суммы, статистика, список) — верни JSON: {{"type":"sql","query":"SELECT ..."}}
-3. На вопросы о данных генерируй только SELECT запросы. Если нужен не-SELECT — объясни что это невозможно.
+1. Если вопрос о том КАК что-то сделать — ответь текстом, кратко (1-3 предложения).
+2. Если просят ДАННЫЕ (суммы, статистика) — верни JSON: {{"type":"sql","query":"SELECT ..."}}
+3. Если просят ЗАПИСАТЬ что-то — верни JSON действия (см. выше).
 4. Отвечай только на русском языке.
-5. Будь кратким и конкретным.
-6. НЕ используй markdown: никаких **, *, #, [], (), ``. Пиши обычным текстом."""
+5. НЕ используй markdown: никаких **, *, #, [], (), ``. Пиши обычным текстом."""
 
     try:
         import anthropic
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-opus-4-7",
             max_tokens=600,
             system=system_prompt,
             messages=[{"role": "user", "content": body.question}]
         )
         text = resp.content[0].text.strip()
 
-        # Check if response is a SQL JSON
+        # Try to parse as JSON (sql or action)
         sql_query = None
-        if text.startswith('{') or '{"type":"sql"' in text or '"type": "sql"' in text:
+        action_data = None
+        if text.startswith('{') or '"type"' in text:
             try:
-                # Strip markdown fences if present
                 clean = text
                 if clean.startswith('```'):
                     clean = clean.split('\n', 1)[1] if '\n' in clean else clean[3:]
@@ -219,8 +230,14 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
                 parsed = json.loads(clean)
                 if parsed.get("type") == "sql":
                     sql_query = parsed.get("query", "").strip()
+                elif parsed.get("type") == "action" and not is_artem:
+                    action_data = parsed
             except (json.JSONDecodeError, AttributeError):
                 pass
+
+        # Return action for frontend confirmation
+        if action_data:
+            return {"ok": True, "type": "action", "action": action_data.get("action"), "description": action_data.get("description", ""), "data": action_data.get("data", {})}
 
         if sql_query:
             # Safety check
@@ -241,7 +258,7 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
             result_json = json.dumps(rows, ensure_ascii=False, default=str)
 
             fmt_resp = client.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-opus-4-7",
                 max_tokens=300,
                 messages=[{"role": "user", "content": f'Вопрос: "{body.question}"\nДанные: {result_json[:3000]}\n\nОтветь кратко на русском, 1-3 предложения.'}]
             )
@@ -255,6 +272,108 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
         if "rate_limit" in str(e).lower():
             raise HTTPException(status_code=429, detail="Лимит AI-запросов исчерпан")
         raise HTTPException(status_code=503, detail="AI временно недоступен")
+
+
+class ExecuteRequest(BaseModel):
+    action: str
+    data: Dict[str, Any]
+
+
+def _resolve_client(name: str) -> int:
+    if not name: raise HTTPException(400, "Не указан клиент")
+    row = query_one("SELECT id FROM clients WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+    if not row:
+        row = execute("INSERT INTO clients (name) VALUES (%s) RETURNING id", (name.strip(),), returning=True)
+    return row["id"]
+
+
+def _resolve_truck(name: str) -> int:
+    if not name: raise HTTPException(400, "Не указана машина")
+    row = query_one("SELECT id FROM trucks WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+    if not row: raise HTTPException(400, f"Машина не найдена: {name}")
+    return row["id"]
+
+
+def _resolve_supplier(name: str):
+    if not name: return None
+    row = query_one("SELECT id FROM suppliers WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+    if not row:
+        row = execute("INSERT INTO suppliers (name) VALUES (%s) RETURNING id", (name.strip(),), returning=True)
+    return row["id"]
+
+
+def _resolve_carrier(name: str):
+    if not name: return None
+    row = query_one("SELECT id FROM carriers WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+    if not row:
+        row = execute("INSERT INTO carriers (name) VALUES (%s) RETURNING id", (name.strip(),), returning=True)
+    return row["id"]
+
+
+@router.post("/ai/execute")
+def ai_execute(body: ExecuteRequest, user: dict = Depends(require_partner)):
+    """Execute a write action confirmed by the user."""
+    d = body.data
+    uid = user["id"]
+    today = datetime.now().date().isoformat()
+
+    try:
+        if body.action == "create_income":
+            client_id = _resolve_client(d.get("client_name", ""))
+            execute(
+                "INSERT INTO income_records (income_at, client_id, amount, volume, comment, entered_by) VALUES (%s,%s,%s,%s,%s,%s)",
+                (d.get("income_at", today), client_id, float(d.get("amount", 0)), d.get("volume"), d.get("comment"), uid)
+            )
+            return {"ok": True, "message": f"Доход {d.get('amount')} ₽ записан"}
+
+        elif body.action == "create_expense":
+            execute(
+                "INSERT INTO company_expenses (expense_at, category, amount, comment, entered_by) VALUES (%s,%s,%s,%s,%s)",
+                (d.get("expense_at", today), d.get("category", "Прочие"), float(d.get("amount", 0)), d.get("comment"), uid)
+            )
+            return {"ok": True, "message": f"Расход {d.get('amount')} ₽ записан"}
+
+        elif body.action == "create_debt":
+            execute(
+                "INSERT INTO debt_records (recorded_at, debtor, amount, type, comment) VALUES (%s,%s,%s,%s,%s)",
+                (d.get("recorded_at", today), d.get("debtor", ""), float(d.get("amount", 0)), d.get("type", "ДОЛГ"), d.get("comment"))
+            )
+            return {"ok": True, "message": f"Долг {d.get('amount')} ₽ записан"}
+
+        elif body.action == "create_hire":
+            client_id = _resolve_client(d.get("client_name", ""))
+            supplier_id = _resolve_supplier(d.get("supplier_name"))
+            carrier_id = _resolve_carrier(d.get("carrier_name"))
+            vol = float(d.get("volume_liters", 0))
+            ac = float(d.get("amount_client", 0))
+            margin = float(d.get("margin", 0))
+            margin_pct = round(margin / ac * 100, 2) if ac > 0 else None
+            execute(
+                """INSERT INTO hire_deliveries
+                   (delivery_at, client_id, supplier_id, carrier_id, volume_liters, price_client,
+                    amount_client, margin, margin_pct, comment)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (d.get("delivery_at", today), client_id, supplier_id, carrier_id,
+                 vol, d.get("price_client"), ac, margin, margin_pct, d.get("comment"))
+            )
+            return {"ok": True, "message": f"Найм {vol} л для {d.get('client_name')} записан"}
+
+        elif body.action == "create_fleet_expense":
+            truck_id = _resolve_truck(d.get("truck_name", ""))
+            execute(
+                "INSERT INTO fleet_expenses (truck_id, expense_at, category, amount, comment) VALUES (%s,%s,%s,%s,%s)",
+                (d.get("expense_at", today), truck_id, d.get("category", "Прочие"), float(d.get("amount", 0)), d.get("comment"))
+            )
+            return {"ok": True, "message": f"Расход на {d.get('truck_name')} записан"}
+
+        else:
+            raise HTTPException(400, f"Неизвестное действие: {body.action}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"AI execute error: {e}")
+        raise HTTPException(500, f"Ошибка записи: {str(e)[:100]}")
 
 
 @router.get("/ai/anomalies")
@@ -307,7 +426,7 @@ def get_anomalies(user: dict = Depends(require_partner)):
 
         import anthropic
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-opus-4-7",
             max_tokens=800,
             messages=[{"role": "user", "content": f"""Проанализируй данные DTL и найди аномалии или проблемы:
 
