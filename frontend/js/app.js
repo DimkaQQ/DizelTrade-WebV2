@@ -438,6 +438,7 @@
       if (r && r.access_token) api.setToken(r.access_token);
       user = await api.me();
       window.currentUser = user;
+      checkOnboarding();
     } catch (e) { user = null; }
     setupLayout();
     render(location.hash || '#home');
@@ -460,6 +461,47 @@
       document.querySelectorAll('#sb-time').forEach(el => { el.textContent = currentTime(); });
     }, 30000);
   }
+
+  async function checkOnboarding() {
+    if (localStorage.getItem('dtl_onboarding_dismissed')) return;
+    let steps = [];
+    try { steps = await api.get('/api/onboarding') || []; } catch(e) { return; }
+    const allDone = steps.every(s => s.done);
+    if (allDone) { localStorage.setItem('dtl_onboarding_dismissed', '1'); return; }
+    const doneCount = steps.filter(s => s.done).length;
+    if (doneCount === 0) {
+      // First-time user — show welcome modal
+      const existing = document.getElementById('modal-overlay');
+      if (existing) existing.remove();
+      const fab = document.getElementById('ai-fab');
+      if (fab) { fab.style.transform = 'scale(0)'; fab.style.opacity = '0'; }
+      const overlay = document.createElement('div');
+      overlay.id = 'modal-overlay';
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-sheet">
+          <div class="modal-body" style="text-align:center;padding:16px 0 8px">
+            <div style="font-size:48px">👋</div>
+            <div style="font-size:20px;font-weight:700;margin:8px 0">Добро пожаловать в DTL!</div>
+            <div style="color:var(--text2);font-size:14px;margin-bottom:16px">Несколько шагов для начала работы</div>
+            ${steps.map((s, i) => `<div style="display:flex;align-items:center;gap:10px;padding:8px;text-align:left">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text2)">${i + 1}</div>
+              <div style="font-size:13px">${esc(s.label)}</div>
+            </div>`).join('')}
+            <button onclick="localStorage.setItem('dtl_onboarding_dismissed','1');closeModal()" class="btn-secondary" style="width:100%;margin-top:16px">Понятно, начнём</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', e => { if (e.target === overlay) { localStorage.setItem('dtl_onboarding_dismissed', '1'); closeModal(); } });
+    }
+  }
+
+  window.completeOnboardingStep = async function(stepKey) {
+    try {
+      await api.post('/api/onboarding/' + stepKey, {});
+      navigate('#home');
+    } catch(e) {}
+  };
 
   function setupLayout() {
     if (!user) {
@@ -553,6 +595,29 @@
       }
     } catch (e) { /* silent */ }
 
+    let onboardingSteps = [];
+    if (!localStorage.getItem('dtl_onboarding_dismissed')) {
+      try { onboardingSteps = await api.get('/api/onboarding') || []; } catch(e) {}
+      if (onboardingSteps.length && onboardingSteps.every(s => s.done)) {
+        localStorage.setItem('dtl_onboarding_dismissed', '1');
+        onboardingSteps = [];
+      }
+    }
+    const onboardingCard = onboardingSteps.length ? `
+      <div style="background:linear-gradient(135deg,rgba(0,212,100,.1),rgba(0,150,255,.1));border:1px solid var(--accent);border-radius:14px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-weight:700;font-size:14px">🚀 Начало работы · ${onboardingSteps.filter(s => s.done).length}/${onboardingSteps.length}</div>
+          <button onclick="localStorage.setItem('dtl_onboarding_dismissed','1');this.closest('div[style*=gradient]').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px">✕</button>
+        </div>
+        ${onboardingSteps.map(s => `
+          <div onclick="window.completeOnboardingStep('${esc(s.key)}')" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;opacity:${s.done ? '0.5' : '1'}">
+            <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${s.done ? 'var(--accent)' : 'var(--border)'};background:${s.done ? 'var(--accent)' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              ${s.done ? '<span style="color:#000;font-size:10px">✓</span>' : ''}
+            </div>
+            <div style="font-size:13px;${s.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${esc(s.label)}</div>
+          </div>`).join('')}
+      </div>` : '';
+
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
@@ -560,6 +625,7 @@
       <div class="stitle">Что записать?</div>
       <div class="ssub">// добро пожаловать</div>
       ${alertBannerHtml}
+      ${onboardingCard}
       <div class="menu-grid">
         ${menuCard({ icon: '⛽', label: 'База', sub: 'приёмка / рейсы', accent: true, badgeText: pendingCount > 0 ? String(pendingCount) : '', onClick: "navigate('#base')" })}
         ${menuCard({ icon: '📦', label: 'Заказы', sub: 'прогресс', onClick: "navigate('#orders')" })}
@@ -2529,6 +2595,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     try { settings = await api.get('/api/settings') || []; } catch (e) {}
     try { clients = await api.get('/api/clients') || []; } catch (e) {}
 
+    let aiUsage = null;
+    let apiTokens = [];
+    let sessions = [];
+    if (isPartner()) {
+      try { aiUsage = await api.get('/api/ai/usage'); } catch(e) {}
+      try { apiTokens = await api.get('/api/tokens') || []; } catch(e) {}
+      try { sessions = await api.get('/api/auth/sessions') || []; } catch(e) {}
+    }
+
     const getSetting = (key, def) => { const s = settings.find(x => x.key === key); return s ? s.value : def; };
 
     const pushSupported = ('Notification' in window && 'serviceWorker' in navigator);
@@ -2638,6 +2713,44 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         </div>
       </div>
       <button onclick="window.saveSettings()" class="btn-primary" style="width:100%;margin-top:8px">Сохранить настройки</button>
+      ` : ''}
+
+      ${isPartner() ? `
+      ${sectionHeader('Использование ИИ')}
+      <div class="bb">
+        <div class="bbr"><div class="bbl">Сегодня</div><div class="bbv">${aiUsage ? aiUsage.today_cost_rub + ' ₽ / ' + aiUsage.today_tokens + ' токенов' : '—'}</div></div>
+        <div class="bbr"><div class="bbl">В этом месяце</div><div class="bbv">${aiUsage ? aiUsage.month_cost_rub + ' ₽ / ' + aiUsage.month_tokens + ' токенов' : '—'}</div></div>
+        <div class="bbr"><div class="bbl">Дневной лимит</div><div class="bbv">${aiUsage ? aiUsage.daily_limit_rub + ' ₽' : '—'}</div></div>
+      </div>
+      ` : ''}
+
+      ${isPartner() ? `
+      ${sectionHeader('API Токены')}
+      <div class="pi">
+        ${apiTokens.length ? apiTokens.map(t => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:13px">${esc(t.name)}</div>
+              <div style="font-size:11px;color:var(--text2)">${t.last_used_at ? 'Последнее: ' + new Date(t.last_used_at).toLocaleDateString('ru') : 'Не использовался'} · ${t.is_active ? 'Активен' : 'Отозван'}</div>
+            </div>
+            ${t.is_active ? '<button onclick="window.revokeApiToken(' + t.id + ')" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.3);color:var(--red);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer">Отозвать</button>' : ''}
+          </div>`).join('') : '<div style="color:var(--text2);font-size:13px;padding:8px 0">Нет активных токенов</div>'}
+        <button onclick="window.createApiTokenModal()" class="btn-primary" style="width:100%;margin-top:10px">+ Новый токен</button>
+      </div>
+      ` : ''}
+
+      ${isPartner() ? `
+      ${sectionHeader('Активные сессии')}
+      <div class="pi">
+        ${sessions.map(s => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-size:12px;font-weight:600">${esc(s.user_agent ? s.user_agent.substring(0,40) : 'Неизвестно')}</div>
+              <div style="font-size:11px;color:var(--text2)">IP: ${esc(s.ip || '—')} · ${s.created_at ? new Date(s.created_at).toLocaleDateString('ru') : ''}</div>
+            </div>
+            <button onclick="window.revokeSession('${esc(s.id)}')" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.3);color:var(--red);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer">Завершить</button>
+          </div>`).join('') || '<div style="color:var(--text2);font-size:13px">Нет данных о сессиях</div>'}
+      </div>
       ` : ''}
 
       <div class="div"></div>
@@ -3050,6 +3163,65 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     });
   }
 
+
+  // ── API Token & Session management ────────────────────────────────────────
+  window.revokeApiToken = async function(id) {
+    if (!confirm('Отозвать токен? Его нельзя восстановить.')) return;
+    try {
+      await api.del('/api/tokens/' + id);
+      toast('Токен отозван');
+      viewSettings();
+    } catch(e) { toast(e.message, 'error'); }
+  };
+
+  window.createApiTokenModal = function() {
+    const existing = document.getElementById('modal-overlay');
+    if (existing) existing.remove();
+    const fab = document.getElementById('ai-fab');
+    if (fab) { fab.style.transform = 'scale(0)'; fab.style.opacity = '0'; }
+    const overlay = document.createElement('div');
+    overlay.id = 'modal-overlay';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-sheet">
+        <div class="modal-title">Новый API токен</div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Название токена</label><input id="token-name-inp" class="inp" placeholder="Например: Курсор MCP"></div>
+          <div id="token-result" style="display:none;margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;word-break:break-all;font-size:12px;font-family:monospace;color:var(--accent)"></div>
+        </div>
+        <div class="modal-footer-btns">
+          <button class="btn-secondary" onclick="closeModal()">Отмена</button>
+          <button class="btn-primary" id="modal-create-token-btn" onclick="window.doCreateToken()">Создать</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+  };
+
+  window.doCreateToken = async function() {
+    const name = document.getElementById('token-name-inp')?.value?.trim();
+    if (!name) { toast('Введите название', 'error'); return; }
+    try {
+      const res = await api.post('/api/tokens', { name });
+      const el = document.getElementById('token-result');
+      if (el) {
+        el.style.display = 'block';
+        el.textContent = res.token;
+      }
+      toast('Токен создан — скопируйте сейчас!');
+      const btn = document.getElementById('modal-create-token-btn');
+      if (btn) btn.style.display = 'none';
+    } catch(e) { toast(e.message, 'error'); }
+  };
+
+  window.revokeSession = async function(sessionId) {
+    if (!confirm('Завершить сессию?')) return;
+    try {
+      await api.del('/api/auth/sessions/' + sessionId);
+      toast('Сессия завершена');
+      viewSettings();
+    } catch(e) { toast(e.message, 'error'); }
+  };
 
   // ── Balance (Phase 3) ─────────────────────────────────────────────────────
   async function viewBalance() {
