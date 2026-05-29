@@ -28,6 +28,27 @@ def _get_claude_client():
         return None
 
 
+def _log_ai_interaction(user_id: int, user_content: str, assistant_content: str, usage_or_tokens, model: str):
+    """Log user question and assistant answer to ai_interactions table."""
+    try:
+        if isinstance(usage_or_tokens, int):
+            tokens = usage_or_tokens
+        elif usage_or_tokens is not None:
+            tokens = getattr(usage_or_tokens, 'input_tokens', 0) + getattr(usage_or_tokens, 'output_tokens', 0)
+        else:
+            tokens = 0
+        execute(
+            "INSERT INTO ai_interactions (user_id, role, content, tokens_used, model) VALUES (%s, 'user', %s, 0, %s)",
+            (user_id, user_content[:4000], model),
+        )
+        execute(
+            "INSERT INTO ai_interactions (user_id, role, content, tokens_used, model) VALUES (%s, 'assistant', %s, %s, %s)",
+            (user_id, assistant_content[:4000], tokens, model),
+        )
+    except Exception as log_err:
+        logger.warning(f"Failed to log AI interaction: {log_err}")
+
+
 class TTNScanRequest(BaseModel):
     image_url: str   # URL like /uploads/filename.jpg
 
@@ -237,6 +258,7 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
 
         # Return action for frontend confirmation
         if action_data:
+            _log_ai_interaction(user["id"], body.question, action_data.get("description", text), getattr(resp, 'usage', None), "claude-opus-4-7")
             return {"ok": True, "type": "action", "action": action_data.get("action"), "description": action_data.get("description", ""), "data": action_data.get("data", {})}
 
         if sql_query:
@@ -262,9 +284,17 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
                 max_tokens=300,
                 messages=[{"role": "user", "content": f'Вопрос: "{body.question}"\nДанные: {result_json[:3000]}\n\nОтветь кратко на русском, 1-3 предложения.'}]
             )
-            return {"ok": True, "answer": fmt_resp.content[0].text.strip(), "rows_count": len(rows)}
+            answer = fmt_resp.content[0].text.strip()
+            total_tokens = 0
+            if hasattr(resp, 'usage') and resp.usage:
+                total_tokens += getattr(resp.usage, 'input_tokens', 0) + getattr(resp.usage, 'output_tokens', 0)
+            if hasattr(fmt_resp, 'usage') and fmt_resp.usage:
+                total_tokens += getattr(fmt_resp.usage, 'input_tokens', 0) + getattr(fmt_resp.usage, 'output_tokens', 0)
+            _log_ai_interaction(user["id"], body.question, answer, total_tokens, "claude-opus-4-7")
+            return {"ok": True, "answer": answer, "rows_count": len(rows)}
 
         # Direct text answer
+        _log_ai_interaction(user["id"], body.question, text, getattr(resp, 'usage', None), "claude-opus-4-7")
         return {"ok": True, "answer": text}
 
     except Exception as e:
@@ -451,3 +481,43 @@ def get_anomalies(user: dict = Depends(require_partner)):
     except Exception as e:
         logger.warning(f"Anomaly check error: {e}")
         return {"anomalies": [], "checked_at": None, "error": str(e)[:100]}
+
+
+@router.get("/ai/usage")
+def get_ai_usage(user: dict = Depends(require_partner)):
+    """Daily and monthly token usage + estimated cost."""
+    today_row = query_one(
+        """SELECT COALESCE(SUM(tokens_used), 0) AS tokens
+           FROM ai_interactions WHERE DATE(created_at) = CURRENT_DATE""",
+    )
+    month_row = query_one(
+        """SELECT COALESCE(SUM(tokens_used), 0) AS tokens
+           FROM ai_interactions
+           WHERE EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM NOW())
+             AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM NOW())""",
+    )
+    limit_setting = query_one("SELECT value FROM settings WHERE key = 'ai_daily_limit_rub'")
+    daily_limit = float(limit_setting["value"]) if limit_setting else 500.0
+
+    RUB_PER_1K = 4.5  # ~$0.045/1k tokens * 100 RUB/USD
+    today_tokens = int(today_row["tokens"] if today_row else 0)
+    month_tokens = int(month_row["tokens"] if month_row else 0)
+    return {
+        "today_tokens": today_tokens,
+        "today_cost_rub": round(today_tokens / 1000 * RUB_PER_1K, 2),
+        "month_tokens": month_tokens,
+        "month_cost_rub": round(month_tokens / 1000 * RUB_PER_1K, 2),
+        "daily_limit_rub": daily_limit,
+    }
+
+
+@router.get("/ai/interactions")
+def get_ai_interactions(user: dict = Depends(require_partner)):
+    """Last 100 AI interactions log."""
+    return query(
+        """SELECT ai.id, u.name AS user_name, ai.role, LEFT(ai.content, 200) AS content,
+                  ai.tokens_used, ai.model, ai.created_at
+           FROM ai_interactions ai
+           LEFT JOIN users u ON u.id = ai.user_id
+           ORDER BY ai.created_at DESC LIMIT 100""",
+    )
