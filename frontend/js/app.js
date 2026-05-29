@@ -751,9 +751,9 @@
         const isTransit = d.status === 'dispatched' || d.status === 'in_transit';
         return `<div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer"><div class="li">
           <div class="lic tr">🚚</div>
-          <div class="lit"><div class="lim">${esc((d.truck_name || ''))} → ${esc(d.site_name || '')}</div><div class="lis">${esc(d.volume + ' куб · ' + (d.driver_name || ''))}</div></div>
+          <div class="lit"><div class="lim">${esc((d.truck_name || ''))} → ${esc(d.site_name || '')}</div><div class="lis">${esc(d.volume + ' куб · ' + (d.driver_name || ''))}${d.tariff ? ' · ' + formatNum(d.tariff) + ' ₽' : ''}</div></div>
           <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-            ${isDone ? badge('Доставлено', 'done') : badge('В пути', 'transit')}
+            ${isDone ? (d.paid ? `<span style="font-size:10px;color:var(--accent);font-weight:600">✅ Оплачено</span>` : badge('Доставлено', 'done')) : badge('В пути', 'transit')}
             ${isTransit ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id},this)">Доставлено</button>` : ''}
           </div>
         </div></div>`;
@@ -2855,13 +2855,14 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     if (hashParams.get('month') !== null && hashParams.get('month') !== '') selMonth = parseInt(hashParams.get('month'));
     // selMonth=0 means full year
     const monthParam = selMonth ? `&month=${selMonth}` : '';
-    let summary = null, clients = [], trucks = [], suppliers = [], carriers = [];
+    let summary = null, clients = [], fleetPnl = null, suppliers = [], carriers = [];
+    const curMonthFallback = selMonth || new Date().getMonth() + 1;
     try { summary  = await api.get(`/api/analytics/summary?year=${selYear}&month=${selMonth || 1}`); } catch (e) { sendLog('warn', `[analytics] summary err: ${e.message}`); }
     try { clients  = await api.get(`/api/analytics/clients?year=${selYear}${monthParam}`) || []; } catch (e) { sendLog('warn', `[analytics] clients err: ${e.message}`); }
-    try { trucks   = await api.get(`/api/analytics/trucks?year=${selYear}&month=${selMonth || new Date().getMonth()+1}`) || []; } catch (e) { sendLog('warn', `[analytics] trucks err: ${e.message}`); }
+    try { fleetPnl = await api.get(`/api/analytics/fleet-pnl?year=${selYear}&month=${curMonthFallback}`); } catch (e) { sendLog('warn', `[analytics] fleet-pnl err: ${e.message}`); }
     try { suppliers = await api.get(`/api/analytics/suppliers?year=${selYear}${monthParam}`) || []; } catch (e) { sendLog('warn', `[analytics] suppliers err: ${e.message}`); }
-    try { carriers  = await api.get(`/api/analytics/carriers?year=${selYear}&month=${selMonth || new Date().getMonth()+1}`) || []; } catch (e) { sendLog('warn', `[analytics] carriers err: ${e.message}`); }
-    sendLog('info', `[analytics] data ok: summary=${!!summary} clients=${Array.isArray(clients)?clients.length:'NOT_ARRAY:'+typeof clients} trucks=${Array.isArray(trucks)?trucks.length:'NOT_ARRAY:'+typeof trucks}`);
+    try { carriers  = await api.get(`/api/analytics/carriers?year=${selYear}&month=${curMonthFallback}`) || []; } catch (e) { sendLog('warn', `[analytics] carriers err: ${e.message}`); }
+    sendLog('info', `[analytics] data ok: summary=${!!summary} clients=${Array.isArray(clients)?clients.length:'NOT_ARRAY:'+typeof clients} fleetPnl=${!!fleetPnl}`);
 
     const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
 
@@ -2892,18 +2893,76 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ? `<div class="concentration-warning">⚠ Концентрация риска: один клиент занимает ${maxClientPct}% выручки</div>`
       : '';
 
-    // Trucks section
-    const truckRows = trucks.length ? trucks.map(t => {
-      const marginColor = t.margin_pct >= 60 ? 'var(--accent)' : t.margin_pct >= 30 ? 'var(--orange)' : 'var(--red)';
-      return listItem({
-        icon: '🚛', iconBg: 'y',
-        title: t.truck_name,
-        sub: `${t.trips} рейсов · ${t.volume} куб`,
-        rightVal: t.margin_pct + '%',
-        rightSub: 'маржа'
-      }).replace('style="font-size:14px;font-weight:700;color:var(--text)"',
-        `style="font-size:14px;font-weight:700;color:${marginColor}"`);
-    }).join('') : `<div class="empty-state">Нет данных по машинам</div>`;
+    // Fleet P&L table
+    const mkM = v => v >= 1000000 ? (v / 1000000).toFixed(2) + ' млн' : v >= 1000 ? (v / 1000).toFixed(0) + ' т.₽' : formatNum(v);
+    const mkC = (v, good, ok) => v >= good ? 'var(--accent)' : v >= ok ? 'var(--orange)' : 'var(--red)';
+    const pnlTrucks = fleetPnl ? fleetPnl.trucks : [];
+    const pnlOwn   = fleetPnl ? fleetPnl.own_fleet : null;
+    const pnlHire  = fleetPnl ? fleetPnl.hire : null;
+    const pnlCoExp = fleetPnl ? fleetPnl.company_expenses : 0;
+    const pnlNet   = fleetPnl ? fleetPnl.net_profit : 0;
+
+    const pnlTruckRows = pnlTrucks.map(t => {
+      const mc = mkC(t.margin_pct, 30, 10);
+      return `<tr>
+        <td style="font-weight:600">${esc(t.truck_name)}</td>
+        <td style="color:var(--accent)">${mkM(t.revenue)}</td>
+        <td style="color:var(--red)">${mkM(t.expenses)}</td>
+        <td style="color:${mc};font-weight:700">${t.margin_pct}%</td>
+        <td>${t.trips}</td>
+        <td style="color:var(--text2)">${mkM(t.avg_per_trip)}</td>
+        <td style="color:var(--text2)">${t.volume}</td>
+      </tr>`;
+    }).join('');
+
+    const pnlHireRow = pnlHire ? `<tr style="border-top:1px solid var(--border)">
+      <td style="font-weight:600;color:var(--orange)">Найм (итого)</td>
+      <td style="color:var(--accent)">${mkM(pnlHire.revenue)}</td>
+      <td style="color:var(--red)">${mkM(pnlHire.expenses)}</td>
+      <td style="color:${mkC(pnlHire.margin_pct, 20, 5)};font-weight:700">${pnlHire.margin_pct}%</td>
+      <td>${pnlHire.trips}</td>
+      <td style="color:var(--text2)">—</td>
+      <td style="color:var(--text2)">${pnlHire.volume}</td>
+    </tr>` : '';
+
+    const pnlOwnRow = pnlOwn ? `<tr style="background:var(--card2);font-weight:700">
+      <td>Свой парк итого</td>
+      <td style="color:var(--accent)">${mkM(pnlOwn.revenue)}</td>
+      <td style="color:var(--red)">${mkM(pnlOwn.expenses)}</td>
+      <td style="color:${mkC(pnlOwn.margin_pct, 30, 10)}">${pnlOwn.margin_pct}%</td>
+      <td>${pnlOwn.trips}</td>
+      <td>—</td>
+      <td>${pnlOwn.volume}</td>
+    </tr>` : '';
+
+    const pnlNetRow = `<tr style="background:var(--accent10,rgba(0,212,100,.08));font-weight:700;font-size:13px">
+      <td colspan="3" style="color:${pnlNet >= 0 ? 'var(--accent)' : 'var(--red)'}">Чистая прибыль</td>
+      <td colspan="4" style="color:${pnlNet >= 0 ? 'var(--accent)' : 'var(--red)'};font-size:15px">${pnlNet >= 0 ? '+' : ''}${mkM(pnlNet)}</td>
+    </tr>`;
+
+    const pnlTable = pnlTrucks.length || pnlHire ? `
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="color:var(--text2);font-size:11px;text-transform:uppercase;border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:4px 6px">Машина</th>
+            <th style="text-align:right;padding:4px 6px">Выручка</th>
+            <th style="text-align:right;padding:4px 6px">Расходы</th>
+            <th style="text-align:right;padding:4px 6px">Маржа</th>
+            <th style="text-align:right;padding:4px 6px">Рейсы</th>
+            <th style="text-align:right;padding:4px 6px">Ср/рейс</th>
+            <th style="text-align:right;padding:4px 6px">Объём</th>
+          </tr></thead>
+          <tbody style="line-height:2">
+            ${pnlTruckRows}
+            ${pnlOwnRow}
+            ${pnlHireRow}
+            <tr style="border-top:1px solid var(--border)">
+              <td colspan="7" style="font-size:11px;color:var(--text2);padding:4px 6px">Общие расходы компании: <strong style="color:var(--red)">${mkM(pnlCoExp)}</strong></td>
+            </tr>
+            ${pnlNetRow}
+          </tbody>
+        </table>
+      </div>` : `<div class="empty-state">Нет данных по машинам</div>`;
 
     // Suppliers section
     const supplierRows = suppliers.length ? suppliers.map(s => {
@@ -2915,13 +2974,24 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       </div>`;
     }).join('') : `<div class="empty-state">Нет данных</div>`;
 
-    // Carriers section
+    // Carriers section — dual bar: cost share + volume share
     const carrierRows = carriers.length ? carriers.map(c => {
       const isOrange = c.pct_cost >= 40;
-      return `<div class="prog-mini-row">
-        <div class="prog-mini-label" title="${esc(c.carrier_name)}">${esc(c.carrier_name)}</div>
-        <div class="prog-mini-bar"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%" data-target="${c.pct_cost}%"></div></div>
-        <div class="prog-mini-val">${c.pct_cost}% · ${c.pct_volume}% объём</div>
+      return `<div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:600;color:var(--text)">${esc(c.carrier_name)}</span>
+          <span style="color:var(--text2)">${c.trips} рейс · ${formatNum(c.cost)} ₽</span>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:2px">
+          <span style="font-size:10px;color:var(--text2);width:40px">Сумма</span>
+          <div style="flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%;height:100%;border-radius:3px" data-target="${c.pct_cost}%"></div></div>
+          <span style="font-size:11px;font-weight:700;color:${isOrange ? 'var(--orange)' : 'var(--accent)'};">${c.pct_cost}%</span>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <span style="font-size:10px;color:var(--text2);width:40px">Объём</span>
+          <div style="flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden"><div class="prog-mini-fill" style="width:0%;height:100%;border-radius:3px;background:var(--accent)" data-target="${c.pct_volume}%"></div></div>
+          <span style="font-size:11px;color:var(--text2)">${c.pct_volume}%</span>
+        </div>
       </div>`;
     }).join('') : `<div class="empty-state">Нет данных</div>`;
 
@@ -2945,8 +3015,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${concentrationWarning}
       </div>
 
-      ${sectionHeader('Итог по машинам')}
-      ${truckRows}
+      ${sectionHeader('P&L по машинам · ' + (selMonth ? months[selMonth-1] + ' ' + selYear : 'Весь ' + selYear))}
+      ${pnlTable}
 
       ${sectionHeader('Поставщики — доля закупок')}
       <div class="pi">
@@ -2954,7 +3024,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       </div>
 
       ${sectionHeader('Перевозчики — доля объёма и суммы')}
-      <div class="pi">
+      <div class="pi" style="padding:12px 0">
         ${carrierRows}
       </div>
 
@@ -3303,6 +3373,14 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${isPartner() && st !== 'cancelled' ? `<button onclick="window.updateDispatchStatus(${d.id},'cancelled')" class="btn-secondary" style="width:100%;margin-top:8px;color:var(--red)">Отменить рейс</button>` : ''}
     ` : '';
 
+    const paidHtml = isPartner() && st === 'delivered' ? (d.paid
+      ? `<div style="margin-top:10px;padding:8px 12px;background:rgba(0,212,100,.1);border-radius:8px;font-size:12px;color:var(--accent)">
+           ✅ Оплачено клиентом${d.paid_at ? ' · ' + new Date(d.paid_at).toLocaleDateString('ru') : ''}
+           <button onclick="window.toggleDispatchPaid(${d.id},false)" style="float:right;background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer">Отменить</button>
+         </div>`
+      : `<button onclick="window.toggleDispatchPaid(${d.id},true)" class="btn-secondary" style="width:100%;margin-top:8px;color:var(--accent);border-color:var(--accent)">💳 Отметить оплаченным</button>`
+    ) : '';
+
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:20px';
     overlay.innerHTML = `
@@ -3319,12 +3397,14 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
           <div class="bbr"><div class="bbl">Тариф</div><div class="bbv">${d.tariff ? formatNum(d.tariff) + ' ₽' : '—'}</div></div>
           <div class="bbr"><div class="bbl">ТТН</div><div class="bbv">${esc(d.ttn_number || '—')}</div></div>
           <div class="bbr"><div class="bbl">Статус</div><div class="bbv" style="color:${statusColors[st]}">${statusLabels[st] || st}</div></div>
+          ${d.paid !== undefined ? `<div class="bbr"><div class="bbl">Оплата</div><div class="bbv" style="color:${d.paid ? 'var(--accent)' : 'var(--text2)'}">${d.paid ? '✅ Оплачено' : 'Не оплачено'}</div></div>` : ''}
           <div class="bbr"><div class="bbl">Дата отправки</div><div class="bbv">${esc(d.dispatched_at ? new Date(d.dispatched_at).toLocaleString('ru') : '—')}</div></div>
           ${d.delivered_at ? `<div class="bbr"><div class="bbl">Доставлено</div><div class="bbv">${esc(new Date(d.delivered_at).toLocaleString('ru'))}</div></div>` : ''}
           ${d.notes ? `<div class="bbr"><div class="bbl">Примечание</div><div class="bbv">${esc(d.notes)}</div></div>` : ''}
         </div>
         ${photoHtml}
         ${actionsHtml}
+        ${paidHtml}
         ${isPartner() || isArtem() ? `<button onclick="window.correctDispatchModal(${d.id},${d.volume||0},${d.tariff||0},'${esc(d.ttn_number||'')}','${esc(d.notes||'')}')" class="btn-secondary" style="width:100%;margin-top:8px">✏ Исправить запись</button>` : ''}
       </div>`;
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
@@ -3338,6 +3418,16 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       toast(labels[status] || 'Статус обновлён');
       document.querySelector('[style*="position:fixed"][style*="z-index:9999"]')?.remove();
       navigate('#base?tab=trips');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.toggleDispatchPaid = async function(dispatchId, markPaid) {
+    try {
+      const endpoint = markPaid ? 'paid' : 'unpaid';
+      await api.put(`/api/base/dispatches/${dispatchId}/${endpoint}`, {});
+      toast(markPaid ? '✅ Отмечено оплаченным' : 'Оплата отменена');
+      document.querySelector('[style*="position:fixed"][style*="z-index:9999"]')?.remove();
+      showDispatchDetail(dispatchId);
     } catch (e) { toast(e.message, 'error'); }
   };
 

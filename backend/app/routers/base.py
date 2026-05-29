@@ -497,6 +497,34 @@ def set_dispatch_photo(dispatch_id: int, photo_url: str, user: dict = Depends(ge
     return {"message": "Photo updated"}
 
 
+@router.put("/dispatches/{dispatch_id}/paid")
+def mark_dispatch_paid(dispatch_id: int, user: dict = Depends(require_partner)):
+    """Mark a delivered dispatch as paid by client."""
+    row = query_one("SELECT id, status, paid FROM fuel_dispatches WHERE id = %s", (dispatch_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    if row["status"] != "delivered":
+        raise HTTPException(status_code=400, detail="Only delivered dispatches can be marked paid")
+    updated = execute(
+        "UPDATE fuel_dispatches SET paid = TRUE, paid_at = NOW() WHERE id = %s RETURNING *",
+        (dispatch_id,), returning=True
+    )
+    return updated
+
+
+@router.put("/dispatches/{dispatch_id}/unpaid")
+def mark_dispatch_unpaid(dispatch_id: int, user: dict = Depends(require_partner)):
+    """Unmark a dispatch paid status."""
+    row = query_one("SELECT id FROM fuel_dispatches WHERE id = %s", (dispatch_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    updated = execute(
+        "UPDATE fuel_dispatches SET paid = FALSE, paid_at = NULL WHERE id = %s RETURNING *",
+        (dispatch_id,), returning=True
+    )
+    return updated
+
+
 # ===========================================================================
 # ADVANCES
 # ===========================================================================
