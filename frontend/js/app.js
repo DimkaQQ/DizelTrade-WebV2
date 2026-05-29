@@ -1,6 +1,6 @@
 (async () => {
   'use strict';
-  window._dtlV = 'v20260524_debug';
+  window._dtlV = 'v20260529';
 
   let user = null;
 
@@ -560,6 +560,7 @@
       window.currentUser = user;
       setupLayout();
       navigate('#home');
+      checkOnboarding();
     } catch (e) {
       if (errEl) { errEl.textContent = e.message || 'Ошибка входа'; errEl.style.display = 'block'; }
       document.getElementById('l-login')?.classList.add('inp-err');
@@ -655,6 +656,29 @@
     } catch (e) {}
     try { orders = await api.get('/api/orders') || []; } catch (e) {}
 
+    let onboardingSteps = [];
+    if (!localStorage.getItem('dtl_onboarding_dismissed')) {
+      try { onboardingSteps = await api.get('/api/onboarding') || []; } catch(e) {}
+      if (onboardingSteps.length && onboardingSteps.every(s => s.done)) {
+        localStorage.setItem('dtl_onboarding_dismissed', '1');
+        onboardingSteps = [];
+      }
+    }
+    const onboardingCard = onboardingSteps.length ? `
+      <div style="background:linear-gradient(135deg,rgba(0,212,100,.1),rgba(0,150,255,.1));border:1px solid var(--accent);border-radius:14px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-weight:700;font-size:14px">🚀 Начало работы · ${onboardingSteps.filter(s => s.done).length}/${onboardingSteps.length}</div>
+          <button onclick="localStorage.setItem('dtl_onboarding_dismissed','1');this.closest('div[style*=gradient]').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px">✕</button>
+        </div>
+        ${onboardingSteps.map(s => `
+          <div onclick="window.completeOnboardingStep('${esc(s.key)}')" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;opacity:${s.done ? '0.5' : '1'}">
+            <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${s.done ? 'var(--accent)' : 'var(--border)'};background:${s.done ? 'var(--accent)' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              ${s.done ? '<span style="color:#000;font-size:10px">✓</span>' : ''}
+            </div>
+            <div style="font-size:13px;${s.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${esc(s.label)}</div>
+          </div>`).join('')}
+      </div>` : '';
+
     const currentBal = balance ? balance.balance_cubic : '—';
     let artemDebt = null;
     try { artemDebt = await api.get('/api/base/artem-debt'); } catch (e) {}
@@ -670,6 +694,7 @@
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
     <div class="content">
+      ${onboardingCard}
       <div class="role-tag orange">🔒 Ограниченный доступ · База Тында</div>
       <div class="stitle">База Тында</div>
       <div class="ssub">// добрый день, ${esc(user.name || user.email)}</div>
@@ -704,10 +729,34 @@
     try { balance = await api.get('/api/base/balance'); } catch (e) {}
     try { pending = await api.get('/api/base/receipts/pending') || []; } catch (e) {}
 
+    let onboardingSteps = [];
+    if (!localStorage.getItem('dtl_onboarding_dismissed')) {
+      try { onboardingSteps = await api.get('/api/onboarding') || []; } catch(e) {}
+      if (onboardingSteps.length && onboardingSteps.every(s => s.done)) {
+        localStorage.setItem('dtl_onboarding_dismissed', '1');
+        onboardingSteps = [];
+      }
+    }
+    const onboardingCard = onboardingSteps.length ? `
+      <div style="background:linear-gradient(135deg,rgba(0,212,100,.1),rgba(0,150,255,.1));border:1px solid var(--accent);border-radius:14px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-weight:700;font-size:14px">🚀 Начало работы · ${onboardingSteps.filter(s => s.done).length}/${onboardingSteps.length}</div>
+          <button onclick="localStorage.setItem('dtl_onboarding_dismissed','1');this.closest('div[style*=gradient]').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px">✕</button>
+        </div>
+        ${onboardingSteps.map(s => `
+          <div onclick="window.completeOnboardingStep('${esc(s.key)}')" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;opacity:${s.done ? '0.5' : '1'}">
+            <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${s.done ? 'var(--accent)' : 'var(--border)'};background:${s.done ? 'var(--accent)' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              ${s.done ? '<span style="color:#000;font-size:10px">✓</span>' : ''}
+            </div>
+            <div style="font-size:13px;${s.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${esc(s.label)}</div>
+          </div>`).join('')}
+      </div>` : '';
+
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
     <div class="content">
+      ${onboardingCard}
       <div class="role-tag blue">🔒 Минимальный доступ · Ввод данных</div>
       <div class="stitle">Что записать?</div>
       <div class="ssub">// добро пожаловать</div>

@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Cookie, Response, Depends
+from fastapi import APIRouter, HTTPException, Cookie, Response, Depends, Request
 from pydantic import BaseModel
 from jose import jwt
 from passlib.context import CryptContext
@@ -39,10 +39,16 @@ def create_access_token(user_id: int, role: str) -> str:
 
 
 @router.post("/login", status_code=200)
-def login(body: LoginRequest, response: Response):
+def login(body: LoginRequest, response: Response, request: Request):
     email = body.login.strip().lower()
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "")[:200]
 
     if is_locked_out(email):
+        try:
+            execute("INSERT INTO login_attempts (ip, username_tried, success) VALUES (%s, %s, FALSE)", (ip, email))
+        except Exception:
+            pass
         raise HTTPException(status_code=429, detail="Слишком много попыток. Подождите 15 минут.")
 
     user = query_one(
@@ -51,25 +57,28 @@ def login(body: LoginRequest, response: Response):
     )
     if not user or not user["is_active"]:
         record_login_fail(email)
+        try:
+            execute("INSERT INTO login_attempts (ip, username_tried, success) VALUES (%s, %s, FALSE)", (ip, email))
+        except Exception:
+            pass
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not pwd_context.verify(body.password, user["password_hash"]):
         record_login_fail(email)
+        try:
+            execute("INSERT INTO login_attempts (ip, username_tried, success) VALUES (%s, %s, FALSE)", (ip, email))
+        except Exception:
+            pass
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     clear_login_fails(email)
 
-    # Update last_login_at
-    execute(
-        "UPDATE users SET last_login_at = NOW() WHERE id = %s",
-        (user["id"],)
-    )
-
-    # Log successful attempt
-    execute(
-        "INSERT INTO login_attempts (ip, username_tried, success) VALUES (%s, %s, TRUE)",
-        ("unknown", email)
-    )
+    # Update last_login_at and log success
+    execute("UPDATE users SET last_login_at = NOW() WHERE id = %s", (user["id"],))
+    try:
+        execute("INSERT INTO login_attempts (ip, username_tried, success) VALUES (%s, %s, TRUE)", (ip, email))
+    except Exception:
+        pass
 
     # Create access token
     access_token = create_access_token(user["id"], user["role"])
@@ -86,6 +95,17 @@ def login(body: LoginRequest, response: Response):
         "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
         (user["id"], refresh_hash, expires_at)
     )
+
+    # Track session
+    import hashlib as _hashlib
+    session_token_hash = _hashlib.sha256(raw_refresh.encode()).hexdigest()
+    try:
+        execute(
+            "INSERT INTO user_sessions (user_id, refresh_token_hash, ip, user_agent) VALUES (%s, %s, %s, %s)",
+            (user["id"], session_token_hash, ip, ua),
+        )
+    except Exception:
+        pass
 
     # Set refresh token in HttpOnly cookie
     response.set_cookie(
