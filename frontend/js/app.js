@@ -1988,6 +1988,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${statCard(totalRevenue > 0 ? (totalRevenue/1000000).toFixed(1) + ' млн' : '—', 'Выручка ₽', 'a')}
         ${statCard(avgMarginPct + '%', 'Маржа ср.', 'g')}
       </div>
+      ${isPartner() ? `<button class="btn-primary" style="margin-bottom:14px" onclick="showHireModal()">+ Новая сделка</button>` : ''}
       ${deals.length ? deals.map(d => {
         const volCub = d.volume_liters ? (d.volume_liters / 1000).toFixed(1) : null;
         const marginColor = d.margin_pct >= 10 ? 'var(--green)' : d.margin_pct > 0 ? 'var(--orange)' : 'var(--red)';
@@ -2016,7 +2017,6 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
           ${d.comment ? `<div style="font-size:13px;color:var(--text2);margin-top:8px;padding:6px 10px;background:var(--card2);border-radius:7px">${esc(d.comment)}</div>` : ''}
         </div>`;
       }).join('') : emptyState('Нет сделок')}
-      <button class="btn-primary" style="margin-top:12px" onclick="showHireModal()">+ Новая сделка</button>
       ${printBtn('Распечатать / PDF')}
     </div>`;
     _printData = { title: 'Найм · Хабаровск → Тында', columns: ['Дата', 'Клиент', 'Поставщик', 'Перевозчик', 'Объём л', 'Цена кл. ₽/л', 'Выручка ₽', 'Маржа %'],
@@ -3534,7 +3534,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="modal-title">Новый API токен</div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Название токена</label><input id="token-name-inp" class="inp" placeholder="Например: Курсор MCP"></div>
-          <div class="form-group"><label class="form-label">Скоуп</label><div class="chips" data-group="tk-scope"><div class="chip sel" data-val="full">Full</div><div class="chip" data-val="write">Write</div><div class="chip" data-val="read">Read only</div></div></div>
+          <div class="form-group"><label class="form-label">Скоуп</label><div id="tk-scope-sel" data-scope="full" style="display:flex;gap:8px;margin-top:4px"><div id="tks-full" onclick="window._setTokenScope('full')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--accent);background:var(--accent);color:#000">Full</div><div id="tks-write" onclick="window._setTokenScope('write')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Write</div><div id="tks-read" onclick="window._setTokenScope('read')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Read only</div></div></div>
           <div class="form-group"><label class="form-label">Лимит расходов</label><input class="inp" type="number" id="m-tk-limit" placeholder="Лимит $/день (необязательно)" step="0.01"></div>
           <div id="token-result" style="display:none;margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;word-break:break-all;font-size:12px;font-family:monospace;color:var(--accent)"></div>
         </div>
@@ -3547,12 +3547,26 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
   };
 
+  window._setTokenScope = function(val) {
+    const sel = document.getElementById('tk-scope-sel');
+    if (!sel) return;
+    sel.setAttribute('data-scope', val);
+    ['full','write','read'].forEach(v => {
+      const el = document.getElementById('tks-' + v);
+      if (!el) return;
+      const active = v === val;
+      el.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
+      el.style.background = active ? 'var(--accent)' : 'transparent';
+      el.style.color = active ? '#000' : 'var(--text2)';
+    });
+  };
+
   window.doCreateToken = async function() {
     const name = document.getElementById('token-name-inp')?.value?.trim();
     if (!name) { toast('Введите название', 'error'); return; }
     try {
-      const scopeEl = document.querySelector('.chips[data-group="tk-scope"] .chip.sel');
-      const scope = scopeEl ? scopeEl.getAttribute('data-val') : 'full';
+      const sel = document.getElementById('tk-scope-sel');
+      const scope = sel ? sel.getAttribute('data-scope') || 'full' : 'full';
       const limitVal = document.getElementById('m-tk-limit')?.value;
       const daily_cost_limit_usd = limitVal ? parseFloat(limitVal) : null;
       const res = await api.post('/api/tokens', { name, scope, daily_cost_limit_usd });
