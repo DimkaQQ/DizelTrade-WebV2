@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dtl.main")
 
-app = FastAPI(title="DTL Management API", version="2.0.0", docs_url="/api/docs", redoc_url="/api/redoc")
+app = FastAPI(title="DTL Management API", version="2.0.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(SecurityMiddleware)
 app.add_middleware(
@@ -70,6 +70,50 @@ async def log_requests(request: Request, call_next):
     elif request.url.path.startswith("/api/"):
         logger.info(f"{request.method} {request.url.path} → {response.status_code} ({ms}ms)")
     return response
+
+
+@app.get("/api/docs", include_in_schema=False)
+def api_docs():
+    return HTMLResponse("""<!DOCTYPE html>
+<html><head>
+<title>DTL API Docs</title>
+<meta charset="utf-8">
+<style>body{margin:0;padding:0}</style>
+</head><body>
+<script>
+async function load() {
+  const res = await fetch('/openapi.json');
+  const spec = await res.json();
+  document.body.innerHTML = '<div id="root"></div>';
+  // Render simple docs without CDN
+  const out = [];
+  out.push('<div style="font-family:monospace;padding:24px;background:#111;color:#eee;min-height:100vh">');
+  out.push('<h1 style="color:#c4b454">DTL Management API v2.0</h1>');
+  for (const [path, methods] of Object.entries(spec.paths || {})) {
+    for (const [method, op] of Object.entries(methods)) {
+      const color = {get:'#4ec9b0',post:'#c4b454',put:'#569cd6',patch:'#9cdcfe',delete:'#f44747'}[method]||'#eee';
+      out.push('<div style="margin:12px 0;padding:12px;background:#1e1e1e;border-radius:6px;border-left:3px solid '+color+'">');
+      out.push('<span style="color:'+color+';font-weight:700;text-transform:uppercase">'+method+'</span> ');
+      out.push('<span style="color:#dcdcaa">'+path+'</span>');
+      if (op.summary) out.push('<div style="color:#888;margin-top:4px;font-size:13px">'+op.summary+'</div>');
+      if (op.tags) out.push('<div style="margin-top:4px">'+op.tags.map(t=>'<span style="background:#333;color:#9cdcfe;padding:2px 6px;border-radius:3px;font-size:11px;margin-right:4px">'+t+'</span>').join('')+'</div>');
+      out.push('</div>');
+    }
+  }
+  out.push('</div>');
+  document.body.innerHTML = out.join('');
+}
+load();
+</script>
+</body></html>""", headers={"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"})
+
+
+@app.get("/openapi.json", include_in_schema=False)
+def openapi_json():
+    from fastapi.openapi.utils import get_openapi
+    from fastapi.responses import JSONResponse
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    return JSONResponse(schema)
 
 
 @app.get("/api/health")
