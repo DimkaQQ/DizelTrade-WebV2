@@ -214,30 +214,56 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
 
     role = user.get("role", "")
     is_artem = role == "artem"
+    is_operator = role == "operator"
+
+    # Actions allowed per role
+    PARTNER_ACTIONS = {"create_fuel_receipt", "create_dispatch", "create_income", "create_expense",
+                       "create_hire", "create_debt", "create_fleet_expense"}
+    ARTEM_ACTIONS   = {"create_fuel_receipt", "create_dispatch", "create_fleet_expense"}
+    allowed_actions = ARTEM_ACTIONS if is_artem else (set() if is_operator else PARTNER_ACTIONS)
 
     artem_restriction = """
-ОГРАНИЧЕНИЕ ДОСТУПА: пользователь видит только fleet/dispatch данные (trucks owner='Артём', drivers, fleet_expenses, fuel_dispatches, fuel_receipts).
-Финансовые таблицы (income_records, company_expenses, debt_records, hire_deliveries, cash_to_artem) — недоступны.
+ТВОЙ ПОЛЬЗОВАТЕЛЬ — Артём (роль: artem). Он управляет базой и автопарком.
+Доступ к данным: trucks, drivers, fleet_expenses, fuel_dispatches, fuel_receipts.
+Финансовые данные (income_records, company_expenses, debt_records, hire_deliveries) — НЕДОСТУПНЫ, не отвечай по ним.
 """ if is_artem else ""
 
-    write_actions = """
-Ты также можешь ЗАПИСЫВАТЬ данные. Если пользователь просит что-то записать/добавить/зафиксировать — верни JSON действия:
-{{"type":"action","action":"ИМЯ_ДЕЙСТВИЯ","description":"Краткое описание что будет записано (1 строка, для подтверждения пользователем)","data":{{...}}}}
+    if allowed_actions:
+        action_list_partner = """- create_fuel_receipt: принять топливо на базу. data: {received_at, supplier_name, volume_nominal (куб, обязательно), ttn_number, notes}
+- create_dispatch: рейс с базы на участок. data: {dispatched_at, truck_name, driver_name, site_name (обязательно), volume (куб, обязательно), tariff, ttn_number, notes}
+- create_income: поступление денег. data: {income_at, amount (обязательно), client_name, volume (тонн), comment}
+- create_expense: расход компании. data: {expense_at, category (Топливо/Зарплата/Ремонт/ТО/Аренда/Прочие), amount (обязательно), comment}
+- create_hire: найм-доставка. data: {delivery_at, client_name, supplier_name, carrier_name, volume_liters, price_client, amount_client, margin, comment}
+- create_debt: долг или оплата. data: {recorded_at, debtor, amount, type ("ДОЛГ" или "ОПЛАТА"), comment}
+- create_fleet_expense: расход по машине. data: {truck_name, expense_at, category (Ремонт/ТО/Зарплата/Топливо/Резина/Страховка/Прочие), amount, comment}"""
+
+        action_list_artem = """- create_fuel_receipt: принять топливо на базу. data: {received_at, supplier_name, volume_nominal (куб, обязательно), ttn_number, notes}
+- create_dispatch: рейс с базы на участок. data: {dispatched_at, truck_name, driver_name, site_name (обязательно), volume (куб, обязательно), tariff, ttn_number, notes}
+- create_fleet_expense: расход по машине. data: {truck_name, expense_at, category (Ремонт/ТО/Зарплата/Топливо/Резина/Страховка/Прочие), amount, comment}"""
+
+        action_list = action_list_artem if is_artem else action_list_partner
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        write_block = f"""
+=== ЗАПИСЬ ДАННЫХ ===
+Сегодня: {today_str}
+
+КРИТИЧЕСКИ ВАЖНО: Если пользователь говорит "запиши", "принял", "отправили", "поступило", "потратили", "добавь", "создай рейс", "оформи", "зафиксируй", "провели", "сделай запись" — ты ОБЯЗАН вернуть JSON действия. НИКОГДА не объясняй как это сделать вручную. Ты сам выполняешь запись.
+
+Формат ответа при записи — ТОЛЬКО этот JSON, без лишнего текста:
+{{"type":"action","action":"ИМЯ","description":"Что именно будет записано (цифры, клиент, участок)","data":{{...}}}}
 
 Доступные действия:
-- create_fuel_receipt: принять топливо на базу. data: {{received_at (YYYY-MM-DD, по умолч. сегодня), supplier_name (название поставщика или null), volume_nominal (кубометры, обязательно), ttn_number (номер ТТН или null), notes}}
-- create_dispatch: записать рейс с базы на участок. data: {{dispatched_at (YYYY-MM-DD), truck_name (название машины, если известна), truck_temp (название если наёмная), driver_name (ФИО водителя или null), site_name (название участка, обязательно), volume (кубометры, обязательно), tariff (₽/куб или null), ttn_number, notes}}
-- create_income: записать поступление денег. data: {{income_at, amount, client_name, volume (тонн, если есть), comment}}
-- create_expense: записать расход компании. data: {{expense_at, category (Топливо/Зарплата/Ремонт/ТО/Аренда/Прочие), amount, comment}}
-- create_hire: записать найм-доставку. data: {{delivery_at, client_name, supplier_name, carrier_name, volume_liters, price_client, amount_client, margin, comment}}
-- create_debt: записать долг или оплату. data: {{recorded_at, debtor, amount, type ("ДОЛГ" или "ОПЛАТА"), comment}}
-- create_fleet_expense: расход по машине. data: {{truck_name, expense_at, category (Ремонт/ТО/Зарплата/Топливо/Резина/Страховка/Прочие), amount, comment}}
+{action_list}
 
-Важно при записи:
-- Если дата не указана — используй сегодняшнюю дату
-- Если не хватает критичных данных (volume, site_name, amount) — спроси уточнение вместо действия
-- Описание (description) пиши конкретно: "Принято 15 куб от Камыша, ТТН-2025-01" или "Рейс 12 куб → Дипкун ближний, КА777"
-""" if not is_artem else ""
+Правила заполнения data:
+- Дата не указана → используй {today_str}
+- Нет критичного поля (volume/amount/site_name) → задай уточняющий вопрос текстом
+- Поле null если неизвестно
+- description пиши конкретно: "Принято 15 куб от Камыша, ТТН-005" / "Рейс 12 куб → Дипкун, КА777" / "Доход 500 000 ₽ от Луи Витона"
+"""
+    else:
+        write_block = "\nЗапись данных недоступна для вашей роли.\n"
 
     today_str = datetime.now().strftime("%Y-%m-%d")
     system_prompt = f"""Ты ИИ-ассистент системы управления DTL (Diesel Trade Logistic). Сегодня {today_str}.
@@ -246,14 +272,12 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
 
 База данных:
 {DB_SCHEMA_SUMMARY}
-{write_actions}
-Правила:
-1. Если вопрос о том КАК что-то сделать — ответь текстом, кратко (1-3 предложения).
-2. Если просят ДАННЫЕ (суммы, статистика) — верни JSON: {{"type":"sql","query":"SELECT ..."}}
-3. Если просят ЗАПИСАТЬ что-то — верни JSON действия (см. выше). Додумывай недостающие поля сам (дата = сегодня, category по контексту, и т.д.)
-4. Отвечай только на русском языке.
-5. НЕ используй markdown: никаких **, *, #, [], (), ``. Пиши обычным текстом.
-6. Если записываешь — будь конкретен в description, перечисли ключевые цифры."""
+{write_block}
+Общие правила:
+1. Вопрос о данных (суммы, статистика, остаток) → JSON: {{"type":"sql","query":"SELECT ..."}}
+2. Вопрос о навигации/как сделать → текст, 1-3 предложения
+3. Запрос на запись → JSON action (см. выше) — ВСЕГДА, без исключений
+4. Только русский язык. Без markdown (**, *, #, [], ``)."""
 
     try:
         import anthropic
@@ -277,8 +301,12 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
                 parsed = json.loads(clean)
                 if parsed.get("type") == "sql":
                     sql_query = parsed.get("query", "").strip()
-                elif parsed.get("type") == "action" and not is_artem:
-                    action_data = parsed
+                elif parsed.get("type") == "action":
+                    if parsed.get("action") in allowed_actions:
+                        action_data = parsed
+                    else:
+                        # Action not allowed for this role — return as text refusal
+                        text = "У вас нет прав на эту операцию."
             except (json.JSONDecodeError, AttributeError):
                 pass
 
@@ -394,9 +422,22 @@ def _resolve_carrier(name: str):
     return row["id"]
 
 
+ROLE_ALLOWED_ACTIONS = {
+    "partner":  {"create_fuel_receipt", "create_dispatch", "create_income", "create_expense",
+                 "create_hire", "create_debt", "create_fleet_expense"},
+    "artem":    {"create_fuel_receipt", "create_dispatch", "create_fleet_expense"},
+    "operator": set(),
+}
+
+
 @router.post("/ai/execute")
-def ai_execute(body: ExecuteRequest, user: dict = Depends(require_partner)):
+def ai_execute(body: ExecuteRequest, user: dict = Depends(require_not_operator)):
     """Execute a write action confirmed by the user."""
+    role = user.get("role", "operator")
+    allowed = ROLE_ALLOWED_ACTIONS.get(role, set())
+    if body.action not in allowed:
+        raise HTTPException(403, "У вас нет прав на эту операцию")
+
     d = body.data
     uid = user["id"]
     today = datetime.now().date().isoformat()
