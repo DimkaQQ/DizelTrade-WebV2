@@ -291,9 +291,9 @@ def setup_2fa(user: dict = Depends(get_current_user)):
     qr_svg = None
     try:
         import segno, io
-        buf = io.StringIO()
+        buf = io.BytesIO()
         segno.make(uri).save(buf, kind="svg", scale=5)
-        qr_svg = buf.getvalue()
+        qr_svg = buf.getvalue().decode("utf-8")
     except Exception:
         pass
 
