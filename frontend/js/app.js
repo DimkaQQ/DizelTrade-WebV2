@@ -2401,6 +2401,93 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     return d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
   }
 
+  const _AI_ACTION_FIELDS = {
+    create_dispatch: [
+      { key: 'site_name',     label: 'Участок',      type: 'text',   req: true },
+      { key: 'truck_name',    label: 'Машина',        type: 'text' },
+      { key: 'driver_name',   label: 'Водитель',      type: 'text' },
+      { key: 'volume',        label: 'Объём куб',     type: 'number', req: true },
+      { key: 'tariff',        label: 'Тариф ₽/куб',  type: 'number' },
+      { key: 'dispatched_at', label: 'Дата',          type: 'date' },
+      { key: 'ttn_number',    label: 'ТТН',           type: 'text' },
+    ],
+    create_fuel_receipt: [
+      { key: 'supplier_name',  label: 'Поставщик',  type: 'text' },
+      { key: 'volume_nominal', label: 'Объём куб',  type: 'number', req: true },
+      { key: 'received_at',    label: 'Дата',       type: 'date' },
+      { key: 'ttn_number',     label: 'ТТН',        type: 'text' },
+      { key: 'notes',          label: 'Примечание', type: 'text' },
+    ],
+    create_income: [
+      { key: 'client_name', label: 'Клиент',      type: 'text',   req: true },
+      { key: 'amount',      label: 'Сумма ₽',     type: 'number', req: true },
+      { key: 'income_at',   label: 'Дата',        type: 'date' },
+      { key: 'volume',      label: 'Объём тонн',  type: 'number' },
+      { key: 'comment',     label: 'Комментарий', type: 'text' },
+    ],
+    create_expense: [
+      { key: 'category',   label: 'Категория', type: 'select', opts: ['Топливо','Зарплата','Ремонт','ТО','Аренда','Прочие'], req: true },
+      { key: 'amount',     label: 'Сумма ₽',   type: 'number', req: true },
+      { key: 'expense_at', label: 'Дата',      type: 'date' },
+      { key: 'comment',    label: 'Комментарий', type: 'text' },
+    ],
+    create_hire: [
+      { key: 'client_name',   label: 'Клиент',         type: 'text',   req: true },
+      { key: 'volume_liters', label: 'Объём л',        type: 'number', req: true },
+      { key: 'amount_client', label: 'Сумма клиент ₽', type: 'number' },
+      { key: 'margin',        label: 'Маржа ₽',        type: 'number' },
+      { key: 'supplier_name', label: 'Поставщик',      type: 'text' },
+      { key: 'carrier_name',  label: 'Перевозчик',     type: 'text' },
+      { key: 'delivery_at',   label: 'Дата',           type: 'date' },
+    ],
+    create_debt: [
+      { key: 'debtor',      label: 'Должник',     type: 'text',   req: true },
+      { key: 'amount',      label: 'Сумма ₽',     type: 'number', req: true },
+      { key: 'type',        label: 'Тип',         type: 'select', opts: ['ДОЛГ','ОПЛАТА'] },
+      { key: 'recorded_at', label: 'Дата',        type: 'date' },
+      { key: 'comment',     label: 'Комментарий', type: 'text' },
+    ],
+    create_fleet_expense: [
+      { key: 'truck_name', label: 'Машина',    type: 'text',   req: true },
+      { key: 'category',   label: 'Категория', type: 'select', opts: ['Ремонт','ТО','Зарплата','Топливо','Резина','Страховка','Прочие'], req: true },
+      { key: 'amount',     label: 'Сумма ₽',   type: 'number', req: true },
+      { key: 'expense_at', label: 'Дата',      type: 'date' },
+      { key: 'comment',    label: 'Комментарий', type: 'text' },
+    ],
+  };
+
+  function _renderActionForm(m, i) {
+    const fields = _AI_ACTION_FIELDS[m.action] || [];
+    const data = m.actionData || {};
+    const today = new Date().toISOString().slice(0, 10);
+    const inpStyle = 'width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box';
+    const rows = fields.map(f => {
+      const id = `aif-${i}-${f.key}`;
+      const val = data[f.key] !== null && data[f.key] !== undefined ? data[f.key] : '';
+      let ctrl;
+      if (f.type === 'select') {
+        const opts = f.opts.map(o => `<option value="${o}"${String(val || f.opts[0]) === o ? ' selected' : ''}>${o}</option>`).join('');
+        ctrl = `<select id="${id}" style="${inpStyle}">${opts}</select>`;
+      } else if (f.type === 'date') {
+        ctrl = `<input id="${id}" type="date" value="${val || today}" style="${inpStyle}">`;
+      } else if (f.type === 'number') {
+        ctrl = `<input id="${id}" type="number" value="${val}" placeholder="${f.label}" style="${inpStyle}" step="any">`;
+      } else {
+        ctrl = `<input id="${id}" type="text" value="${esc(String(val))}" placeholder="${f.label}" style="${inpStyle}">`;
+      }
+      return `<div style="margin-bottom:7px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:3px">${esc(f.label)}${f.req ? '<span style="color:var(--red)"> *</span>' : ''}</div>
+        ${ctrl}
+      </div>`;
+    }).join('');
+    return `<div style="font-size:12px;color:var(--text2);margin-bottom:10px;font-style:italic;line-height:1.4">${esc(m.text)}</div>
+      ${rows}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="ai-confirm-${i}" onclick="window.confirmAiAction(${i})" style="flex:1;background:var(--accent);color:#000;border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer">✅ Записать</button>
+        <button onclick="window.cancelAiAction(${i})" style="background:var(--card);border:1px solid var(--border);color:var(--text2);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer">✕</button>
+      </div>`;
+  }
+
   function _renderAiPanel() {
     let panel = document.getElementById('ai-panel');
     if (!panel) {
@@ -2415,12 +2502,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 
     const msgs = _aiMessages.filter(m => !m.loading).map((m, i) => {
       const isUser = m.role === 'user';
-      const confirmBtns = m.action ? `<div style="display:flex;gap:8px;margin-top:10px">
-        <button id="ai-confirm-${i}" onclick="window.confirmAiAction(${i})" style="flex:1;background:var(--accent);color:#000;border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer">✅ Подтвердить</button>
-        <button onclick="window.cancelAiAction(${i})" style="flex:1;background:var(--card);border:1px solid var(--border);color:var(--text2);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer">Отмена</button>
-      </div>` : '';
+      const inner = m.action
+        ? _renderActionForm(m, i)
+        : esc(m.text);
+      const maxW = m.action ? '98%' : '86%';
+      const wrapStyle = m.action
+        ? 'background:rgba(196,180,84,.12);border:1px solid rgba(196,180,84,.4);'
+        : isUser ? 'background:var(--accent);' : 'background:var(--card2);';
       return `<div style="display:flex;flex-direction:column;align-items:${isUser ? 'flex-end' : 'flex-start'};gap:2px">
-        <div style="max-width:86%;background:${isUser ? 'var(--accent)' : m.action ? 'rgba(196,180,84,.12)' : 'var(--card2)'};${m.action ? 'border:1px solid rgba(196,180,84,.4);' : ''}color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word">${esc(m.text)}${confirmBtns}</div>
+        <div style="max-width:${maxW};${wrapStyle}color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:${m.action ? 'normal' : 'pre-wrap'};word-break:break-word">${inner}</div>
         <div style="font-size:10px;color:var(--text3);padding:0 4px">${_timeLabel(m.ts)}</div>
       </div>`;
     }).join('');
@@ -2508,15 +2598,27 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   window.confirmAiAction = async function(idx) {
     const msg = _aiMessages[idx];
     if (!msg || !msg.action) return;
+    // Collect edited form values from DOM
+    const fields = _AI_ACTION_FIELDS[msg.action] || [];
+    const data = Object.assign({}, msg.actionData || {});
+    fields.forEach(f => {
+      const el = document.getElementById(`aif-${idx}-${f.key}`);
+      if (!el) return;
+      const v = el.value.trim();
+      data[f.key] = f.type === 'number' ? (v !== '' ? parseFloat(v) : null) : (v || null);
+    });
     const btn = document.getElementById('ai-confirm-' + idx);
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
     try {
-      const res = await api.post('/api/ai/execute', { action: msg.action, data: msg.actionData });
+      const res = await api.post('/api/ai/execute', { action: msg.action, data });
       delete _aiMessages[idx].action; delete _aiMessages[idx].actionData;
       _aiMessages.push({ role: 'assistant', text: '✅ ' + (res.message || 'Записано!'), ts: Date.now() });
       _saveAiMessages(); _renderAiPanel();
       toast('✅ ' + (res.message || 'Записано'));
-    } catch (e) { toast('Ошибка: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = 'Подтвердить'; } }
+    } catch (e) {
+      toast('Ошибка: ' + e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '✅ Записать'; }
+    }
   };
 
   window.cancelAiAction = function(idx) {
@@ -3669,7 +3771,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const labels = { delivered: '✅ Доставлено!', cancelled: 'Рейс отменён' };
       toast(labels[status] || 'Статус обновлён');
       document.querySelector('[style*="position:fixed"][style*="z-index:9999"]')?.remove();
-      navigate('#base?tab=trips');
+      render(location.hash);
     } catch (e) { toast(e.message, 'error'); }
   };
 
