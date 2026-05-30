@@ -39,7 +39,7 @@ const api = (() => {
     }
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
-      const detail = Array.isArray(e.detail) ? e.detail.map(d => d.msg || JSON.stringify(d)).join('; ') : (e.detail || res.statusText);
+      const detail = Array.isArray(e.detail) ? e.detail.map(d => d.msg || JSON.stringify(d)).join('; ') : (e.detail || res.statusText || `Ошибка ${res.status}`);
       throw new Error(detail);
     }
     if (res.status === 204) return null;

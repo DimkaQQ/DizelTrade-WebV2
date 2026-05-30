@@ -473,7 +473,7 @@
     }, 30000);
   }
 
-  async function checkOnboarding() {
+  window.checkOnboarding = async function checkOnboarding() {
     if (localStorage.getItem('dtl_onboarding_dismissed')) return;
     let steps = [];
     try { steps = await api.get('/api/onboarding') || []; } catch(e) { return; }
@@ -663,6 +663,7 @@
         ${menuCard({ icon: '📊', label: 'Дашборд', onClick: "navigate('#dashboard')" })}
         ${menuCard({ icon: '🕐', label: 'История записей', sub: 'кто, что и когда', wide: true, onClick: "navigate('#logs')" })}
       </div>
+      <button onclick="window.showHelpGuide()" style="width:100%;margin-top:8px;background:none;border:1px solid var(--border);color:var(--text2);border-radius:10px;padding:11px;font-size:13px;cursor:pointer">📖 Справка / Инструкции</button>
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Главная';
@@ -742,6 +743,7 @@
       ${orderCard({ name: activeOrder.client_name, date: 'Приоритетный', delivered: activeOrder.delivered || 0, total: activeOrder.volume_ordered || 0, showFinancials: false, sites: activeOrder.sites || [] })}` : ''}
       ${sectionHeader('Последние рейсы')}
       ${dispatches.length ? dispatches.map(d => listItem({ icon: '🚚', iconBg: 'tr', title: `${d.truck_name || ''} → ${d.site_name || ''}`, sub: `${d.volume} куб · ${d.driver_name || ''}`, badgeHtml: badge('В пути', 'transit') })).join('') : emptyState('Нет рейсов')}
+      <button onclick="window.showHelpGuide()" style="width:100%;margin-top:8px;background:none;border:1px solid var(--border);color:var(--text2);border-radius:10px;padding:11px;font-size:13px;cursor:pointer">📖 Справка / Инструкции</button>
     </div>`;
     setPageContent(html, getTabBar());
     updateTabBar('home');
@@ -796,6 +798,7 @@
       ${pending.length ? `<div class="pending-block"><div class="pt">⏳ Требуют действия (${pending.length})</div>
         ${pending.slice(0, 3).map(r => pendingItem({ title: `ТТН ${r.ttn_number || ''} — ${r.source_custom || r.supplier_name || ''}`, sub: `${r.volume_nominal} куб`, btnLabel: 'Принял', onConfirmAttr: `onclick="confirmReceipt(${r.id})"` })).join('')}
       </div>` : emptyState('Нет ожидающих подтверждения')}
+      <button onclick="window.showHelpGuide()" style="width:100%;margin-top:8px;background:none;border:1px solid var(--border);color:var(--text2);border-radius:10px;padding:11px;font-size:13px;cursor:pointer">📖 Справка / Инструкции</button>
     </div>`;
     setPageContent(html, getTabBar());
     updateTabBar('home');
@@ -3454,7 +3457,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       toast('Токен создан — скопируйте сейчас!');
       const btn = document.getElementById('modal-create-token-btn');
       if (btn) btn.style.display = 'none';
-    } catch(e) { toast(e.message, 'error'); }
+    } catch(e) { toast(e.message || 'Ошибка создания токена', 'error'); }
   };
 
   window.revokeSession = async function(sessionId) {
