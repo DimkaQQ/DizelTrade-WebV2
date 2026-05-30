@@ -243,12 +243,13 @@
         </div>
         <div class="sidebar-nav">
           <div class="nav-item" data-page="home" onclick="navigate('#home')"><span class="ni-icon">🏠</span> Главная</div>
+          ${isPartner() ? `
           <div class="nav-group-label">Главное</div>
-          <div class="nav-item" data-page="dashboard" onclick="navigate('#dashboard')"><span class="ni-icon">📊</span> Дашборд</div>
+          <div class="nav-item" data-page="dashboard" onclick="navigate('#dashboard')"><span class="ni-icon">📊</span> Дашборд</div>` : ''}
+          <div class="nav-group-label">База</div>
           <div class="nav-item" data-page="base" onclick="navigate('#base')"><span class="ni-icon">⛽</span> База Тында<span class="ni-badge" id="sb-pending-badge" style="display:none">0</span></div>
-          ${!isOp() ? `<div class="nav-item" data-page="orders" onclick="navigate('#orders')"><span class="ni-icon">📦</span> Заказы клиентов</div>` : `<div class="nav-item nav-item-dim"><span class="ni-icon">📦</span> Заказы клиентов</div>`}
+          ${!isOp() ? `<div class="nav-item" data-page="orders" onclick="navigate('#orders')"><span class="ni-icon">📦</span> Заказы клиентов</div>` : ''}
           <div class="nav-item" data-page="base-dispatches" onclick="navigate('#base?tab=trips')"><span class="ni-icon">🚚</span> Журнал рейсов</div>
-
           ${isPartner() ? `
           <div class="nav-group-label">Финансы</div>
           <div class="nav-item" data-page="income" onclick="navigate('#income')"><span class="ni-icon">💰</span> Доходы</div>
@@ -259,23 +260,17 @@
           <div class="nav-item" data-page="hire" onclick="navigate('#hire')"><span class="ni-icon">🔁</span> Найм</div>
           ` : ''}
           ${isArtem() ? `
-          <div class="nav-group-label">Операционка</div>
+          <div class="nav-group-label">Автопарк</div>
           <div class="nav-item" data-page="fleet" onclick="navigate('#fleet')"><span class="ni-icon">🏗</span> Мой автопарк</div>
           ` : ''}
-
-          <div class="nav-group-label">Аналитика</div>
           ${isPartner() ? `
+          <div class="nav-group-label">Аналитика</div>
           <div class="nav-item" data-page="analytics" onclick="navigate('#analytics')"><span class="ni-icon">📈</span> Аналитика</div>
           <div class="nav-item" data-page="balance" onclick="navigate('#balance')"><span class="ni-icon">⚖️</span> Баланс</div>
           <div class="nav-item" data-page="annual" onclick="navigate('#annual')"><span class="ni-icon">📅</span> Год. итоги</div>
-          ` : `
-          <div class="nav-item nav-item-dim"><span class="ni-icon">📈</span> Аналитика</div>
-          <div class="nav-item nav-item-dim"><span class="ni-icon">⚖️</span> Баланс</div>
-          <div class="nav-item nav-item-dim"><span class="ni-icon">📅</span> Год. итоги</div>
-          `}
-
+          ` : ''}
           <div class="nav-group-label">Система</div>
-          ${!isOp() ? `<div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>` : `<div class="nav-item nav-item-dim"><span class="ni-icon">⚙️</span> Настройки</div>`}
+          ${isPartner() ? `<div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>` : ''}
         </div>
         <div class="sidebar-user">
           <div class="user-avatar">${getUserInitials().toUpperCase()}</div>
@@ -386,12 +381,12 @@
     if (h === 'expenses') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewExpenses(); return; }
     if (h === 'hire') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewHire(); return; }
     if (h === 'debts') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewDebts(); return; }
-    if (h === 'dashboard') { viewDashboard(); return; }
+    if (h === 'dashboard') { if (!isPartner()) { navigate('#home'); return; } viewDashboard(); return; }
     if (h === 'fleet') { viewFleet(); return; }
     if (h === 'analytics' || h.startsWith('analytics?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnalytics(); return; }
     if (h === 'balance' || h.startsWith('balance?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewBalance(); return; }
     if (h === 'annual' || h.startsWith('annual?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnnual(); return; }
-    if (h === 'settings') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewSettings(); return; }
+    if (h === 'settings') { if (!isPartner()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewSettings(); return; }
     if (h === 'logs') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewLogs(); return; }
     viewHome();
   }

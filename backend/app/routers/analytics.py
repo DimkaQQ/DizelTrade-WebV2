@@ -639,11 +639,14 @@ def get_balance_entries(
     user: dict = Depends(require_partner),
 ):
     """Get itemized balance entries for a given month/year."""
-    return query("""
-        SELECT * FROM balance_detail_entries
-        WHERE EXTRACT(YEAR FROM period) = %s AND EXTRACT(MONTH FROM period) = %s
-        ORDER BY category, object_name
-    """, (year, month))
+    try:
+        return query("""
+            SELECT * FROM balance_detail_entries
+            WHERE EXTRACT(YEAR FROM period) = %s AND EXTRACT(MONTH FROM period) = %s
+            ORDER BY category, object_name
+        """, (year, month))
+    except Exception:
+        return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
