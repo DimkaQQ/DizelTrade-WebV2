@@ -3615,9 +3615,11 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const wrap = document.getElementById('2fa-qr-wrap');
       const secWrap = document.getElementById('2fa-secret-wrap');
       if (wrap) {
-        // Use a QR code API — generate URL for Google Charts QR
-        const qrData = encodeURIComponent(d.uri);
-        wrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?data=${qrData}&size=180x180" style="border-radius:8px;border:1px solid var(--border)" alt="QR">`;
+        if (d.qr_svg) {
+          wrap.innerHTML = `<div style="display:inline-block;background:#fff;padding:8px;border-radius:8px;border:1px solid var(--border)">${d.qr_svg}</div>`;
+        } else {
+          wrap.innerHTML = `<div style="color:var(--text2);font-size:13px">QR-код недоступен — используйте ручной ввод секрета</div>`;
+        }
       }
       if (secWrap) {
         secWrap.style.display = 'block';

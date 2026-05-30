@@ -287,7 +287,17 @@ def setup_2fa(user: dict = Depends(get_current_user)):
 
     totp = pyotp.TOTP(secret)
     uri = totp.provisioning_uri(name=user["email"], issuer_name="DTL Management")
-    return {"secret": secret, "uri": uri}
+
+    qr_svg = None
+    try:
+        import segno, io
+        buf = io.StringIO()
+        segno.make(uri).save(buf, kind="svg", scale=5, border=2)
+        qr_svg = buf.getvalue()
+    except Exception:
+        pass
+
+    return {"secret": secret, "uri": uri, "qr_svg": qr_svg}
 
 
 @router.post("/2fa/enable", status_code=200)
