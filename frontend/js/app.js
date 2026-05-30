@@ -2371,7 +2371,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       { key: 'truck_name',    label: 'Машина',        type: 'text',              lookup: 'trucks' },
       { key: 'driver_name',   label: 'Водитель',      type: 'text',              lookup: 'drivers' },
       { key: 'volume',        label: 'Объём куб',     type: 'number', req: true },
-      { key: 'tariff',        label: 'Тариф ₽/куб',  type: 'number' },
+      { key: 'tariff',        label: 'Тариф ₽/куб',  type: 'display' },
       { key: 'dispatched_at', label: 'Дата',          type: 'date' },
       { key: 'ttn_number',    label: 'ТТН',           type: 'text' },
     ],
@@ -2440,14 +2440,20 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   window._updateAiTariff = async function(idx) {
     const siteName = document.getElementById(`aif-${idx}-site_name`)?.value?.trim();
     const owner = document.getElementById(`aif-${idx}-truck_owner`)?.value?.trim() || 'DTL';
-    const tariffEl = document.getElementById(`aif-${idx}-tariff`);
     const siteMap = (window._dtlLookup || {}).site_map || {};
     const siteId = siteMap[siteName];
-    if (!siteId || !tariffEl) return;
+    if (!siteId) return;
+    const hiddenEl = document.getElementById(`aif-${idx}-tariff`);
+    const displayEl = document.getElementById(`aif-${idx}-tariff-display`);
+    if (displayEl) displayEl.textContent = '...';
     try {
       const t = await api.get(`/api/tariffs?site_id=${siteId}&truck_owner=${encodeURIComponent(owner)}&latest=true`);
-      if (t?.amount) tariffEl.value = t.amount;
-    } catch(e) {}
+      if (hiddenEl) hiddenEl.value = t?.amount || '';
+      if (displayEl) displayEl.textContent = t?.amount ? formatNum(t.amount) + ' ₽' : '—';
+      if (displayEl) displayEl.style.color = t?.amount ? 'var(--text)' : 'var(--text2)';
+    } catch(e) {
+      if (displayEl) displayEl.textContent = '—';
+    }
   };
 
   function _renderActionForm(m, i) {
@@ -2460,7 +2466,10 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const id = `aif-${i}-${f.key}`;
       const val = data[f.key] !== null && data[f.key] !== undefined ? data[f.key] : '';
       let ctrl;
-      if (f.type === 'date') {
+      if (f.type === 'display') {
+        const displayVal = val ? formatNum(val) + ' ₽' : '—';
+        ctrl = `<input id="${id}" type="hidden" value="${val}"><div style="padding:11px 12px;background:var(--card2);border-radius:10px;font-size:15px;color:${val ? 'var(--text)' : 'var(--text2)'}" id="${id}-display">${displayVal}</div>`;
+      } else if (f.type === 'date') {
         ctrl = `<input id="${id}" type="date" value="${val || today}" style="${inpStyle}">`;
       } else if (f.type === 'number') {
         ctrl = `<input id="${id}" type="number" value="${val}" placeholder="0" style="${inpStyle}" step="any">`;
@@ -2608,7 +2617,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const el = document.getElementById(`aif-${idx}-${f.key}`);
       if (!el) return;
       const v = el.value.trim();
-      data[f.key] = f.type === 'number' ? (v !== '' ? parseFloat(v) : null) : (v || null);
+      data[f.key] = (f.type === 'number' || f.type === 'display') ? (v !== '' ? parseFloat(v) : null) : (v || null);
     });
     const btn = document.getElementById('ai-confirm-' + idx);
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
