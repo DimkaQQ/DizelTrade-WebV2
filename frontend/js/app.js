@@ -374,7 +374,7 @@
       viewBase(params.get('tab')); return;
     }
     if (h === 'base/receipts/new') { viewBaseReceiptNew(); return; }
-    if (h === 'base/dispatches/new') { viewBaseDispatchNew(); return; }
+    if (h === 'base/dispatches/new') { if (isOp()) { toast('Нет доступа', 'error'); navigate('#base?tab=trips'); return; } viewBaseDispatchNew(); return; }
     if (h === 'orders') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewOrders(); return; }
     if (h.startsWith('orders/')) { viewOrderDetail(h.split('/')[1]); return; }
     if (h === 'income') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewIncome(); return; }
@@ -764,7 +764,7 @@
       ${pendingItems ? `<div class="pending-block"><div class="pt">⏳ Требуют действия (${pending.length + dispatches.length})</div>${pendingItems}</div>` : ''}
       <div class="menu-grid">
         ${menuCard({ icon: '📥', label: 'Принял топливо', accent: true, onClick: "navigate('#base/receipts/new')" })}
-        ${menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" })}
+        ${!isOp() ? menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" }) : ''}
         ${menuCard({ icon: '🏗', label: 'Мой автопарк', onClick: "navigate('#fleet')" })}
         ${menuCard({ icon: '💵', label: 'Наличные Артёму', sub: 'мои отчёты', wide: true, onClick: "navigate('#base?tab=cash')" })}
       </div>
@@ -797,7 +797,7 @@
       </div>
       <div class="menu-grid">
         ${menuCard({ icon: '📥', label: 'Принял топливо', accent: true, onClick: "navigate('#base/receipts/new')" })}
-        ${menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" })}
+        ${!isOp() ? menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" }) : ''}
       </div>
       ${sectionHeader('Ожидают подтверждения')}
       ${pending.length ? `<div class="pending-block"><div class="pt">⏳ Требуют действия (${pending.length})</div>
@@ -868,7 +868,7 @@
       ${sectionHeader('Действия')}
       <div class="menu-grid">
         ${menuCard({ icon: '📥', label: 'Принял топливо', accent: true, onClick: "navigate('#base/receipts/new')" })}
-        ${menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" })}
+        ${!isOp() ? menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" }) : ''}
         ${!isOp() ? menuCard({ icon: '💸', label: 'Авансы', sub: 'топливо в долг', onClick: "navigate('#base?tab=advances')" }) : ''}
         ${menuCard({ icon: '🔋', label: 'Заправка', sub: 'своих машин', onClick: "navigate('#base?tab=own-usage')" })}
         ${!isOp() ? menuCard({ icon: '💵', label: 'Наличные', sub: 'Артёму', onClick: "navigate('#base?tab=cash')" }) : ''}
@@ -891,7 +891,7 @@
 
     } else if (activeTab === 'trips') {
       tabContent = `
-      <button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="navigate('#base/dispatches/new')">+ Рейс</button>
+      ${!isOp() ? `<button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="navigate('#base/dispatches/new')">+ Рейс</button>` : ''}
       ${dispatches.length ? dispatches.map(d => {
         const isDone = d.status === 'delivered';
         const isTransit = d.status === 'dispatched' || d.status === 'in_transit';
