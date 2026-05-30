@@ -600,7 +600,7 @@
     if (passEl) passEl.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
   }
 
-  window.doLogin = async function () {
+  window.doLogin = async function (totpCode) {
     const loginVal = (document.getElementById('l-login')?.value || '').trim();
     const passVal = document.getElementById('l-pass')?.value || '';
     const errEl = document.getElementById('login-err');
@@ -609,7 +609,11 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Вход...'; }
     document.querySelectorAll('.inp-err').forEach(e => e.classList.remove('inp-err'));
     try {
-      const d = await api.login(loginVal, passVal);
+      const d = await api.login(loginVal, passVal, totpCode || undefined);
+      if (d.requires_2fa) {
+        _show2FAStep(loginVal, passVal);
+        return;
+      }
       api.setToken(d.access_token);
       user = await api.me();
       window.currentUser = user;
@@ -618,11 +622,57 @@
       checkOnboarding();
     } catch (e) {
       if (errEl) { errEl.textContent = e.message || 'Ошибка входа'; errEl.style.display = 'block'; }
-      document.getElementById('l-login')?.classList.add('inp-err');
-      document.getElementById('l-pass')?.classList.add('inp-err');
+      if (!totpCode) {
+        document.getElementById('l-login')?.classList.add('inp-err');
+        document.getElementById('l-pass')?.classList.add('inp-err');
+      } else {
+        document.getElementById('l-totp')?.classList.add('inp-err');
+      }
     } finally {
       const b = document.getElementById('l-btn');
-      if (b) { b.disabled = false; b.textContent = 'Войти'; }
+      if (b) { b.disabled = false; b.textContent = totpCode ? 'Подтвердить' : 'Войти'; }
+    }
+  };
+
+  function _show2FAStep(loginVal, passVal) {
+    const card = document.querySelector('.login-card');
+    if (!card) return;
+    card.innerHTML = `
+      <div class="login-logo">DIZEL<span>TRADE</span></div>
+      <div class="login-sub">// двухфакторная аутентификация</div>
+      <div id="login-err" class="login-err" style="display:none"></div>
+      <div class="fsec">
+        <div class="fl">Код из приложения</div>
+        <input class="inp" type="text" id="l-totp" placeholder="000000" maxlength="6" autocomplete="one-time-code" inputmode="numeric">
+      </div>
+      <button class="btn-primary" id="l-btn" onclick="doLogin2FA('${loginVal}','${passVal}')">Подтвердить</button>`;
+    const totpEl = document.getElementById('l-totp');
+    if (totpEl) {
+      totpEl.focus();
+      totpEl.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin2FA(loginVal, passVal); });
+    }
+  }
+
+  window.doLogin2FA = async function(loginVal, passVal) {
+    const totpCode = (document.getElementById('l-totp')?.value || '').trim();
+    const errEl = document.getElementById('login-err');
+    const btn = document.getElementById('l-btn');
+    if (errEl) errEl.style.display = 'none';
+    if (btn) { btn.disabled = true; btn.textContent = 'Проверка...'; }
+    try {
+      const d = await api.login(loginVal, passVal, totpCode);
+      api.setToken(d.access_token);
+      user = await api.me();
+      window.currentUser = user;
+      setupLayout();
+      navigate('#home');
+      checkOnboarding();
+    } catch (e) {
+      if (errEl) { errEl.textContent = e.message || 'Неверный код'; errEl.style.display = 'block'; }
+      document.getElementById('l-totp')?.classList.add('inp-err');
+    } finally {
+      const b = document.getElementById('l-btn');
+      if (b) { b.disabled = false; b.textContent = 'Подтвердить'; }
     }
   };
 
@@ -2062,13 +2112,22 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
       ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
-      ${records.length ? records.map(r => `<div class="li">
+      ${records.length ? records.map(r => {
+        const rem = r.remaining != null ? parseFloat(r.remaining) : null;
+        const remStr = r.type === 'ДОЛГ' && rem != null ? (rem <= 0 ? '<span style="color:var(--green);font-size:11px">✅ Оплачен</span>' : `<span style="color:var(--orange);font-size:11px">Остаток: ${formatNum(rem)} ₽</span>`) : '';
+        const parentNote = r.parent_id ? `<span style="color:var(--text3);font-size:11px"> · к долгу #${r.parent_id}</span>` : '';
+        return `<div class="li">
         <div class="lic ${r.type === 'ДОЛГ' ? 'o' : 'g'}">📄</div>
-        <div class="lit"><div class="lim">${esc(r.debtor)} — ${formatNum(Math.abs(r.amount))} ₽</div><div class="lis">${[r.type === 'ОПЛАТА' ? 'Оплата' : '', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ')}</div></div>
+        <div class="lit">
+          <div class="lim">${esc(r.debtor)} — ${formatNum(Math.abs(r.amount))} ₽${parentNote}</div>
+          <div class="lis">${[r.type === 'ОПЛАТА' ? 'Оплата' : 'Долг', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ')}</div>
+          ${remStr}
+        </div>
         <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${isPartner() && r.type === 'ДОЛГ' && rem > 0 ? `<button onclick="window.payDebtModal(${r.id},'${esc(r.debtor)}',${rem})" style="background:rgba(52,199,89,.1);border:1px solid rgba(52,199,89,.4);color:var(--green);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">💳 Оплатить</button>` : ''}
           ${isPartner() ? `<button onclick="window.correctDebt(${r.id},'${r.recorded_at ? r.recorded_at.slice(0,10) : ''}',${r.amount||0},'${esc(r.type||'ДОЛГ')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
         </div>
-      </div>`).join('') : emptyState('Нет записей')}
+      </div>`;}).join('') : emptyState('Нет записей')}
       ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
       ${isPartner() ? printBtn('Распечатать / PDF') : ''}
     </div>`;
@@ -2113,6 +2172,24 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const comment = document.getElementById('m-note').value;
       await api.post('/api/debts', { recorded_at, debtor, type, amount, comment });
       toast('✅ Записано!');
+      viewDebts();
+    });
+  };
+
+  window.payDebtModal = function(debtId, debtor, remaining) {
+    showModal(`Оплата долга — ${debtor}`,`
+      ${formField('Дата оплаты', `<input class="inp" type="date" id="m-pay-at" value="${new Date().toISOString().slice(0,10)}">`)}
+      ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-pay-amount" placeholder="${remaining}" value="${remaining}">`)}
+      ${formField('Комментарий', `<input class="inp" type="text" id="m-pay-note" placeholder="Детали...">`)}
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">Остаток долга: ${formatNum(remaining)} ₽</div>
+    `, async () => {
+      const recorded_at = document.getElementById('m-pay-at').value;
+      const amount = parseFloat(document.getElementById('m-pay-amount').value);
+      const comment = document.getElementById('m-pay-note').value;
+      if (!amount || amount <= 0) throw new Error('Введите сумму');
+      if (amount > remaining + 0.01) throw new Error(`Сумма больше остатка долга (${formatNum(remaining)} ₽)`);
+      await api.post('/api/debts', { recorded_at, debtor, type: 'ОПЛАТА', amount, comment, parent_id: debtId });
+      toast('✅ Оплата записана!');
       viewDebts();
     });
   };
@@ -2802,11 +2879,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     let aiUsage = null;
     let apiTokens = [];
     let sessions = [];
+    let twoFAStatus = { totp_enabled: false };
+    let suspiciousLogins = [];
     if (isPartner()) {
       try { aiUsage = await api.get('/api/ai/usage'); } catch(e) {}
       try { apiTokens = await api.get('/api/tokens') || []; } catch(e) {}
       try { sessions = await api.get('/api/auth/sessions') || []; } catch(e) {}
     }
+    try { twoFAStatus = await api.get('/api/auth/2fa/status'); } catch(e) {}
+    try { suspiciousLogins = await api.get('/api/auth/suspicious-logins') || []; } catch(e) {}
 
     const getSetting = (key, def) => { const s = settings.find(x => x.key === key); return s ? s.value : def; };
 
@@ -2949,6 +3030,25 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <button onclick="window.createApiTokenModal()" class="btn-primary" style="width:100%;margin-top:10px">+ Новый токен</button>
       </div>
       ` : ''}
+
+      ${sectionHeader('Двухфакторная аутентификация')}
+      <div class="pi">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0">
+          <div>
+            <div style="font-size:13px;font-weight:600">TOTP (Google Authenticator)</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">${twoFAStatus.totp_enabled ? '✅ Включена' : 'Выключена — вход только по паролю'}</div>
+          </div>
+          ${twoFAStatus.totp_enabled
+            ? `<button onclick="window.disable2FA()" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.3);color:var(--red);border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer">Отключить</button>`
+            : `<button onclick="window.setup2FA()" class="btn-primary" style="padding:6px 14px;font-size:12px">Включить</button>`
+          }
+        </div>
+        ${suspiciousLogins.length > 0 ? `
+        <div style="margin-top:8px;padding:8px;background:rgba(255,59,48,.08);border-radius:8px;border:1px solid rgba(255,59,48,.2)">
+          <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px">⚠️ Подозрительные входы</div>
+          ${suspiciousLogins.slice(0,3).map(sl => `<div style="font-size:11px;color:var(--text2);padding:3px 0">${new Date(sl.detected_at).toLocaleString('ru')} · IP: ${esc(sl.ip||'?')} (было: ${esc(sl.prev_ip||'?')})</div>`).join('')}
+        </div>` : ''}
+      </div>
 
       ${isPartner() ? `
       ${sectionHeader('Активные сессии')}
@@ -3439,6 +3539,59 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       toast('Сессия завершена');
       viewSettings();
     } catch(e) { toast(e.message, 'error'); }
+  };
+
+  window.setup2FA = function() {
+    showModal('Включить двухфакторную аутентификацию',
+      `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Нажмите "Получить QR-код", затем отсканируйте его в Google Authenticator и введите код для подтверждения.</div>
+       <div id="2fa-qr-wrap" style="text-align:center;margin-bottom:12px"></div>
+       <div id="2fa-secret-wrap" style="display:none;margin-bottom:8px;font-size:12px;color:var(--text2)"></div>
+       ${formField('Код из приложения', '<input class="inp" id="m-totp-code" placeholder="000000" maxlength="6" inputmode="numeric">')}
+       <button class="btn-secondary" style="width:100%;margin-bottom:8px" id="2fa-get-qr-btn" onclick="window._get2FAQr()">Получить QR-код</button>`,
+      async () => {
+        const code = document.getElementById('m-totp-code')?.value?.trim();
+        if (!code) throw new Error('Введите код из приложения');
+        await api.post('/api/auth/2fa/enable', { code });
+        toast('✅ 2FA включена');
+        viewSettings();
+      }
+    );
+  };
+
+  window._get2FAQr = async function() {
+    const btn = document.getElementById('2fa-get-qr-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const d = await api.post('/api/auth/2fa/setup', {});
+      const wrap = document.getElementById('2fa-qr-wrap');
+      const secWrap = document.getElementById('2fa-secret-wrap');
+      if (wrap) {
+        // Use a QR code API — generate URL for Google Charts QR
+        const qrData = encodeURIComponent(d.uri);
+        wrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?data=${qrData}&size=180x180" style="border-radius:8px;border:1px solid var(--border)" alt="QR">`;
+      }
+      if (secWrap) {
+        secWrap.style.display = 'block';
+        secWrap.innerHTML = `Или введите вручную: <code style="color:var(--accent);font-weight:700">${d.secret}</code>`;
+      }
+    } catch(e) {
+      toast(e.message || 'Ошибка', 'error');
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  window.disable2FA = function() {
+    showModal('Отключить двухфакторную аутентификацию',
+      `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Подтвердите ваш пароль для отключения 2FA.</div>
+       ${formField('Пароль', '<input class="inp" type="password" id="m-2fa-pass" autocomplete="current-password">')}`,
+      async () => {
+        const password = document.getElementById('m-2fa-pass')?.value || '';
+        if (!password) throw new Error('Введите пароль');
+        await api.post('/api/auth/2fa/disable', { password });
+        toast('2FA отключена');
+        viewSettings();
+      }
+    );
   };
 
   // ── Balance (Phase 3) ─────────────────────────────────────────────────────
