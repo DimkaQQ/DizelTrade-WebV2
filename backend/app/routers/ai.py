@@ -228,6 +228,22 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
 Финансовые данные (income_records, company_expenses, debt_records, hire_deliveries) — НЕДОСТУПНЫ, не отвечай по ним.
 """ if is_artem else ""
 
+    # Fetch real names for AI context (trucks, sites, suppliers, carriers)
+    lookup_hint = ""
+    if allowed_actions:
+        try:
+            truck_rows = query("SELECT name, owner FROM trucks WHERE status = 'active' OR status IS NULL ORDER BY name")
+            site_rows = query("SELECT name FROM sites WHERE is_active = TRUE ORDER BY name")
+            supplier_rows = query("SELECT name FROM suppliers ORDER BY name LIMIT 20")
+            carrier_rows_db = query("SELECT name FROM carriers ORDER BY name LIMIT 20")
+            trucks_str = ", ".join(f"{r['name']} ({r['owner']})" for r in truck_rows) or "нет"
+            sites_str = ", ".join(r["name"] for r in site_rows) or "нет"
+            suppliers_str = ", ".join(r["name"] for r in supplier_rows) or "нет"
+            carriers_str = ", ".join(r["name"] for r in carrier_rows_db) or "нет"
+            lookup_hint = f"\nМашины в системе: {trucks_str}\nУчастки: {sites_str}\nПоставщики: {suppliers_str}\nПеревозчики: {carriers_str}"
+        except Exception:
+            pass
+
     if allowed_actions:
         action_list_partner = """- create_fuel_receipt: принять топливо на базу. data: {received_at, supplier_name, volume_nominal (куб, обязательно), ttn_number, notes}
 - create_dispatch: рейс с базы на участок. data: {dispatched_at, truck_name, driver_name, site_name (обязательно), volume (куб, обязательно), tariff, ttn_number, notes}
@@ -261,9 +277,13 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
 - Нет критичного поля (volume/amount/site_name) → задай уточняющий вопрос текстом
 - Поле null если неизвестно
 - description пиши конкретно: "Принято 15 куб от Камыша, ТТН-005" / "Рейс 12 куб → Дипкун, КА777" / "Доход 500 000 ₽ от Луи Витона"
+
+СОПОСТАВЛЕНИЕ ИМЁН: используй ТОЛЬКО реальные данные из системы ниже. Если пользователь написал похожее название (МАН→МАН, Дипкун→Дипкун ближний) — используй точное имя из списка. Если не можешь сопоставить — спроси уточнение и укажи доступные варианты.
+{lookup_hint}
 """
     else:
         write_block = "\nЗапись данных недоступна для вашей роли.\n"
+        lookup_hint = ""
 
     today_str = datetime.now().strftime("%Y-%m-%d")
     system_prompt = f"""Ты ИИ-ассистент системы управления DTL (Diesel Trade Logistic). Сегодня {today_str}.
