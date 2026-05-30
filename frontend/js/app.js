@@ -508,10 +508,22 @@
   }
 
   window.completeOnboardingStep = async function(stepKey) {
-    try {
-      await api.post('/api/onboarding/' + stepKey, {});
-      navigate('#home');
-    } catch(e) {}
+    try { await api.post('/api/onboarding/' + stepKey, {}); } catch(e) {}
+    const routes = {
+      setup_clients:  '#settings',
+      add_trucks:     '#fleet',
+      create_order:   '#orders',
+      view_analytics: '#analytics',
+      invite_team:    '#settings',
+      add_own_trucks: '#fleet',
+      first_trip:     '#base/dispatches/new',
+      check_balance:  '#base',
+      cash_report:    '#base?tab=cash',
+      first_receipt:  '#base/receipts/new',
+      first_dispatch: '#base/dispatches/new',
+      check_stock:    '#base',
+    };
+    navigate(routes[stepKey] || '#home');
   };
 
   function setupLayout() {

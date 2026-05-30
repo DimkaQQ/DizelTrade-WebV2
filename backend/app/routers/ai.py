@@ -195,6 +195,23 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
     if not body.question or len(body.question) > 500:
         raise HTTPException(status_code=400, detail="Вопрос слишком длинный")
 
+    # Enforce daily cost limit (partners only)
+    if user.get("role") == "partner":
+        try:
+            limit_row = query_one("SELECT value FROM settings WHERE key = 'ai_daily_limit_rub'")
+            daily_limit = float(limit_row["value"]) if limit_row else 500.0
+            usage_row = query_one(
+                "SELECT COALESCE(SUM(tokens_used), 0) AS tokens FROM ai_interactions WHERE DATE(created_at) = CURRENT_DATE"
+            )
+            today_tokens = int(usage_row["tokens"] if usage_row else 0)
+            today_cost = today_tokens / 1000 * 4.5
+            if today_cost >= daily_limit:
+                raise HTTPException(status_code=429, detail=f"Дневной лимит AI исчерпан ({daily_limit:.0f} ₽). Сбросится завтра.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
     role = user.get("role", "")
     is_artem = role == "artem"
 
@@ -392,7 +409,7 @@ def ai_execute(body: ExecuteRequest, user: dict = Depends(require_partner)):
             truck_id = _resolve_truck(d.get("truck_name", ""))
             execute(
                 "INSERT INTO fleet_expenses (truck_id, expense_at, category, amount, comment) VALUES (%s,%s,%s,%s,%s)",
-                (d.get("expense_at", today), truck_id, d.get("category", "Прочие"), float(d.get("amount", 0)), d.get("comment"))
+                (truck_id, d.get("expense_at", today), d.get("category", "Прочие"), float(d.get("amount", 0)), d.get("comment"))
             )
             return {"ok": True, "message": f"Расход на {d.get('truck_name')} записан"}
 
