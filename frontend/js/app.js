@@ -2492,16 +2492,12 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const inner = m.action
         ? _renderActionForm(m, i)
         : esc(m.text);
-      if (m.action) {
-        return `<div style="display:flex;flex-direction:column;align-items:stretch;gap:2px">
-          <div style="background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:16px;font-size:14px;line-height:1.55">${inner}</div>
-          <div style="font-size:10px;color:var(--text3);padding:0 4px">${_timeLabel(m.ts)}</div>
-        </div>`;
-      }
-      const maxW = '86%';
-      const wrapStyle = isUser ? 'background:var(--accent);' : 'background:var(--card2);';
+      const maxW = m.action ? '98%' : '86%';
+      const wrapStyle = m.action
+        ? 'background:rgba(196,180,84,.12);border:1px solid rgba(196,180,84,.4);'
+        : isUser ? 'background:var(--accent);' : 'background:var(--card2);';
       return `<div style="display:flex;flex-direction:column;align-items:${isUser ? 'flex-end' : 'flex-start'};gap:2px">
-        <div style="max-width:${maxW};${wrapStyle}color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word">${inner}</div>
+        <div style="max-width:${maxW};${wrapStyle}color:${isUser ? '#000' : 'var(--text)'};border-radius:${isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px'};padding:10px 14px;font-size:14px;line-height:1.55;white-space:${m.action ? 'normal' : 'pre-wrap'};word-break:break-word">${inner}</div>
         <div style="font-size:10px;color:var(--text3);padding:0 4px">${_timeLabel(m.ts)}</div>
       </div>`;
     }).join('');
