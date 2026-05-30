@@ -3069,7 +3069,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
           </div>
           ${twoFAStatus.totp_enabled
             ? `<button onclick="window.disable2FA()" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.3);color:var(--red);border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer">Отключить</button>`
-            : `<button onclick="window.setup2FA()" class="btn-primary" style="padding:6px 14px;font-size:12px">Включить</button>`
+            : `<button onclick="window.setup2FA()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">Включить</button>`
           }
         </div>
         ${suspiciousLogins.length > 0 ? `
