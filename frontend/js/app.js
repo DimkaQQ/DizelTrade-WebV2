@@ -2000,6 +2000,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
             <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
               ${d.margin_pct ? `<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:${marginColor}">${d.margin_pct}%</div><div style="font-size:11px;color:var(--text2)">маржа</div></div>` : ''}
               ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer">✏ Испр.</button>` : ''}
+              ${isPartner() && !d.is_closed ? `<button onclick="window.closeHireDeal(${d.id},'${esc(d.client_name||'')}')" style="background:rgba(52,199,89,.1);border:1px solid rgba(52,199,89,.3);color:var(--green);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✅ Закрыть</button>` : (d.is_closed ? badge('Закрыто','done') : '')}
             </div>
           </div>
           ${d.volume_liters ? `<div style="font-size:15px;font-weight:600;margin-bottom:10px">📦 ${formatNum(d.volume_liters)} л${volCub ? ' <span style="font-size:13px;color:var(--text2);font-weight:400">(' + volCub + ' куб)</span>' : ''}</div>` : ''}
@@ -2040,6 +2041,19 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         viewHire();
       },
     });
+  };
+
+  window.closeHireDeal = function(id, clientName) {
+    showModal(`Закрыть сделку — ${clientName}`,
+      `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Отметить сделку как закрытую (клиент оплатил сразу, долг не фиксируется).</div>
+       ${formField('Комментарий', '<input class="inp" id="m-close-comment" placeholder="Например: оплата наличными на месте">')}`,
+      async () => {
+        const comment = document.getElementById('m-close-comment')?.value || '';
+        await api.post('/api/hire/' + id + '/close', { comment });
+        toast('✅ Сделка закрыта');
+        viewHire();
+      }
+    );
   };
 
   window.showHireModal = async function () {
@@ -2100,12 +2114,31 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       }
     } catch (e) {}
 
+    let clientDebts = [];
+    try { clientDebts = await api.get('/api/analytics/client-debts') || []; } catch(e) {}
+
     const balanceEntries = Object.entries(balances);
+
+    const clientDebtsSection = clientDebts.filter(d => d.balance !== 0).length ? `
+      ${sectionHeader('Задолженность по найму (факт)')}
+      <div class="bb">
+        ${clientDebts.filter(d => d.balance !== 0).map(d => `
+          <div class="bbr" style="flex-direction:column;align-items:flex-start;padding:10px 0;gap:3px">
+            <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
+              <div style="font-size:13px;font-weight:600">${esc(d.client_name)}</div>
+              <div style="font-size:14px;font-weight:800;color:${d.balance > 0 ? 'var(--orange)' : 'var(--green)'}">${d.balance > 0 ? '+' : ''}${formatNum(Math.round(d.balance))} ₽</div>
+            </div>
+            ${d.balance > 0 ? `<div style="font-size:11px;color:var(--text2)">Топливо: ${formatNum(Math.round(d.fuel_debt))} · Доставка: ${formatNum(Math.round(d.delivery_debt))} · Выставлено: ${formatNum(Math.round(d.billed_total))} · Оплачено: ${formatNum(Math.round(d.paid_total))}</div>` : '<div style="font-size:11px;color:var(--green)">✅ Оплачено</div>'}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
+      ${clientDebtsSection}
       ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
       ${records.length ? records.map(r => {
         const rem = r.remaining != null ? parseFloat(r.remaining) : null;
@@ -3019,6 +3052,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
             <div>
               <div style="font-weight:600;font-size:13px">${esc(t.name)}</div>
               <div style="font-size:11px;color:var(--text2)">${t.last_used_at ? 'Последнее: ' + new Date(t.last_used_at).toLocaleDateString('ru') : 'Не использовался'} · ${t.is_active ? 'Активен' : 'Отозван'}</div>
+              <div style="font-size:11px;color:var(--text2)">Скоуп: ${t.scope || 'full'} · Лимит: ${t.daily_cost_limit_usd ? t.daily_cost_limit_usd + ' $/день' : 'без лимита'}</div>
             </div>
             ${t.is_active ? '<button onclick="window.revokeApiToken(' + t.id + ')" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.3);color:var(--red);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer">Отозвать</button>' : ''}
           </div>`).join('') : '<div style="color:var(--text2);font-size:13px;padding:8px 0">Нет активных токенов</div>'}
@@ -3500,6 +3534,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="modal-title">Новый API токен</div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Название токена</label><input id="token-name-inp" class="inp" placeholder="Например: Курсор MCP"></div>
+          <div class="form-group"><label class="form-label">Скоуп</label><div class="chips" data-group="tk-scope"><div class="chip sel" data-val="full">Full</div><div class="chip" data-val="write">Write</div><div class="chip" data-val="read">Read only</div></div></div>
+          <div class="form-group"><label class="form-label">Лимит расходов</label><input class="inp" type="number" id="m-tk-limit" placeholder="Лимит $/день (необязательно)" step="0.01"></div>
           <div id="token-result" style="display:none;margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;word-break:break-all;font-size:12px;font-family:monospace;color:var(--accent)"></div>
         </div>
         <div class="modal-footer-btns">
@@ -3515,7 +3551,11 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     const name = document.getElementById('token-name-inp')?.value?.trim();
     if (!name) { toast('Введите название', 'error'); return; }
     try {
-      const res = await api.post('/api/tokens', { name });
+      const scopeEl = document.querySelector('.chips[data-group="tk-scope"] .chip.sel');
+      const scope = scopeEl ? scopeEl.getAttribute('data-val') : 'full';
+      const limitVal = document.getElementById('m-tk-limit')?.value;
+      const daily_cost_limit_usd = limitVal ? parseFloat(limitVal) : null;
+      const res = await api.post('/api/tokens', { name, scope, daily_cost_limit_usd });
       const el = document.getElementById('token-result');
       if (el) {
         el.style.display = 'block';
@@ -3807,7 +3847,17 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="bbr"><div class="bbl">Расходы топливо</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_fuel : 0)} ₽</div></div>
         <div class="bbr"><div class="bbl">Расходы перевозчики</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_carriers : 0)} ₽</div></div>
         <div class="bbr"><div class="bbl">Общие расходы</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_general : 0)} ₽</div></div>
+        ${data ? (() => {
+          const marginFleet = (data.revenue_fleet || 0) - (data.expenses_fleet || 0);
+          const marginHire = (data.revenue_hire || 0) - (data.hire_supplier_cost || data.expenses_carriers || 0);
+          const expGen = data.expenses_general || 0;
+          return `
+        <div class="bbr" style="background:var(--card2);border-radius:8px;margin-top:4px"><div class="bbl">Маржа свой парк</div><div class="bbv" style="color:var(--green)">${fmt(marginFleet)} ₽</div></div>
+        <div class="bbr" style="background:var(--card2);border-radius:8px"><div class="bbl">Маржа найм</div><div class="bbv" style="color:var(--green)">${fmt(marginHire)} ₽</div></div>
+          `;
+        })() : ''}
         <div class="bbt"><span>Чистая прибыль</span><span style="color:var(--green)">${fmt(profit)} ₽</span></div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">Формула: Маржа парк + Маржа найм − Общие расходы</div>
       </div>
 
       ${sectionHeader('Клиенты ' + selYear)}
