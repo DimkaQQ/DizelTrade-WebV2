@@ -2389,7 +2389,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       { key: 'comment',     label: 'Комментарий', type: 'text' },
     ],
     create_expense: [
-      { key: 'category',   label: 'Категория', type: 'select', opts: ['Топливо','Зарплата','Ремонт','ТО','Аренда','Прочие'], req: true },
+      { key: 'category',   label: 'Категория', type: 'text',   opts: ['Топливо','Зарплата','Ремонт','ТО','Аренда','Прочие'], req: true },
       { key: 'amount',     label: 'Сумма ₽',   type: 'number', req: true },
       { key: 'expense_at', label: 'Дата',      type: 'date' },
       { key: 'comment',    label: 'Комментарий', type: 'text' },
@@ -2404,15 +2404,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       { key: 'delivery_at',   label: 'Дата',           type: 'date' },
     ],
     create_debt: [
-      { key: 'debtor',      label: 'Должник',     type: 'text',   req: true },
+      { key: 'debtor',      label: 'Должник',     type: 'text',   req: true,  lookup: 'clients' },
       { key: 'amount',      label: 'Сумма ₽',     type: 'number', req: true },
-      { key: 'type',        label: 'Тип',         type: 'select', opts: ['ДОЛГ','ОПЛАТА'] },
+      { key: 'type',        label: 'Тип',         type: 'text',   opts: ['ДОЛГ','ОПЛАТА'] },
       { key: 'recorded_at', label: 'Дата',        type: 'date' },
       { key: 'comment',     label: 'Комментарий', type: 'text' },
     ],
     create_fleet_expense: [
       { key: 'truck_name', label: 'Машина',    type: 'text',   req: true,  lookup: 'trucks' },
-      { key: 'category',   label: 'Категория', type: 'select', opts: ['Ремонт','ТО','Зарплата','Топливо','Резина','Страховка','Прочие'], req: true },
+      { key: 'category',   label: 'Категория', type: 'text',   opts: ['Ремонт','ТО','Зарплата','Топливо','Резина','Страховка','Прочие'], req: true },
       { key: 'amount',     label: 'Сумма ₽',   type: 'number', req: true },
       { key: 'expense_at', label: 'Дата',      type: 'date' },
       { key: 'comment',    label: 'Комментарий', type: 'text' },
@@ -2426,40 +2426,49 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     try { window._dtlLookup = await api.get('/api/ai/lookup'); } catch(e) { window._dtlLookup = {}; }
   }
 
+  const _ACTION_LABELS = {
+    create_dispatch:     '🚚 Рейс на участок',
+    create_fuel_receipt: '⛽ Приёмка топлива',
+    create_income:       '💰 Доход',
+    create_expense:      '📋 Расход',
+    create_hire:         '🔁 Найм',
+    create_debt:         '📄 Долг',
+    create_fleet_expense:'🔧 Расход по машине',
+  };
+
   function _renderActionForm(m, i) {
     const fields = _AI_ACTION_FIELDS[m.action] || [];
     const data = m.actionData || {};
     const today = new Date().toISOString().slice(0, 10);
-    const inpStyle = 'width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box';
+    const inpStyle = 'width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:15px;outline:none;box-sizing:border-box;font-family:inherit';
+    const title = _ACTION_LABELS[m.action] || 'Запись';
     const rows = fields.map(f => {
       const id = `aif-${i}-${f.key}`;
       const val = data[f.key] !== null && data[f.key] !== undefined ? data[f.key] : '';
       let ctrl;
-      if (f.type === 'select') {
-        const opts = f.opts.map(o => `<option value="${o}"${String(val || f.opts[0]) === o ? ' selected' : ''}>${o}</option>`).join('');
-        ctrl = `<select id="${id}" style="${inpStyle}">${opts}</select>`;
-      } else if (f.type === 'date') {
+      if (f.type === 'date') {
         ctrl = `<input id="${id}" type="date" value="${val || today}" style="${inpStyle}">`;
       } else if (f.type === 'number') {
-        ctrl = `<input id="${id}" type="number" value="${val}" placeholder="${f.label}" style="${inpStyle}" step="any">`;
-      } else if (f.lookup) {
-        const dlId = `${id}-dl`;
-        const suggestions = ((window._dtlLookup || {})[f.lookup] || []);
-        const dlOpts = suggestions.map(n => `<option value="${esc(n)}">`).join('');
-        ctrl = `<datalist id="${dlId}">${dlOpts}</datalist><input id="${id}" type="text" list="${dlId}" value="${esc(String(val))}" placeholder="${f.label}" autocomplete="off" style="${inpStyle}">`;
+        ctrl = `<input id="${id}" type="number" value="${val}" placeholder="0" style="${inpStyle}" step="any">`;
       } else {
-        ctrl = `<input id="${id}" type="text" value="${esc(String(val))}" placeholder="${f.label}" style="${inpStyle}">`;
+        const dlId = `${id}-dl`;
+        const fromLookup = f.lookup ? ((window._dtlLookup || {})[f.lookup] || []) : [];
+        const fromOpts = f.opts || [];
+        const allOpts = [...new Set([...fromOpts, ...fromLookup])];
+        const dlOpts = allOpts.map(n => `<option value="${esc(n)}">`).join('');
+        ctrl = `<datalist id="${dlId}">${dlOpts}</datalist><input id="${id}" type="text" list="${dlId}" value="${esc(String(val))}" placeholder="${f.label}" autocomplete="off" style="${inpStyle}">`;
       }
-      return `<div style="margin-bottom:7px">
-        <div style="font-size:11px;color:var(--text2);margin-bottom:3px">${esc(f.label)}${f.req ? '<span style="color:var(--red)"> *</span>' : ''}</div>
+      const missing = f.req && !val;
+      return `<div style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:600;color:${missing ? 'var(--red)' : 'var(--text2)'};margin-bottom:5px">${esc(f.label)}${f.req ? ' *' : ''}</div>
         ${ctrl}
       </div>`;
     }).join('');
-    return `<div style="font-size:12px;color:var(--text2);margin-bottom:10px;font-style:italic;line-height:1.4">${esc(m.text)}</div>
+    return `<div style="font-size:15px;font-weight:700;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)">${title}</div>
       ${rows}
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button id="ai-confirm-${i}" onclick="window.confirmAiAction(${i})" style="flex:1;background:var(--accent);color:#000;border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer">✅ Записать</button>
-        <button onclick="window.cancelAiAction(${i})" style="background:var(--card);border:1px solid var(--border);color:var(--text2);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer">✕</button>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button id="ai-confirm-${i}" onclick="window.confirmAiAction(${i})" style="flex:1;background:var(--accent);color:#000;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;cursor:pointer">Записать</button>
+        <button onclick="window.cancelAiAction(${i})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:10px;padding:13px 16px;font-size:15px;cursor:pointer">✕</button>
       </div>`;
   }
 
