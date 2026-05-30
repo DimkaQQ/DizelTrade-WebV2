@@ -850,11 +850,16 @@
       ${dispatches.length ? dispatches.map(d => {
         const isDone = d.status === 'delivered';
         const isTransit = d.status === 'dispatched' || d.status === 'in_transit';
-        return `<div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer"><div class="li">
+        const isCancelled = d.status === 'cancelled';
+        const statusBadge = isDone
+          ? (d.paid ? `<span style="font-size:10px;color:var(--accent);font-weight:600">✅ Оплачено</span>` : badge('Доставлено', 'done'))
+          : isCancelled ? badge('Отменён', 'cancelled')
+          : badge('В пути', 'transit');
+        return `<div onclick="window.showDispatchDetail(${d.id})" style="cursor:pointer;opacity:${isCancelled ? '0.5' : '1'}"><div class="li">
           <div class="lic tr">🚚</div>
           <div class="lit"><div class="lim">${esc((d.truck_name || ''))} → ${esc(d.site_name || '')}</div><div class="lis">${esc(d.volume + ' куб · ' + (d.driver_name || ''))}${d.tariff ? ' · ' + formatNum(d.tariff) + ' ₽' : ''}</div></div>
           <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-            ${isDone ? (d.paid ? `<span style="font-size:10px;color:var(--accent);font-weight:600">✅ Оплачено</span>` : badge('Доставлено', 'done')) : badge('В пути', 'transit')}
+            ${statusBadge}
             ${isTransit ? `<button class="prb" onclick="event.stopPropagation();confirmDispatch(${d.id},this)">Доставлено</button>` : ''}
           </div>
         </div></div>`;
