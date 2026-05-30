@@ -17,6 +17,7 @@ class DebtCreate(BaseModel):
     amount: Optional[float] = None
     type: str = "ДОЛГ"  # ДОЛГ | ОПЛАТА
     comment: Optional[str] = None
+    parent_id: Optional[int] = None  # for ОПЛАТА: link to the ДОЛГ being paid
 
 
 @router.get("/debts")
@@ -42,7 +43,13 @@ def list_debts(
     where = " AND ".join(parts)
 
     records = query(f"""
-        SELECT dr.*, u.name AS entered_by_name
+        SELECT dr.*, u.name AS entered_by_name,
+               CASE WHEN dr.type = 'ДОЛГ' THEN
+                   dr.amount - COALESCE((
+                       SELECT SUM(p.amount) FROM debt_records p
+                       WHERE p.parent_id = dr.id AND p.type = 'ОПЛАТА'
+                   ), 0)
+               ELSE NULL END AS remaining
         FROM debt_records dr
         LEFT JOIN users u ON u.id = dr.entered_by
         WHERE {where}
@@ -74,11 +81,18 @@ def get_debt(debt_id: int, user: dict = Depends(require_partner)):
 def create_debt(body: DebtCreate, user: dict = Depends(require_partner)):
     if body.type not in ("ДОЛГ", "ОПЛАТА"):
         raise HTTPException(status_code=400, detail="type must be ДОЛГ or ОПЛАТА")
+    # Validate parent_id if provided: must be a ДОЛГ, same debtor
+    if body.parent_id:
+        parent = query_one("SELECT id, debtor, type FROM debt_records WHERE id = %s", (body.parent_id,))
+        if not parent:
+            raise HTTPException(status_code=400, detail="Родительский долг не найден")
+        if parent["type"] != "ДОЛГ":
+            raise HTTPException(status_code=400, detail="parent_id должен указывать на запись типа ДОЛГ")
     with get_db() as conn:
         row = execute("""
-            INSERT INTO debt_records (recorded_at, debtor, amount, type, comment, entered_by)
-            VALUES (%s, %s, %s, %s, %s, %s) RETURNING *
-        """, (body.recorded_at, body.debtor, body.amount, body.type, body.comment, user["id"]),
+            INSERT INTO debt_records (recorded_at, debtor, amount, type, comment, entered_by, parent_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (body.recorded_at, body.debtor, body.amount, body.type, body.comment, user["id"], body.parent_id),
             conn=conn, returning=True)
         log_action(conn, "debt_records", row["id"], "INSERT", user["id"], new_data=dict(row))
         conn.commit()

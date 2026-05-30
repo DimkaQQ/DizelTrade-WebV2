@@ -20,7 +20,7 @@ def _resolve_api_token(raw_token: str):
     """Resolve a dtl_ prefixed API token to a user dict."""
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     row = query_one(
-        """SELECT u.id, u.name, u.email, u.role, u.is_active
+        """SELECT u.id, u.name, u.email, u.role, u.is_active, at2.scope AS _token_scope
            FROM api_tokens at2
            JOIN users u ON u.id = at2.created_by
            WHERE at2.token_hash = %s AND at2.is_active = TRUE""",
@@ -73,4 +73,11 @@ def require_not_operator(user: dict = Depends(get_current_user)) -> dict:
 def require_artem_or_partner(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] == "operator":
         raise HTTPException(status_code=403, detail="Access denied")
+    return user
+
+
+def require_write_scope(user: dict = Depends(get_current_user)) -> dict:
+    """Deny access if the token has read-only scope."""
+    if user.get("_token_scope", "full") == "read":
+        raise HTTPException(status_code=403, detail="Token scope is read-only")
     return user

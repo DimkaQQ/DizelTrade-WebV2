@@ -21,6 +21,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 class LoginRequest(BaseModel):
     login: str   # email
     password: str
+    totp_code: Optional[str] = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -52,7 +53,7 @@ def login(body: LoginRequest, response: Response, request: Request):
         raise HTTPException(status_code=429, detail="Слишком много попыток. Подождите 15 минут.")
 
     user = query_one(
-        "SELECT id, name, email, phone, password_hash, role, is_active FROM users WHERE lower(email) = %s",
+        "SELECT id, name, email, phone, password_hash, role, is_active, last_login_ip, totp_enabled, totp_secret FROM users WHERE lower(email) = %s",
         (email,)
     )
     if not user or not user["is_active"]:
@@ -73,12 +74,32 @@ def login(body: LoginRequest, response: Response, request: Request):
 
     clear_login_fails(email)
 
-    # Update last_login_at and log success
-    execute("UPDATE users SET last_login_at = NOW() WHERE id = %s", (user["id"],))
+    # Check for suspicious IP change (anti-fraud)
+    if user.get("last_login_ip") and user["last_login_ip"] != ip:
+        try:
+            execute(
+                "INSERT INTO suspicious_logins (user_id, ip, prev_ip, user_agent) VALUES (%s, %s, %s, %s)",
+                (user["id"], ip, user["last_login_ip"], ua),
+            )
+        except Exception:
+            pass
+
+    # Update last_login_at and last_login_ip
+    execute("UPDATE users SET last_login_at = NOW(), last_login_ip = %s WHERE id = %s", (ip, user["id"]))
     try:
         execute("INSERT INTO login_attempts (ip, username_tried, success) VALUES (%s, %s, TRUE)", (ip, email))
     except Exception:
         pass
+
+    # 2FA check: if enabled, require TOTP code before issuing tokens
+    if user.get("totp_enabled"):
+        totp_code = getattr(body, "totp_code", None)
+        if not totp_code:
+            return {"requires_2fa": True, "user_id": user["id"]}
+        import pyotp
+        totp = pyotp.TOTP(user["totp_secret"])
+        if not totp.verify(totp_code, valid_window=1):
+            raise HTTPException(status_code=401, detail="Неверный код 2FA")
 
     # Create access token
     access_token = create_access_token(user["id"], user["role"])
@@ -238,3 +259,84 @@ def revoke_session(session_id: str, user: dict = Depends(get_current_user)):
         (session_id,),
     )
     return {"ok": True}
+
+
+# ── 2FA endpoints ────────────────────────────────────────────────────────────
+
+class TOTPVerifyRequest(BaseModel):
+    code: str
+
+class TOTPPasswordRequest(BaseModel):
+    password: str
+
+
+@router.post("/2fa/setup", status_code=200)
+def setup_2fa(user: dict = Depends(get_current_user)):
+    """Generate a new TOTP secret and return the provisioning URI for QR code."""
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(status_code=503, detail="2FA недоступна (pyotp не установлен)")
+
+    existing = query_one("SELECT totp_enabled FROM users WHERE id = %s", (user["id"],))
+    if existing and existing.get("totp_enabled"):
+        raise HTTPException(status_code=400, detail="2FA уже включена. Сначала отключите её.")
+
+    secret = pyotp.random_base32()
+    execute("UPDATE users SET totp_secret = %s WHERE id = %s", (secret, user["id"]))
+
+    totp = pyotp.TOTP(secret)
+    uri = totp.provisioning_uri(name=user["email"], issuer_name="DTL Management")
+    return {"secret": secret, "uri": uri}
+
+
+@router.post("/2fa/enable", status_code=200)
+def enable_2fa(body: TOTPVerifyRequest, user: dict = Depends(get_current_user)):
+    """Verify TOTP code and activate 2FA for the user."""
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(status_code=503, detail="2FA недоступна")
+
+    row = query_one("SELECT totp_secret, totp_enabled FROM users WHERE id = %s", (user["id"],))
+    if not row or not row.get("totp_secret"):
+        raise HTTPException(status_code=400, detail="Сначала вызовите /2fa/setup")
+    if row.get("totp_enabled"):
+        raise HTTPException(status_code=400, detail="2FA уже включена")
+
+    totp = pyotp.TOTP(row["totp_secret"])
+    if not totp.verify(body.code, valid_window=1):
+        raise HTTPException(status_code=400, detail="Неверный код. Попробуйте ещё раз.")
+
+    execute("UPDATE users SET totp_enabled = TRUE WHERE id = %s", (user["id"],))
+    return {"ok": True, "message": "2FA включена"}
+
+
+@router.post("/2fa/disable", status_code=200)
+def disable_2fa(body: TOTPPasswordRequest, user: dict = Depends(get_current_user)):
+    """Disable 2FA after confirming the user's password."""
+    row = query_one("SELECT password_hash, totp_enabled FROM users WHERE id = %s", (user["id"],))
+    if not row:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not row.get("totp_enabled"):
+        raise HTTPException(status_code=400, detail="2FA не включена")
+    if not pwd_context.verify(body.password, row["password_hash"]):
+        raise HTTPException(status_code=400, detail="Неверный пароль")
+
+    execute("UPDATE users SET totp_enabled = FALSE, totp_secret = NULL WHERE id = %s", (user["id"],))
+    return {"ok": True, "message": "2FA отключена"}
+
+
+@router.get("/2fa/status", status_code=200)
+def get_2fa_status(user: dict = Depends(get_current_user)):
+    row = query_one("SELECT totp_enabled FROM users WHERE id = %s", (user["id"],))
+    return {"totp_enabled": bool(row and row.get("totp_enabled"))}
+
+
+@router.get("/suspicious-logins", status_code=200)
+def list_suspicious_logins(user: dict = Depends(get_current_user)):
+    """Return recent suspicious login events for the current user."""
+    return query(
+        "SELECT ip, prev_ip, user_agent, detected_at FROM suspicious_logins WHERE user_id = %s ORDER BY detected_at DESC LIMIT 20",
+        (user["id"],),
+    )

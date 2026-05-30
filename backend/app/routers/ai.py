@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +11,17 @@ from ..config import settings
 
 router = APIRouter()
 logger = logging.getLogger("dtl.ai")
+
+_PHONE_RE = re.compile(r'\b(?:\+7|8|7)?[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}\b')
+_EMAIL_RE = re.compile(r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b')
+_IP_RE = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
+
+
+def _mask_pii(text: str) -> str:
+    text = _PHONE_RE.sub('[PHONE]', text)
+    text = _EMAIL_RE.sub('[EMAIL]', text)
+    text = _IP_RE.sub('[IP]', text)
+    return text
 
 # Simple in-memory cache for anomalies (reset on restart)
 _anomaly_cache: dict = {"data": None, "at": None}
@@ -318,13 +330,15 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
 3. Запрос на запись → JSON action (см. выше) — ВСЕГДА, без исключений
 4. Только русский язык. Без markdown (**, *, #, [], ``)."""
 
+    masked_question = _mask_pii(body.question)
+
     try:
         import anthropic
         resp = client.messages.create(
             model="claude-opus-4-7",
             max_tokens=600,
             system=system_prompt,
-            messages=[{"role": "user", "content": body.question}]
+            messages=[{"role": "user", "content": masked_question}]
         )
         text = resp.content[0].text.strip()
 
@@ -375,7 +389,7 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
             fmt_resp = client.messages.create(
                 model="claude-opus-4-7",
                 max_tokens=300,
-                messages=[{"role": "user", "content": f'Вопрос: "{body.question}"\nДанные: {result_json[:3000]}\n\nОтветь кратко на русском, 1-3 предложения.'}]
+                messages=[{"role": "user", "content": f'Вопрос: "{masked_question}"\nДанные: {result_json[:3000]}\n\nОтветь кратко на русском, 1-3 предложения.'}]
             )
             answer = fmt_resp.content[0].text.strip()
             total_tokens = 0

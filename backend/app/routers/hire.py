@@ -111,6 +111,8 @@ class HireCorrection(BaseModel):
     price_client: Optional[float] = None
     price_carrier: Optional[float] = None
     comment: Optional[str] = None
+    is_closed: Optional[bool] = None
+    closed_comment: Optional[str] = None
     reason: str  # mandatory
 
 
@@ -161,3 +163,20 @@ def update_hire(hire_id: int, body: HireCreate, user: dict = Depends(require_par
                    old_data=dict(existing), new_data=dict(row))
         conn.commit()
     return row
+
+
+@router.post("/hire/{hire_id}/close", status_code=200)
+def close_hire_delivery(hire_id: int, body: dict, user: dict = Depends(require_partner)):
+    """Mark a hire delivery as closed/settled (e.g. client paid on the spot)."""
+    row = query_one("SELECT * FROM hire_deliveries WHERE id = %s", (hire_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    comment = body.get("comment", "")
+    with get_db() as conn:
+        updated = execute(
+            "UPDATE hire_deliveries SET is_closed = TRUE, closed_comment = %s WHERE id = %s RETURNING *",
+            (comment, hire_id), conn=conn, returning=True
+        )
+        log_action(conn, "hire_deliveries", hire_id, "CLOSE", user["id"], old_data=dict(row), new_data=dict(updated))
+        conn.commit()
+    return {"ok": True}

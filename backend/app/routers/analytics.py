@@ -639,11 +639,14 @@ def get_balance_entries(
     user: dict = Depends(require_partner),
 ):
     """Get itemized balance entries for a given month/year."""
-    return query("""
-        SELECT * FROM balance_detail_entries
-        WHERE EXTRACT(YEAR FROM period) = %s AND EXTRACT(MONTH FROM period) = %s
-        ORDER BY category, object_name
-    """, (year, month))
+    try:
+        return query("""
+            SELECT * FROM balance_detail_entries
+            WHERE EXTRACT(YEAR FROM period) = %s AND EXTRACT(MONTH FROM period) = %s
+            ORDER BY category, object_name
+        """, (year, month))
+    except Exception:
+        return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -754,17 +757,8 @@ def annual_summary(
     )
     expenses_fleet = _safe_float(fleet_exp_row["total"] if fleet_exp_row else 0)
 
-    # Fuel cost
-    fuel_exp_row = query_one(
-        """
-        SELECT COALESCE(SUM(0), 0) AS total
-        FROM fuel_receipts
-        WHERE ttn_confirmed = TRUE
-          AND EXTRACT(YEAR FROM received_at) = %s
-        """,
-        (year,),
-    )
-    expenses_fuel = _safe_float(fuel_exp_row["total"] if fuel_exp_row else 0)
+    # Fuel cost — placeholder, no reliable per-receipt cost column yet
+    expenses_fuel = 0.0
 
     # Carrier costs (from hire deals)
     carrier_exp_row = query_one(
@@ -799,9 +793,11 @@ def annual_summary(
     )
     hire_supplier_cost = _safe_float(hire_sup_row["total"] if hire_sup_row else 0)
 
+    own_fleet_margin = revenue_fleet - expenses_fleet
+    hire_margin = revenue_hire - hire_supplier_cost - expenses_carriers
+    profit = own_fleet_margin + hire_margin - expenses_general
     total_revenue = revenue_fleet + revenue_hire
-    total_expenses = expenses_fleet + expenses_fuel + expenses_carriers + expenses_general + hire_supplier_cost
-    profit = total_revenue - total_expenses
+    total_expenses = expenses_fleet + hire_supplier_cost + expenses_carriers + expenses_general
 
     # Clients breakdown (dispatches + hire)
     client_rows = query(
@@ -873,6 +869,80 @@ def annual_summary(
         "clients": clients,
         "suppliers": suppliers,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /api/analytics/client-debts
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/analytics/client-debts")
+def client_debts(
+    year: int = Query(default=2026),
+    user: dict = Depends(require_partner),
+):
+    """Per-client debt breakdown: total billed vs total paid, split into fuel and delivery components."""
+    # Get all hire deliveries (not closed) grouped by client
+    hire_rows = query("""
+        SELECT
+            c.id AS client_id,
+            c.name AS client_name,
+            COALESCE(SUM(hd.amount_client), 0) AS billed_total,
+            COALESCE(SUM(hd.amount_supplier), 0) AS fuel_cost_total,
+            COALESCE(SUM(hd.amount_carrier), 0) AS carrier_cost_total,
+            COALESCE(SUM(hd.volume_liters), 0) AS volume_liters,
+            COUNT(*) AS delivery_count
+        FROM hire_deliveries hd
+        JOIN clients c ON c.id = hd.client_id
+        WHERE hd.is_closed = FALSE
+        GROUP BY c.id, c.name
+        ORDER BY c.name
+    """)
+
+    # Get all payments (income) by client
+    income_rows = query("""
+        SELECT client_id, COALESCE(SUM(amount), 0) AS paid_total
+        FROM income_records
+        WHERE income_at <= CURRENT_DATE
+        GROUP BY client_id
+    """)
+    income_map = {r["client_id"]: float(r["paid_total"]) for r in income_rows}
+
+    result = []
+    for r in hire_rows:
+        billed = float(r["billed_total"])
+        paid = income_map.get(r["client_id"], 0.0)
+        fuel_cost = float(r["fuel_cost_total"])
+        carrier_cost = float(r["carrier_cost_total"])
+        delivery_margin = billed - fuel_cost - carrier_cost
+
+        balance = billed - paid
+        if balance <= 0:
+            fuel_debt = 0.0
+            delivery_debt = 0.0
+        else:
+            # Split debt proportionally: fuel vs delivery
+            if billed > 0:
+                fuel_share = fuel_cost / billed
+                delivery_share = delivery_margin / billed
+            else:
+                fuel_share = 0.0
+                delivery_share = 0.0
+            fuel_debt = round(balance * fuel_share, 2)
+            delivery_debt = round(balance * delivery_share, 2)
+
+        result.append({
+            "client_id": r["client_id"],
+            "client_name": r["client_name"],
+            "billed_total": round(billed, 2),
+            "paid_total": round(paid, 2),
+            "balance": round(balance, 2),
+            "fuel_debt": fuel_debt,
+            "delivery_debt": delivery_debt,
+            "delivery_count": r["delivery_count"],
+            "volume_liters": float(r["volume_liters"]),
+        })
+
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────

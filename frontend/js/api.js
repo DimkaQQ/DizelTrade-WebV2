@@ -60,9 +60,11 @@ const api = (() => {
     put: (p, b) => req('PUT', p, b),
     patch: (p, b) => req('PATCH', p, b),
     del: (p) => req('DELETE', p),
-    login: async (login, password) => {
-      const d = await req('POST', '/api/auth/login', { login, password });
-      token = d.access_token;
+    login: async (login, password, totp_code) => {
+      const body = { login, password };
+      if (totp_code) body.totp_code = totp_code;
+      const d = await req('POST', '/api/auth/login', body);
+      if (!d.requires_2fa) token = d.access_token;
       return d;
     },
     logout: async () => { await req('POST', '/api/auth/logout'); token = null; },

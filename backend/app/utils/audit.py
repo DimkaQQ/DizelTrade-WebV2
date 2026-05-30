@@ -21,13 +21,14 @@ def _dumps(data):
 
 
 def log_action(conn, table_name: str, record_id: int, action: str,
-               user_id: int, old_data=None, new_data=None, reason: str = None):
+               user_id: int, old_data=None, new_data=None, reason: str = None,
+               source: str = 'web'):
     execute("""
-        INSERT INTO audit_log (table_name, record_id, action, old_data, new_data, reason, user_id)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO audit_log (table_name, record_id, action, old_data, new_data, reason, user_id, source)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         table_name, record_id, action,
         _dumps(old_data),
         _dumps(new_data),
-        reason, user_id
+        reason, user_id, source
     ), conn=conn)

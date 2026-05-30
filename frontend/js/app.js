@@ -243,12 +243,13 @@
         </div>
         <div class="sidebar-nav">
           <div class="nav-item" data-page="home" onclick="navigate('#home')"><span class="ni-icon">🏠</span> Главная</div>
+          ${isPartner() ? `
           <div class="nav-group-label">Главное</div>
-          <div class="nav-item" data-page="dashboard" onclick="navigate('#dashboard')"><span class="ni-icon">📊</span> Дашборд</div>
+          <div class="nav-item" data-page="dashboard" onclick="navigate('#dashboard')"><span class="ni-icon">📊</span> Дашборд</div>` : ''}
+          <div class="nav-group-label">База</div>
           <div class="nav-item" data-page="base" onclick="navigate('#base')"><span class="ni-icon">⛽</span> База Тында<span class="ni-badge" id="sb-pending-badge" style="display:none">0</span></div>
-          ${!isOp() ? `<div class="nav-item" data-page="orders" onclick="navigate('#orders')"><span class="ni-icon">📦</span> Заказы клиентов</div>` : `<div class="nav-item nav-item-dim"><span class="ni-icon">📦</span> Заказы клиентов</div>`}
+          ${!isOp() ? `<div class="nav-item" data-page="orders" onclick="navigate('#orders')"><span class="ni-icon">📦</span> Заказы клиентов</div>` : ''}
           <div class="nav-item" data-page="base-dispatches" onclick="navigate('#base?tab=trips')"><span class="ni-icon">🚚</span> Журнал рейсов</div>
-
           ${isPartner() ? `
           <div class="nav-group-label">Финансы</div>
           <div class="nav-item" data-page="income" onclick="navigate('#income')"><span class="ni-icon">💰</span> Доходы</div>
@@ -259,23 +260,17 @@
           <div class="nav-item" data-page="hire" onclick="navigate('#hire')"><span class="ni-icon">🔁</span> Найм</div>
           ` : ''}
           ${isArtem() ? `
-          <div class="nav-group-label">Операционка</div>
+          <div class="nav-group-label">Автопарк</div>
           <div class="nav-item" data-page="fleet" onclick="navigate('#fleet')"><span class="ni-icon">🏗</span> Мой автопарк</div>
           ` : ''}
-
-          <div class="nav-group-label">Аналитика</div>
           ${isPartner() ? `
+          <div class="nav-group-label">Аналитика</div>
           <div class="nav-item" data-page="analytics" onclick="navigate('#analytics')"><span class="ni-icon">📈</span> Аналитика</div>
           <div class="nav-item" data-page="balance" onclick="navigate('#balance')"><span class="ni-icon">⚖️</span> Баланс</div>
           <div class="nav-item" data-page="annual" onclick="navigate('#annual')"><span class="ni-icon">📅</span> Год. итоги</div>
-          ` : `
-          <div class="nav-item nav-item-dim"><span class="ni-icon">📈</span> Аналитика</div>
-          <div class="nav-item nav-item-dim"><span class="ni-icon">⚖️</span> Баланс</div>
-          <div class="nav-item nav-item-dim"><span class="ni-icon">📅</span> Год. итоги</div>
-          `}
-
+          ` : ''}
           <div class="nav-group-label">Система</div>
-          ${!isOp() ? `<div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>` : `<div class="nav-item nav-item-dim"><span class="ni-icon">⚙️</span> Настройки</div>`}
+          ${isPartner() ? `<div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>` : ''}
         </div>
         <div class="sidebar-user">
           <div class="user-avatar">${getUserInitials().toUpperCase()}</div>
@@ -386,12 +381,12 @@
     if (h === 'expenses') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewExpenses(); return; }
     if (h === 'hire') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewHire(); return; }
     if (h === 'debts') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewDebts(); return; }
-    if (h === 'dashboard') { viewDashboard(); return; }
+    if (h === 'dashboard') { if (!isPartner()) { navigate('#home'); return; } viewDashboard(); return; }
     if (h === 'fleet') { viewFleet(); return; }
     if (h === 'analytics' || h.startsWith('analytics?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnalytics(); return; }
     if (h === 'balance' || h.startsWith('balance?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewBalance(); return; }
     if (h === 'annual' || h.startsWith('annual?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnnual(); return; }
-    if (h === 'settings') { if (isOp()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewSettings(); return; }
+    if (h === 'settings') { if (!isPartner()) { toast('Нет доступа · Только БАЗА', 'error'); navigate('#home'); return; } viewSettings(); return; }
     if (h === 'logs') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewLogs(); return; }
     viewHome();
   }
@@ -600,7 +595,7 @@
     if (passEl) passEl.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
   }
 
-  window.doLogin = async function () {
+  window.doLogin = async function (totpCode) {
     const loginVal = (document.getElementById('l-login')?.value || '').trim();
     const passVal = document.getElementById('l-pass')?.value || '';
     const errEl = document.getElementById('login-err');
@@ -609,7 +604,11 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Вход...'; }
     document.querySelectorAll('.inp-err').forEach(e => e.classList.remove('inp-err'));
     try {
-      const d = await api.login(loginVal, passVal);
+      const d = await api.login(loginVal, passVal, totpCode || undefined);
+      if (d.requires_2fa) {
+        _show2FAStep(loginVal, passVal);
+        return;
+      }
       api.setToken(d.access_token);
       user = await api.me();
       window.currentUser = user;
@@ -618,11 +617,57 @@
       checkOnboarding();
     } catch (e) {
       if (errEl) { errEl.textContent = e.message || 'Ошибка входа'; errEl.style.display = 'block'; }
-      document.getElementById('l-login')?.classList.add('inp-err');
-      document.getElementById('l-pass')?.classList.add('inp-err');
+      if (!totpCode) {
+        document.getElementById('l-login')?.classList.add('inp-err');
+        document.getElementById('l-pass')?.classList.add('inp-err');
+      } else {
+        document.getElementById('l-totp')?.classList.add('inp-err');
+      }
     } finally {
       const b = document.getElementById('l-btn');
-      if (b) { b.disabled = false; b.textContent = 'Войти'; }
+      if (b) { b.disabled = false; b.textContent = totpCode ? 'Подтвердить' : 'Войти'; }
+    }
+  };
+
+  function _show2FAStep(loginVal, passVal) {
+    const card = document.querySelector('.login-card');
+    if (!card) return;
+    card.innerHTML = `
+      <div class="login-logo">DIZEL<span>TRADE</span></div>
+      <div class="login-sub">// двухфакторная аутентификация</div>
+      <div id="login-err" class="login-err" style="display:none"></div>
+      <div class="fsec">
+        <div class="fl">Код из приложения</div>
+        <input class="inp" type="text" id="l-totp" placeholder="000000" maxlength="6" autocomplete="one-time-code" inputmode="numeric">
+      </div>
+      <button class="btn-primary" id="l-btn" onclick="doLogin2FA('${loginVal}','${passVal}')">Подтвердить</button>`;
+    const totpEl = document.getElementById('l-totp');
+    if (totpEl) {
+      totpEl.focus();
+      totpEl.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin2FA(loginVal, passVal); });
+    }
+  }
+
+  window.doLogin2FA = async function(loginVal, passVal) {
+    const totpCode = (document.getElementById('l-totp')?.value || '').trim();
+    const errEl = document.getElementById('login-err');
+    const btn = document.getElementById('l-btn');
+    if (errEl) errEl.style.display = 'none';
+    if (btn) { btn.disabled = true; btn.textContent = 'Проверка...'; }
+    try {
+      const d = await api.login(loginVal, passVal, totpCode);
+      api.setToken(d.access_token);
+      user = await api.me();
+      window.currentUser = user;
+      setupLayout();
+      navigate('#home');
+      checkOnboarding();
+    } catch (e) {
+      if (errEl) { errEl.textContent = e.message || 'Неверный код'; errEl.style.display = 'block'; }
+      document.getElementById('l-totp')?.classList.add('inp-err');
+    } finally {
+      const b = document.getElementById('l-btn');
+      if (b) { b.disabled = false; b.textContent = 'Подтвердить'; }
     }
   };
 
@@ -1955,6 +2000,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
             <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
               ${d.margin_pct ? `<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:${marginColor}">${d.margin_pct}%</div><div style="font-size:11px;color:var(--text2)">маржа</div></div>` : ''}
               ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer">✏ Испр.</button>` : ''}
+              ${isPartner() && !d.is_closed ? `<button onclick="window.closeHireDeal(${d.id},'${esc(d.client_name||'')}')" style="background:rgba(52,199,89,.1);border:1px solid rgba(52,199,89,.3);color:var(--green);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✅ Закрыть</button>` : (d.is_closed ? badge('Закрыто','done') : '')}
             </div>
           </div>
           ${d.volume_liters ? `<div style="font-size:15px;font-weight:600;margin-bottom:10px">📦 ${formatNum(d.volume_liters)} л${volCub ? ' <span style="font-size:13px;color:var(--text2);font-weight:400">(' + volCub + ' куб)</span>' : ''}</div>` : ''}
@@ -1995,6 +2041,19 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         viewHire();
       },
     });
+  };
+
+  window.closeHireDeal = function(id, clientName) {
+    showModal(`Закрыть сделку — ${clientName}`,
+      `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Отметить сделку как закрытую (клиент оплатил сразу, долг не фиксируется).</div>
+       ${formField('Комментарий', '<input class="inp" id="m-close-comment" placeholder="Например: оплата наличными на месте">')}`,
+      async () => {
+        const comment = document.getElementById('m-close-comment')?.value || '';
+        await api.post('/api/hire/' + id + '/close', { comment });
+        toast('✅ Сделка закрыта');
+        viewHire();
+      }
+    );
   };
 
   window.showHireModal = async function () {
@@ -2055,20 +2114,48 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       }
     } catch (e) {}
 
+    let clientDebts = [];
+    try { clientDebts = await api.get('/api/analytics/client-debts') || []; } catch(e) {}
+
     const balanceEntries = Object.entries(balances);
+
+    const clientDebtsSection = clientDebts.filter(d => d.balance !== 0).length ? `
+      ${sectionHeader('Задолженность по найму (факт)')}
+      <div class="bb">
+        ${clientDebts.filter(d => d.balance !== 0).map(d => `
+          <div class="bbr" style="flex-direction:column;align-items:flex-start;padding:10px 0;gap:3px">
+            <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
+              <div style="font-size:13px;font-weight:600">${esc(d.client_name)}</div>
+              <div style="font-size:14px;font-weight:800;color:${d.balance > 0 ? 'var(--orange)' : 'var(--green)'}">${d.balance > 0 ? '+' : ''}${formatNum(Math.round(d.balance))} ₽</div>
+            </div>
+            ${d.balance > 0 ? `<div style="font-size:11px;color:var(--text2)">Топливо: ${formatNum(Math.round(d.fuel_debt))} · Доставка: ${formatNum(Math.round(d.delivery_debt))} · Выставлено: ${formatNum(Math.round(d.billed_total))} · Оплачено: ${formatNum(Math.round(d.paid_total))}</div>` : '<div style="font-size:11px;color:var(--green)">✅ Оплачено</div>'}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
+      ${clientDebtsSection}
       ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
-      ${records.length ? records.map(r => `<div class="li">
+      ${records.length ? records.map(r => {
+        const rem = r.remaining != null ? parseFloat(r.remaining) : null;
+        const remStr = r.type === 'ДОЛГ' && rem != null ? (rem <= 0 ? '<span style="color:var(--green);font-size:11px">✅ Оплачен</span>' : `<span style="color:var(--orange);font-size:11px">Остаток: ${formatNum(rem)} ₽</span>`) : '';
+        const parentNote = r.parent_id ? `<span style="color:var(--text3);font-size:11px"> · к долгу #${r.parent_id}</span>` : '';
+        return `<div class="li">
         <div class="lic ${r.type === 'ДОЛГ' ? 'o' : 'g'}">📄</div>
-        <div class="lit"><div class="lim">${esc(r.debtor)} — ${formatNum(Math.abs(r.amount))} ₽</div><div class="lis">${[r.type === 'ОПЛАТА' ? 'Оплата' : '', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ')}</div></div>
+        <div class="lit">
+          <div class="lim">${esc(r.debtor)} — ${formatNum(Math.abs(r.amount))} ₽${parentNote}</div>
+          <div class="lis">${[r.type === 'ОПЛАТА' ? 'Оплата' : 'Долг', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ')}</div>
+          ${remStr}
+        </div>
         <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${isPartner() && r.type === 'ДОЛГ' && rem > 0 ? `<button onclick="window.payDebtModal(${r.id},'${esc(r.debtor)}',${rem})" style="background:rgba(52,199,89,.1);border:1px solid rgba(52,199,89,.4);color:var(--green);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">💳 Оплатить</button>` : ''}
           ${isPartner() ? `<button onclick="window.correctDebt(${r.id},'${r.recorded_at ? r.recorded_at.slice(0,10) : ''}',${r.amount||0},'${esc(r.type||'ДОЛГ')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
         </div>
-      </div>`).join('') : emptyState('Нет записей')}
+      </div>`;}).join('') : emptyState('Нет записей')}
       ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
       ${isPartner() ? printBtn('Распечатать / PDF') : ''}
     </div>`;
@@ -2113,6 +2200,24 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const comment = document.getElementById('m-note').value;
       await api.post('/api/debts', { recorded_at, debtor, type, amount, comment });
       toast('✅ Записано!');
+      viewDebts();
+    });
+  };
+
+  window.payDebtModal = function(debtId, debtor, remaining) {
+    showModal(`Оплата долга — ${debtor}`,`
+      ${formField('Дата оплаты', `<input class="inp" type="date" id="m-pay-at" value="${new Date().toISOString().slice(0,10)}">`)}
+      ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-pay-amount" placeholder="${remaining}" value="${remaining}">`)}
+      ${formField('Комментарий', `<input class="inp" type="text" id="m-pay-note" placeholder="Детали...">`)}
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">Остаток долга: ${formatNum(remaining)} ₽</div>
+    `, async () => {
+      const recorded_at = document.getElementById('m-pay-at').value;
+      const amount = parseFloat(document.getElementById('m-pay-amount').value);
+      const comment = document.getElementById('m-pay-note').value;
+      if (!amount || amount <= 0) throw new Error('Введите сумму');
+      if (amount > remaining + 0.01) throw new Error(`Сумма больше остатка долга (${formatNum(remaining)} ₽)`);
+      await api.post('/api/debts', { recorded_at, debtor, type: 'ОПЛАТА', amount, comment, parent_id: debtId });
+      toast('✅ Оплата записана!');
       viewDebts();
     });
   };
@@ -2802,11 +2907,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     let aiUsage = null;
     let apiTokens = [];
     let sessions = [];
+    let twoFAStatus = { totp_enabled: false };
+    let suspiciousLogins = [];
     if (isPartner()) {
       try { aiUsage = await api.get('/api/ai/usage'); } catch(e) {}
       try { apiTokens = await api.get('/api/tokens') || []; } catch(e) {}
       try { sessions = await api.get('/api/auth/sessions') || []; } catch(e) {}
     }
+    try { twoFAStatus = await api.get('/api/auth/2fa/status'); } catch(e) {}
+    try { suspiciousLogins = await api.get('/api/auth/suspicious-logins') || []; } catch(e) {}
 
     const getSetting = (key, def) => { const s = settings.find(x => x.key === key); return s ? s.value : def; };
 
@@ -2943,12 +3052,32 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
             <div>
               <div style="font-weight:600;font-size:13px">${esc(t.name)}</div>
               <div style="font-size:11px;color:var(--text2)">${t.last_used_at ? 'Последнее: ' + new Date(t.last_used_at).toLocaleDateString('ru') : 'Не использовался'} · ${t.is_active ? 'Активен' : 'Отозван'}</div>
+              <div style="font-size:11px;color:var(--text2)">Скоуп: ${t.scope || 'full'} · Лимит: ${t.daily_cost_limit_usd ? t.daily_cost_limit_usd + ' $/день' : 'без лимита'}</div>
             </div>
             ${t.is_active ? '<button onclick="window.revokeApiToken(' + t.id + ')" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.3);color:var(--red);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer">Отозвать</button>' : ''}
           </div>`).join('') : '<div style="color:var(--text2);font-size:13px;padding:8px 0">Нет активных токенов</div>'}
         <button onclick="window.createApiTokenModal()" class="btn-primary" style="width:100%;margin-top:10px">+ Новый токен</button>
       </div>
       ` : ''}
+
+      ${sectionHeader('Двухфакторная аутентификация')}
+      <div class="pi">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0">
+          <div>
+            <div style="font-size:13px;font-weight:600">TOTP (Google Authenticator)</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">${twoFAStatus.totp_enabled ? '✅ Включена' : 'Выключена — вход только по паролю'}</div>
+          </div>
+          ${twoFAStatus.totp_enabled
+            ? `<button onclick="window.disable2FA()" style="background:rgba(255,59,48,.1);border:1px solid rgba(255,59,48,.3);color:var(--red);border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer">Отключить</button>`
+            : `<button onclick="window.setup2FA()" class="btn-primary" style="padding:6px 14px;font-size:12px">Включить</button>`
+          }
+        </div>
+        ${suspiciousLogins.length > 0 ? `
+        <div style="margin-top:8px;padding:8px;background:rgba(255,59,48,.08);border-radius:8px;border:1px solid rgba(255,59,48,.2)">
+          <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px">⚠️ Подозрительные входы</div>
+          ${suspiciousLogins.slice(0,3).map(sl => `<div style="font-size:11px;color:var(--text2);padding:3px 0">${new Date(sl.detected_at).toLocaleString('ru')} · IP: ${esc(sl.ip||'?')} (было: ${esc(sl.prev_ip||'?')})</div>`).join('')}
+        </div>` : ''}
+      </div>
 
       ${isPartner() ? `
       ${sectionHeader('Активные сессии')}
@@ -3405,6 +3534,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="modal-title">Новый API токен</div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Название токена</label><input id="token-name-inp" class="inp" placeholder="Например: Курсор MCP"></div>
+          <div class="form-group"><label class="form-label">Скоуп</label><div class="chips" data-group="tk-scope"><div class="chip sel" data-val="full">Full</div><div class="chip" data-val="write">Write</div><div class="chip" data-val="read">Read only</div></div></div>
+          <div class="form-group"><label class="form-label">Лимит расходов</label><input class="inp" type="number" id="m-tk-limit" placeholder="Лимит $/день (необязательно)" step="0.01"></div>
           <div id="token-result" style="display:none;margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;word-break:break-all;font-size:12px;font-family:monospace;color:var(--accent)"></div>
         </div>
         <div class="modal-footer-btns">
@@ -3420,7 +3551,11 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     const name = document.getElementById('token-name-inp')?.value?.trim();
     if (!name) { toast('Введите название', 'error'); return; }
     try {
-      const res = await api.post('/api/tokens', { name });
+      const scopeEl = document.querySelector('.chips[data-group="tk-scope"] .chip.sel');
+      const scope = scopeEl ? scopeEl.getAttribute('data-val') : 'full';
+      const limitVal = document.getElementById('m-tk-limit')?.value;
+      const daily_cost_limit_usd = limitVal ? parseFloat(limitVal) : null;
+      const res = await api.post('/api/tokens', { name, scope, daily_cost_limit_usd });
       const el = document.getElementById('token-result');
       if (el) {
         el.style.display = 'block';
@@ -3439,6 +3574,59 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       toast('Сессия завершена');
       viewSettings();
     } catch(e) { toast(e.message, 'error'); }
+  };
+
+  window.setup2FA = function() {
+    showModal('Включить двухфакторную аутентификацию',
+      `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Нажмите "Получить QR-код", затем отсканируйте его в Google Authenticator и введите код для подтверждения.</div>
+       <div id="2fa-qr-wrap" style="text-align:center;margin-bottom:12px"></div>
+       <div id="2fa-secret-wrap" style="display:none;margin-bottom:8px;font-size:12px;color:var(--text2)"></div>
+       ${formField('Код из приложения', '<input class="inp" id="m-totp-code" placeholder="000000" maxlength="6" inputmode="numeric">')}
+       <button class="btn-secondary" style="width:100%;margin-bottom:8px" id="2fa-get-qr-btn" onclick="window._get2FAQr()">Получить QR-код</button>`,
+      async () => {
+        const code = document.getElementById('m-totp-code')?.value?.trim();
+        if (!code) throw new Error('Введите код из приложения');
+        await api.post('/api/auth/2fa/enable', { code });
+        toast('✅ 2FA включена');
+        viewSettings();
+      }
+    );
+  };
+
+  window._get2FAQr = async function() {
+    const btn = document.getElementById('2fa-get-qr-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const d = await api.post('/api/auth/2fa/setup', {});
+      const wrap = document.getElementById('2fa-qr-wrap');
+      const secWrap = document.getElementById('2fa-secret-wrap');
+      if (wrap) {
+        // Use a QR code API — generate URL for Google Charts QR
+        const qrData = encodeURIComponent(d.uri);
+        wrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?data=${qrData}&size=180x180" style="border-radius:8px;border:1px solid var(--border)" alt="QR">`;
+      }
+      if (secWrap) {
+        secWrap.style.display = 'block';
+        secWrap.innerHTML = `Или введите вручную: <code style="color:var(--accent);font-weight:700">${d.secret}</code>`;
+      }
+    } catch(e) {
+      toast(e.message || 'Ошибка', 'error');
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  window.disable2FA = function() {
+    showModal('Отключить двухфакторную аутентификацию',
+      `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Подтвердите ваш пароль для отключения 2FA.</div>
+       ${formField('Пароль', '<input class="inp" type="password" id="m-2fa-pass" autocomplete="current-password">')}`,
+      async () => {
+        const password = document.getElementById('m-2fa-pass')?.value || '';
+        if (!password) throw new Error('Введите пароль');
+        await api.post('/api/auth/2fa/disable', { password });
+        toast('2FA отключена');
+        viewSettings();
+      }
+    );
   };
 
   // ── Balance (Phase 3) ─────────────────────────────────────────────────────
@@ -3659,7 +3847,17 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="bbr"><div class="bbl">Расходы топливо</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_fuel : 0)} ₽</div></div>
         <div class="bbr"><div class="bbl">Расходы перевозчики</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_carriers : 0)} ₽</div></div>
         <div class="bbr"><div class="bbl">Общие расходы</div><div class="bbv" style="color:var(--red)">${fmt(data ? data.expenses_general : 0)} ₽</div></div>
+        ${data ? (() => {
+          const marginFleet = (data.revenue_fleet || 0) - (data.expenses_fleet || 0);
+          const marginHire = (data.revenue_hire || 0) - (data.hire_supplier_cost || data.expenses_carriers || 0);
+          const expGen = data.expenses_general || 0;
+          return `
+        <div class="bbr" style="background:var(--card2);border-radius:8px;margin-top:4px"><div class="bbl">Маржа свой парк</div><div class="bbv" style="color:var(--green)">${fmt(marginFleet)} ₽</div></div>
+        <div class="bbr" style="background:var(--card2);border-radius:8px"><div class="bbl">Маржа найм</div><div class="bbv" style="color:var(--green)">${fmt(marginHire)} ₽</div></div>
+          `;
+        })() : ''}
         <div class="bbt"><span>Чистая прибыль</span><span style="color:var(--green)">${fmt(profit)} ₽</span></div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">Формула: Маржа парк + Маржа найм − Общие расходы</div>
       </div>
 
       ${sectionHeader('Клиенты ' + selYear)}
