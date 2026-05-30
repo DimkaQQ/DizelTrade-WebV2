@@ -2533,16 +2533,29 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     const recog = new SR();
     recog.lang = 'ru-RU'; recog.continuous = false; recog.interimResults = false;
     const btn = document.getElementById('ai-voice-btn');
+    const resetBtn = () => { if (btn) { btn.textContent = '🎤'; btn.style.background = ''; btn.style.borderColor = ''; } };
+    let gotResult = false;
+
     if (btn) { btn.textContent = '🔴'; btn.style.background = 'rgba(255,59,48,.15)'; btn.style.borderColor = 'var(--red)'; }
+
     recog.onresult = (e) => {
+      gotResult = true;
       const t = e.results[0][0].transcript;
       const input = document.getElementById('ai-chat-input');
       if (input) { input.value = t; input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight,100)+'px'; }
-      if (btn) { btn.textContent = '🎤'; btn.style.background=''; btn.style.borderColor=''; }
+      resetBtn();
       window.sendAiMessage();
     };
-    recog.onerror = recog.onend = () => { if (btn) { btn.textContent='🎤'; btn.style.background=''; btn.style.borderColor=''; } };
-    recog.start();
+    recog.onerror = (e) => {
+      resetBtn();
+      if (e.error === 'not-allowed') toast('Нет доступа к микрофону — разрешите в настройках браузера', 'error');
+      else if (e.error === 'no-speech') toast('Речь не обнаружена, попробуйте ещё раз');
+      else toast('Ошибка микрофона: ' + e.error, 'error');
+    };
+    recog.onend = () => { if (!gotResult) resetBtn(); };
+
+    try { recog.start(); }
+    catch(e) { resetBtn(); toast('Не удалось запустить распознавание', 'error'); }
   };
 
   window.scanTTN = async function(inputId) {
