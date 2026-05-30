@@ -117,13 +117,19 @@ def login(body: LoginRequest, response: Response, request: Request):
         (user["id"], refresh_hash, expires_at)
     )
 
-    # Track session
+    # Track session — keep only latest 3 per user
     import hashlib as _hashlib
     session_token_hash = _hashlib.sha256(raw_refresh.encode()).hexdigest()
     try:
         execute(
             "INSERT INTO user_sessions (user_id, refresh_token_hash, ip, user_agent) VALUES (%s, %s, %s, %s)",
             (user["id"], session_token_hash, ip, ua),
+        )
+        execute(
+            """DELETE FROM user_sessions WHERE user_id = %s AND id NOT IN (
+                SELECT id FROM user_sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT 3
+            )""",
+            (user["id"], user["id"]),
         )
     except Exception:
         pass
