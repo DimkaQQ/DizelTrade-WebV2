@@ -332,6 +332,146 @@ def analytics_carriers(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# /api/analytics/fleet-pnl
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/analytics/fleet-pnl")
+def analytics_fleet_pnl(
+    year: int = Query(default=2026),
+    month: int = Query(default=5),
+    user: dict = Depends(require_partner),
+):
+    """Full P&L breakdown per truck plus aggregated totals."""
+    # Per-truck revenue and trips (own fleet dispatches only)
+    disp_rows = query(
+        """
+        SELECT
+          t.id AS truck_id,
+          t.name AS truck_name,
+          t.owner,
+          COUNT(fd.id)             AS trips,
+          COALESCE(SUM(fd.volume), 0)  AS volume,
+          COALESCE(SUM(fd.tariff), 0)  AS revenue
+        FROM trucks t
+        LEFT JOIN fuel_dispatches fd ON fd.truck_id = t.id
+          AND fd.status = 'delivered'
+          AND EXTRACT(YEAR  FROM fd.dispatched_at) = %s
+          AND EXTRACT(MONTH FROM fd.dispatched_at) = %s
+        WHERE t.status IN ('active', 'for_sale', 'archived')
+        GROUP BY t.id, t.name, t.owner
+        """,
+        (year, month),
+    )
+
+    # Per-truck expenses
+    exp_rows = query(
+        """
+        SELECT
+          t.id AS truck_id,
+          COALESCE(SUM(fe.amount), 0) AS expenses
+        FROM trucks t
+        LEFT JOIN fleet_expenses fe ON fe.truck_id = t.id
+          AND EXTRACT(YEAR  FROM fe.expense_at) = %s
+          AND EXTRACT(MONTH FROM fe.expense_at) = %s
+        WHERE t.status IN ('active', 'for_sale', 'archived')
+        GROUP BY t.id
+        """,
+        (year, month),
+    )
+    exp_map = {r["truck_id"]: _safe_float(r["expenses"]) for r in exp_rows}
+
+    trucks_out = []
+    for r in disp_rows:
+        rev = _safe_float(r["revenue"])
+        exp = exp_map.get(r["truck_id"], 0.0)
+        trips = _safe_int(r["trips"])
+        vol = _safe_float(r["volume"])
+        margin = rev - exp
+        margin_pct = round((margin / rev * 100), 1) if rev > 0 else 0.0
+        avg_per_trip = round(rev / trips, 0) if trips > 0 else 0.0
+        trucks_out.append({
+            "truck_id": r["truck_id"],
+            "truck_name": r["truck_name"],
+            "owner": r["owner"],
+            "trips": trips,
+            "volume": round(vol, 2),
+            "revenue": round(rev, 2),
+            "expenses": round(exp, 2),
+            "margin": round(margin, 2),
+            "margin_pct": margin_pct,
+            "avg_per_trip": avg_per_trip,
+        })
+    trucks_out.sort(key=lambda x: x["revenue"], reverse=True)
+
+    # Own fleet totals
+    own_revenue = sum(t["revenue"] for t in trucks_out)
+    own_expenses = sum(t["expenses"] for t in trucks_out)
+    own_margin = own_revenue - own_expenses
+    own_trips = sum(t["trips"] for t in trucks_out)
+    own_volume = round(sum(t["volume"] for t in trucks_out), 2)
+
+    # Hire totals for period
+    hire_row = query_one(
+        """
+        SELECT
+          COALESCE(SUM(amount_client), 0)   AS hire_rev,
+          COALESCE(SUM(amount_supplier), 0) AS hire_sup,
+          COALESCE(SUM(COALESCE(amount_carrier, 0)), 0) AS hire_car,
+          COUNT(*) AS hire_trips,
+          COALESCE(SUM(volume_liters / 1000.0), 0) AS hire_volume
+        FROM hire_deliveries
+        WHERE EXTRACT(YEAR  FROM delivery_at) = %s
+          AND EXTRACT(MONTH FROM delivery_at) = %s
+        """,
+        (year, month),
+    )
+    hire_rev = _safe_float(hire_row["hire_rev"] if hire_row else 0)
+    hire_exp = _safe_float(hire_row["hire_sup"] if hire_row else 0) + \
+               _safe_float(hire_row["hire_car"] if hire_row else 0)
+    hire_margin = hire_rev - hire_exp
+    hire_trips = _safe_int(hire_row["hire_trips"] if hire_row else 0)
+    hire_volume = round(_safe_float(hire_row["hire_volume"] if hire_row else 0), 2)
+
+    # Company expenses
+    comp_row = query_one(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM company_expenses
+        WHERE EXTRACT(YEAR  FROM expense_at) = %s
+          AND EXTRACT(MONTH FROM expense_at) = %s
+        """,
+        (year, month),
+    )
+    company_expenses = _safe_float(comp_row["total"] if comp_row else 0)
+
+    net_profit = own_margin + hire_margin - company_expenses
+
+    return {
+        "year": year,
+        "month": month,
+        "trucks": trucks_out,
+        "own_fleet": {
+            "revenue": round(own_revenue, 2),
+            "expenses": round(own_expenses, 2),
+            "margin": round(own_margin, 2),
+            "margin_pct": round((own_margin / own_revenue * 100), 1) if own_revenue > 0 else 0.0,
+            "trips": own_trips,
+            "volume": own_volume,
+        },
+        "hire": {
+            "revenue": round(hire_rev, 2),
+            "expenses": round(hire_exp, 2),
+            "margin": round(hire_margin, 2),
+            "margin_pct": round((hire_margin / hire_rev * 100), 1) if hire_rev > 0 else 0.0,
+            "trips": hire_trips,
+            "volume": hire_volume,
+        },
+        "company_expenses": round(company_expenses, 2),
+        "net_profit": round(net_profit, 2),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # /api/analytics/monthly
 # ─────────────────────────────────────────────────────────────────────────────
 
