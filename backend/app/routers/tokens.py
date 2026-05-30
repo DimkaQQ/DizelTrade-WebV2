@@ -1,5 +1,6 @@
 import secrets
 import hashlib
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from ..database import query, query_one, execute
@@ -18,6 +19,7 @@ _VALID_SCOPES = {'read', 'write', 'full'}
 class TokenCreate(BaseModel):
     name: str
     scope: str = 'full'
+    daily_cost_limit_usd: Optional[float] = None
 
 
 @router.post("/tokens", status_code=201)
@@ -29,18 +31,25 @@ def create_token(body: TokenCreate, user: dict = Depends(require_partner)):
     raw = "dtl_" + secrets.token_hex(32)
     hashed = _hash_token(raw)
     row = execute(
-        """INSERT INTO api_tokens (name, token_hash, created_by, scope)
-           VALUES (%s, %s, %s, %s) RETURNING id, name, scope, created_at""",
-        (body.name.strip(), hashed, user["id"], body.scope),
+        """INSERT INTO api_tokens (name, token_hash, created_by, scope, daily_cost_limit_usd)
+           VALUES (%s, %s, %s, %s, %s) RETURNING id, name, scope, created_at, daily_cost_limit_usd""",
+        (body.name.strip(), hashed, user["id"], body.scope, body.daily_cost_limit_usd),
         returning=True,
     )
-    return {"id": row["id"], "name": row["name"], "scope": row["scope"], "created_at": str(row["created_at"]), "token": raw}
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "scope": row["scope"],
+        "created_at": str(row["created_at"]),
+        "daily_cost_limit_usd": row["daily_cost_limit_usd"],
+        "token": raw,
+    }
 
 
 @router.get("/tokens")
 def list_tokens(user: dict = Depends(require_partner)):
     return query(
-        """SELECT id, name, scope, created_at, last_used_at, is_active
+        """SELECT id, name, scope, created_at, last_used_at, is_active, daily_cost_limit_usd
            FROM api_tokens WHERE created_by = %s ORDER BY created_at DESC""",
         (user["id"],),
     )
