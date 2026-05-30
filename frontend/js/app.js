@@ -2366,7 +2366,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 
   const _AI_ACTION_FIELDS = {
     create_dispatch: [
-      { key: 'site_name',     label: 'Участок',      type: 'text',   req: true,  lookup: 'sites' },
+      { key: 'site_name',     label: 'Участок',      type: 'text',   req: true,  lookup: 'sites',  onchange: '_updateAiTariff' },
+      { key: 'truck_owner',   label: 'Чья машина',   type: 'text',   opts: ['DTL','Артём','наёмная'], onchange: '_updateAiTariff' },
       { key: 'truck_name',    label: 'Машина',        type: 'text',              lookup: 'trucks' },
       { key: 'driver_name',   label: 'Водитель',      type: 'text',              lookup: 'drivers' },
       { key: 'volume',        label: 'Объём куб',     type: 'number', req: true },
@@ -2436,6 +2437,19 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     create_fleet_expense:'🔧 Расход по машине',
   };
 
+  window._updateAiTariff = async function(idx) {
+    const siteName = document.getElementById(`aif-${idx}-site_name`)?.value?.trim();
+    const owner = document.getElementById(`aif-${idx}-truck_owner`)?.value?.trim() || 'DTL';
+    const tariffEl = document.getElementById(`aif-${idx}-tariff`);
+    const siteMap = (window._dtlLookup || {}).site_map || {};
+    const siteId = siteMap[siteName];
+    if (!siteId || !tariffEl) return;
+    try {
+      const t = await api.get(`/api/tariffs?site_id=${siteId}&truck_owner=${encodeURIComponent(owner)}&latest=true`);
+      if (t?.amount) tariffEl.value = t.amount;
+    } catch(e) {}
+  };
+
   function _renderActionForm(m, i) {
     const fields = _AI_ACTION_FIELDS[m.action] || [];
     const data = m.actionData || {};
@@ -2456,7 +2470,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         const fromOpts = f.opts || [];
         const allOpts = [...new Set([...fromOpts, ...fromLookup])];
         const dlOpts = allOpts.map(n => `<option value="${esc(n)}">`).join('');
-        ctrl = `<datalist id="${dlId}">${dlOpts}</datalist><input id="${id}" type="text" list="${dlId}" value="${esc(String(val))}" placeholder="${f.label}" autocomplete="off" style="${inpStyle}">`;
+        const onch = f.onchange ? ` onchange="window.${f.onchange}(${i})" oninput="window.${f.onchange}(${i})"` : '';
+        ctrl = `<datalist id="${dlId}">${dlOpts}</datalist><input id="${id}" type="text" list="${dlId}" value="${esc(String(val))}" placeholder="${f.label}" autocomplete="off" style="${inpStyle}"${onch}>`;
       }
       const missing = f.req && !val;
       return `<div style="margin-bottom:10px">
