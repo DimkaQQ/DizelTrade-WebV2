@@ -2926,8 +2926,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       <div class="bb">
         <div class="bbr"><div class="bbl">Сегодня</div><div class="bbv">${aiUsage ? aiUsage.today_cost_rub + ' ₽ / ' + aiUsage.today_tokens + ' токенов' : '—'}</div></div>
         <div class="bbr"><div class="bbl">В этом месяце</div><div class="bbv">${aiUsage ? aiUsage.month_cost_rub + ' ₽ / ' + aiUsage.month_tokens + ' токенов' : '—'}</div></div>
-        <div class="bbr"><div class="bbl">Дневной лимит</div><div class="bbv">${aiUsage ? aiUsage.daily_limit_rub + ' ₽' : '—'}</div></div>
+        <div class="bbr">
+          <div class="bbl">Дневной лимит для всех</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <input id="set-ai-limit" class="inp" type="number" value="${aiUsage ? aiUsage.daily_limit_rub : 500}" style="width:80px;text-align:right;padding:4px 8px" min="0" step="50">
+            <span style="color:var(--text2);font-size:13px">₽/день</span>
+          </div>
+        </div>
       </div>
+      <button onclick="window.saveAiLimit()" class="btn-secondary" style="width:100%;margin-top:8px">Сохранить лимит</button>
       ` : ''}
 
       ${isPartner() ? `
@@ -3158,6 +3165,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     try {
       await Promise.all(pairs.map(([key, value]) => api.put('/api/settings/' + key, { value })));
       toast('✅ Настройки сохранены');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.saveAiLimit = async function() {
+    const val = document.getElementById('set-ai-limit')?.value;
+    if (!val || isNaN(val) || parseFloat(val) < 0) { toast('Введите корректный лимит', 'error'); return; }
+    try {
+      await api.put('/api/settings/ai_daily_limit_rub', { value: val });
+      toast('✅ Лимит ИИ сохранён: ' + val + ' ₽/день');
     } catch (e) { toast(e.message, 'error'); }
   };
 
