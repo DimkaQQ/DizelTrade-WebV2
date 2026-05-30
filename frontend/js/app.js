@@ -2403,23 +2403,23 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 
   const _AI_ACTION_FIELDS = {
     create_dispatch: [
-      { key: 'site_name',     label: 'Участок',      type: 'text',   req: true },
-      { key: 'truck_name',    label: 'Машина',        type: 'text' },
-      { key: 'driver_name',   label: 'Водитель',      type: 'text' },
+      { key: 'site_name',     label: 'Участок',      type: 'text',   req: true,  lookup: 'sites' },
+      { key: 'truck_name',    label: 'Машина',        type: 'text',              lookup: 'trucks' },
+      { key: 'driver_name',   label: 'Водитель',      type: 'text',              lookup: 'drivers' },
       { key: 'volume',        label: 'Объём куб',     type: 'number', req: true },
       { key: 'tariff',        label: 'Тариф ₽/куб',  type: 'number' },
       { key: 'dispatched_at', label: 'Дата',          type: 'date' },
       { key: 'ttn_number',    label: 'ТТН',           type: 'text' },
     ],
     create_fuel_receipt: [
-      { key: 'supplier_name',  label: 'Поставщик',  type: 'text' },
+      { key: 'supplier_name',  label: 'Поставщик',  type: 'text',              lookup: 'suppliers' },
       { key: 'volume_nominal', label: 'Объём куб',  type: 'number', req: true },
       { key: 'received_at',    label: 'Дата',       type: 'date' },
       { key: 'ttn_number',     label: 'ТТН',        type: 'text' },
       { key: 'notes',          label: 'Примечание', type: 'text' },
     ],
     create_income: [
-      { key: 'client_name', label: 'Клиент',      type: 'text',   req: true },
+      { key: 'client_name', label: 'Клиент',      type: 'text',   req: true,  lookup: 'clients' },
       { key: 'amount',      label: 'Сумма ₽',     type: 'number', req: true },
       { key: 'income_at',   label: 'Дата',        type: 'date' },
       { key: 'volume',      label: 'Объём тонн',  type: 'number' },
@@ -2432,12 +2432,12 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       { key: 'comment',    label: 'Комментарий', type: 'text' },
     ],
     create_hire: [
-      { key: 'client_name',   label: 'Клиент',         type: 'text',   req: true },
+      { key: 'client_name',   label: 'Клиент',         type: 'text',   req: true, lookup: 'clients' },
       { key: 'volume_liters', label: 'Объём л',        type: 'number', req: true },
       { key: 'amount_client', label: 'Сумма клиент ₽', type: 'number' },
       { key: 'margin',        label: 'Маржа ₽',        type: 'number' },
-      { key: 'supplier_name', label: 'Поставщик',      type: 'text' },
-      { key: 'carrier_name',  label: 'Перевозчик',     type: 'text' },
+      { key: 'supplier_name', label: 'Поставщик',      type: 'text',              lookup: 'suppliers' },
+      { key: 'carrier_name',  label: 'Перевозчик',     type: 'text',              lookup: 'carriers' },
       { key: 'delivery_at',   label: 'Дата',           type: 'date' },
     ],
     create_debt: [
@@ -2448,13 +2448,20 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       { key: 'comment',     label: 'Комментарий', type: 'text' },
     ],
     create_fleet_expense: [
-      { key: 'truck_name', label: 'Машина',    type: 'text',   req: true },
+      { key: 'truck_name', label: 'Машина',    type: 'text',   req: true,  lookup: 'trucks' },
       { key: 'category',   label: 'Категория', type: 'select', opts: ['Ремонт','ТО','Зарплата','Топливо','Резина','Страховка','Прочие'], req: true },
       { key: 'amount',     label: 'Сумма ₽',   type: 'number', req: true },
       { key: 'expense_at', label: 'Дата',      type: 'date' },
       { key: 'comment',    label: 'Комментарий', type: 'text' },
     ],
   };
+
+  // Lookup cache for autocomplete
+  window._dtlLookup = null;
+  async function _loadAiLookup() {
+    if (window._dtlLookup) return;
+    try { window._dtlLookup = await api.get('/api/ai/lookup'); } catch(e) { window._dtlLookup = {}; }
+  }
 
   function _renderActionForm(m, i) {
     const fields = _AI_ACTION_FIELDS[m.action] || [];
@@ -2472,6 +2479,11 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ctrl = `<input id="${id}" type="date" value="${val || today}" style="${inpStyle}">`;
       } else if (f.type === 'number') {
         ctrl = `<input id="${id}" type="number" value="${val}" placeholder="${f.label}" style="${inpStyle}" step="any">`;
+      } else if (f.lookup) {
+        const dlId = `${id}-dl`;
+        const suggestions = ((window._dtlLookup || {})[f.lookup] || []);
+        const dlOpts = suggestions.map(n => `<option value="${esc(n)}">`).join('');
+        ctrl = `<datalist id="${dlId}">${dlOpts}</datalist><input id="${id}" type="text" list="${dlId}" value="${esc(String(val))}" placeholder="${f.label}" autocomplete="off" style="${inpStyle}">`;
       } else {
         ctrl = `<input id="${id}" type="text" value="${esc(String(val))}" placeholder="${f.label}" style="${inpStyle}">`;
       }
@@ -2560,6 +2572,10 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   window.openAiChat = function() {
     _aiPanelOpen = true;
     _renderAiPanel();
+    // Load lookup data in background for autocomplete (re-render form when ready)
+    if (!window._dtlLookup) {
+      _loadAiLookup().then(() => { if (_aiPanelOpen) _renderAiPanel(); });
+    }
   };
 
   window.closeAiChat = function() {
@@ -2941,11 +2957,56 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ` : ''}
 
       <div class="div"></div>
+      <button onclick="window.showHelpGuide()" class="btn-secondary" style="width:100%;margin-bottom:8px">📖 Справка / Инструкции</button>
       <button class="btn-secondary" style="width:100%" onclick="doLogout()">Выйти из системы</button>
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Настройки';
   }
+
+  window.showHelpGuide = function() {
+    localStorage.removeItem('dtl_onboarding_dismissed');
+    const sections = [
+      { icon: '🏠', title: 'Главная', text: 'Показывает остаток топлива на базе, рейсы в пути и выручку за месяц. Нажмите на карточку чтобы перейти в нужный раздел.' },
+      { icon: '🚛', title: 'База Тында', text: 'Приёмки — оформить поступление топлива с ТТН.\nРейсы — записать отгрузку на участок, отметить доставку или отмену.\nНаличные — выдача Артёму и отчёт об использовании.\nСверка — замер физического остатка.' },
+      { icon: '📦', title: 'Заказы клиентов', text: 'Создайте заказ, укажите клиента и объём. Система автоматически считает прогресс выполнения по рейсам.' },
+      { icon: '🚚', title: 'Найм (Хб→Тында)', text: 'Запись доставок по найму: клиент, поставщик, перевозчик, объём и цены. Автоматически считает маржу.' },
+      { icon: '💰', title: 'Доходы и Расходы', text: 'Фиксируйте поступления от клиентов и расходы компании. Доступны только партнёру.' },
+      { icon: '📊', title: 'Аналитика', text: 'Доля выручки по клиентам, P&L по машинам, доля закупок по поставщикам, финансовый итог за месяц/год.' },
+      { icon: '✦ ИИ', title: 'ИИ-ассистент', text: 'Напишите что нужно сделать — ИИ сам запишет. Например:\n"принял 15 куб от Камыша"\n"запиши рейс на Акурдан 12 кубов МАН"\n"поступило 500 000 от Луи Витона"\nПроверьте поля в форме и нажмите "Записать".\nТакже можно спросить: "сколько выручки за май?" или "кто самый крупный клиент?"' },
+      { icon: '⚙️', title: 'Настройки', text: 'Партнёр: управление клиентами, поставщиками, перевозчиками, участками, машинами, тарифами.\nAPI-токены: для интеграций (Cursor, внешние системы).\nАктивные сессии: история входов, завершение чужих сессий.' },
+    ];
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:0';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:20px 20px 0 0;padding:0;max-width:520px;width:100%;max-height:88vh;display:flex;flex-direction:column">
+        <div style="padding:20px 20px 12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="font-size:17px;font-weight:700">📖 Справка по системе DTL</div>
+          <button onclick="this.closest('[style*=position]').remove()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">✕</button>
+        </div>
+        <div style="overflow-y:auto;padding:16px 20px 24px;flex:1">
+          ${sections.map(s => `
+          <div style="margin-bottom:18px">
+            <div style="font-size:14px;font-weight:700;margin-bottom:6px">${esc(s.icon)} ${esc(s.title)}</div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap">${esc(s.text)}</div>
+          </div>`).join('<div style="border-top:1px solid var(--border);margin:12px 0"></div>')}
+          <div style="margin-top:20px;padding:14px;background:rgba(196,180,84,.1);border:1px solid rgba(196,180,84,.3);border-radius:12px">
+            <div style="font-size:13px;font-weight:700;margin-bottom:6px">💡 Быстрый старт</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+              1. Откройте Базу → Приёмки → запишите поступление топлива<br>
+              2. Откройте Базу → Рейсы → нажмите "+ Рейс" чтобы отправить машину<br>
+              3. Когда машина вернулась → нажмите на рейс → "Доставлено"<br>
+              4. Или скажите ИИ: "принял 15 куб от Камыша, отправь МАН на Акурдан 12 куб"
+            </div>
+          </div>
+          <button onclick="localStorage.removeItem('dtl_onboarding_dismissed');this.closest('[style*=position]').remove();checkOnboarding()" style="width:100%;margin-top:16px;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:12px;font-size:13px;cursor:pointer">
+            🚀 Показать чек-лист начала работы
+          </button>
+        </div>
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
 
   window.toggleSite = async function(id, active) {
     try {
@@ -3636,7 +3697,6 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${annualSupplierRows}
       </div>
 
-      <button class="btn-secondary" onclick="window.open('/api/annual/export?year=${selYear}')">Экспорт CSV</button>
     </div>`;
 
     setPageContent(html, getTabBar());
