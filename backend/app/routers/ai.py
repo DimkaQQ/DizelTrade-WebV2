@@ -61,7 +61,7 @@ class QueryRequest(BaseModel):
 def ai_lookup(user: dict = Depends(require_not_operator)):
     """Lookup data for AI form autocomplete: trucks, sites, clients, etc."""
     trucks = query("SELECT name, owner FROM trucks WHERE (status IS NULL OR status = 'active') ORDER BY name")
-    sites = query("SELECT name FROM sites WHERE is_active = TRUE ORDER BY name")
+    sites = query("SELECT id, name FROM sites WHERE is_active = TRUE ORDER BY name")
     clients = query("SELECT name FROM clients ORDER BY name LIMIT 60")
     suppliers = query("SELECT name FROM suppliers ORDER BY name LIMIT 40")
     carriers = query("SELECT name FROM carriers ORDER BY name LIMIT 40")
@@ -69,6 +69,7 @@ def ai_lookup(user: dict = Depends(require_not_operator)):
     return {
         "trucks":    [r["name"] for r in trucks],
         "sites":     [r["name"] for r in sites],
+        "site_map":  {r["name"]: r["id"] for r in sites},
         "clients":   [r["name"] for r in clients],
         "suppliers": [r["name"] for r in suppliers],
         "carriers":  [r["name"] for r in carriers],
