@@ -292,7 +292,7 @@ def setup_2fa(user: dict = Depends(get_current_user)):
     try:
         import segno, io
         buf = io.StringIO()
-        segno.make(uri).save(buf, kind="svg", scale=5, border=2)
+        segno.make(uri).save(buf, kind="svg", scale=5)
         qr_svg = buf.getvalue()
     except Exception:
         pass
