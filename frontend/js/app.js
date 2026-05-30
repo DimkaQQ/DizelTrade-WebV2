@@ -269,8 +269,9 @@
           <div class="nav-item" data-page="balance" onclick="navigate('#balance')"><span class="ni-icon">⚖️</span> Баланс</div>
           <div class="nav-item" data-page="annual" onclick="navigate('#annual')"><span class="ni-icon">📅</span> Год. итоги</div>
           ` : ''}
+          ${isPartner() ? `
           <div class="nav-group-label">Система</div>
-          ${isPartner() ? `<div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>` : ''}
+          <div class="nav-item" data-page="settings" onclick="navigate('#settings')"><span class="ni-icon">⚙️</span> Настройки</div>` : ''}
         </div>
         <div class="sidebar-user">
           <div class="user-avatar">${getUserInitials().toUpperCase()}</div>
