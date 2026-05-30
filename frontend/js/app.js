@@ -3074,10 +3074,6 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       </div>`;
     }).join('') : `<div class="empty-state">Нет данных</div>`;
 
-    const concentrationWarning = maxClientPct > 50
-      ? `<div class="concentration-warning">⚠ Концентрация риска: один клиент занимает ${maxClientPct}% выручки</div>`
-      : '';
-
     // Fleet P&L table
     const mkM = v => v >= 1000000 ? (v / 1000000).toFixed(2) + ' млн' : v >= 1000 ? (v / 1000).toFixed(0) + ' т.₽' : formatNum(v);
     const mkC = (v, good, ok) => v >= good ? 'var(--accent)' : v >= ok ? 'var(--orange)' : 'var(--red)';
@@ -3162,20 +3158,20 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     // Carriers section — dual bar: cost share + volume share
     const carrierRows = carriers.length ? carriers.map(c => {
       const isOrange = c.pct_cost >= 40;
-      return `<div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+      return `<div style="margin-bottom:18px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
           <span style="font-weight:600;color:var(--text)">${esc(c.carrier_name)}</span>
           <span style="color:var(--text2)">${c.trips} рейс · ${formatNum(c.cost)} ₽</span>
         </div>
-        <div style="display:flex;gap:4px;align-items:center;margin-bottom:2px">
-          <span style="font-size:10px;color:var(--text2);width:40px">Сумма</span>
-          <div style="flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%;height:100%;border-radius:3px" data-target="${c.pct_cost}%"></div></div>
-          <span style="font-size:11px;font-weight:700;color:${isOrange ? 'var(--orange)' : 'var(--accent)'};">${c.pct_cost}%</span>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <span style="font-size:11px;color:var(--text2);width:48px">Сумма</span>
+          <div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden"><div class="prog-mini-fill${isOrange ? ' o' : ''}" style="width:0%;height:100%;border-radius:4px" data-target="${c.pct_cost}%"></div></div>
+          <span style="font-size:12px;font-weight:700;color:${isOrange ? 'var(--orange)' : 'var(--accent)'};min-width:32px;text-align:right">${c.pct_cost}%</span>
         </div>
-        <div style="display:flex;gap:4px;align-items:center">
-          <span style="font-size:10px;color:var(--text2);width:40px">Объём</span>
-          <div style="flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden"><div class="prog-mini-fill" style="width:0%;height:100%;border-radius:3px;background:var(--accent)" data-target="${c.pct_volume}%"></div></div>
-          <span style="font-size:11px;color:var(--text2)">${c.pct_volume}%</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:11px;color:var(--text2);width:48px">Объём</span>
+          <div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden"><div class="prog-mini-fill" style="width:0%;height:100%;border-radius:4px;background:var(--accent)" data-target="${c.pct_volume}%"></div></div>
+          <span style="font-size:12px;color:var(--text2);min-width:32px;text-align:right">${c.pct_volume}%</span>
         </div>
       </div>`;
     }).join('') : `<div class="empty-state">Нет данных</div>`;
@@ -3197,7 +3193,6 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${sectionHeader('Клиенты — доля выручки')}
       <div class="pi">
         ${clientRows}
-        ${concentrationWarning}
       </div>
 
       ${sectionHeader('P&L по машинам · ' + (selMonth ? months[selMonth-1] + ' ' + selYear : 'Весь ' + selYear))}
@@ -3209,7 +3204,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       </div>
 
       ${sectionHeader('Перевозчики — доля объёма и суммы')}
-      <div class="pi" style="padding:12px 0">
+      <div class="pi">
         ${carrierRows}
       </div>
 
