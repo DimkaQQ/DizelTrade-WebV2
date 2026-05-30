@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dtl.main")
 
-app = FastAPI(title="DTL Management API", version="2.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="DTL Management API", version="2.0.0", docs_url="/api/docs", redoc_url="/api/redoc")
 
 app.add_middleware(SecurityMiddleware)
 app.add_middleware(
