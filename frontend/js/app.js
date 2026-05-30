@@ -473,57 +473,89 @@
     }, 30000);
   }
 
-  window.checkOnboarding = async function checkOnboarding() {
-    if (localStorage.getItem('dtl_onboarding_dismissed')) return;
-    let steps = [];
-    try { steps = await api.get('/api/onboarding') || []; } catch(e) { return; }
-    const allDone = steps.every(s => s.done);
-    if (allDone) { localStorage.setItem('dtl_onboarding_dismissed', '1'); return; }
-    const doneCount = steps.filter(s => s.done).length;
-    if (doneCount === 0) {
-      // First-time user — show welcome modal
-      const existing = document.getElementById('modal-overlay');
-      if (existing) existing.remove();
-      const fab = document.getElementById('ai-fab');
-      if (fab) { fab.style.transform = 'scale(0)'; fab.style.opacity = '0'; }
-      const overlay = document.createElement('div');
-      overlay.id = 'modal-overlay';
-      overlay.className = 'modal-overlay';
-      overlay.innerHTML = `
-        <div class="modal-sheet">
-          <div class="modal-body" style="text-align:center;padding:16px 0 8px">
-            <div style="font-size:48px">👋</div>
-            <div style="font-size:20px;font-weight:700;margin:8px 0">Добро пожаловать в DTL!</div>
-            <div style="color:var(--text2);font-size:14px;margin-bottom:16px">Несколько шагов для начала работы</div>
-            ${steps.map((s, i) => `<div style="display:flex;align-items:center;gap:10px;padding:8px;text-align:left">
-              <div style="width:24px;height:24px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text2)">${i + 1}</div>
-              <div style="font-size:13px">${esc(s.label)}</div>
-            </div>`).join('')}
-            <button onclick="localStorage.setItem('dtl_onboarding_dismissed','1');closeModal()" class="btn-secondary" style="width:100%;margin-top:16px">Понятно, начнём</button>
-          </div>
-        </div>`;
-      document.body.appendChild(overlay);
-      overlay.addEventListener('click', e => { if (e.target === overlay) { localStorage.setItem('dtl_onboarding_dismissed', '1'); closeModal(); } });
-    }
-  }
+  const GUIDE_STEPS = [
+    {
+      icon: '👋',
+      title: 'Добро пожаловать в DTL!',
+      text: 'Это система учёта топлива и рейсов.\nЗдесь вы записываете: сколько топлива приняли, куда отправили машину, сколько заработали.',
+      tip: 'Всё очень просто — мы покажем шаг за шагом!',
+    },
+    {
+      icon: '🏠',
+      title: 'Главная страница',
+      text: 'На главном экране — карточки разделов.\nНажмите на нужную карточку, чтобы перейти:\n• ⛽ База — топливо и рейсы\n• 💰 Доходы / 📋 Расходы — деньги\n• 📈 Аналитика — итоги',
+      tip: 'Кнопка "📖 Справка" внизу всегда открывает эту инструкцию.',
+    },
+    {
+      icon: '⛽',
+      title: 'Принять топливо',
+      text: 'Когда приехала машина с топливом:\n1. Нажмите ⛽ База на главной\n2. Нажмите "+ Приёмка"\n3. Введите объём и номер ТТН\n4. Нажмите "Сохранить"',
+      tip: 'Или скажите ИИ: "принял 15 куб от Камыша" — он сам всё запишет!',
+    },
+    {
+      icon: '🚚',
+      title: 'Отправить рейс',
+      text: 'Когда машина едет на участок:\n1. Нажмите ⛽ База → вкладка Рейсы\n2. Нажмите "+ Рейс"\n3. Укажите машину, участок, объём\n4. Когда вернулась — нажмите рейс → "Доставлено"',
+      tip: 'Или скажите ИИ: "МАН поехал на Акурдан 12 кубов"',
+    },
+    {
+      icon: '✦',
+      title: 'ИИ-ассистент',
+      text: 'Нажмите круглую кнопку ✦ внизу экрана.\nМожно написать или продиктовать голосом:\n• "принял 20 куб от Роснефти"\n• "запиши рейс МАН на Дипкун 15 куб"\n• "поступило 300 тысяч от Лао"\nИИ предложит форму — проверьте и нажмите Записать.',
+      tip: 'ИИ понимает разговорный язык — говорите как обычно!',
+    },
+    {
+      icon: '🎉',
+      title: 'Вы готовы к работе!',
+      text: 'Теперь вы знаете основное.\nЕсли что-то непонятно — нажмите кнопку\n"📖 Справка" на главном экране\nили кнопку ✦ и спросите у ИИ.',
+      tip: 'Можно спросить ИИ: "как записать рейс?" — он объяснит.',
+    },
+  ];
 
-  window.completeOnboardingStep = async function(stepKey) {
-    try { await api.post('/api/onboarding/' + stepKey, {}); } catch(e) {}
-    const routes = {
-      setup_clients:  '#settings',
-      add_trucks:     '#fleet',
-      create_order:   '#orders',
-      view_analytics: '#analytics',
-      invite_team:    '#settings',
-      add_own_trucks: '#fleet',
-      first_trip:     '#base/dispatches/new',
-      check_balance:  '#base',
-      cash_report:    '#base?tab=cash',
-      first_receipt:  '#base/receipts/new',
-      first_dispatch: '#base/dispatches/new',
-      check_stock:    '#base',
-    };
-    navigate(routes[stepKey] || '#home');
+  window.showInteractiveGuide = function(stepIdx) {
+    stepIdx = Math.max(0, Math.min(stepIdx, GUIDE_STEPS.length - 1));
+    const step = GUIDE_STEPS[stepIdx];
+    const isFirst = stepIdx === 0;
+    const isLast = stepIdx === GUIDE_STEPS.length - 1;
+
+    const dots = GUIDE_STEPS.map((_, i) =>
+      `<div style="width:${i === stepIdx ? 20 : 8}px;height:8px;border-radius:4px;background:${i === stepIdx ? 'var(--accent)' : 'var(--border)'};transition:width .2s"></div>`
+    ).join('');
+
+    const existing = document.getElementById('dtl-guide-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'dtl-guide-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10000;display:flex;align-items:flex-end;justify-content:center';
+    overlay.innerHTML = `
+      <div style="background:var(--card);border-radius:24px 24px 0 0;padding:0;max-width:520px;width:100%;display:flex;flex-direction:column">
+        <div style="padding:20px 20px 0;display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;gap:5px;align-items:center">${dots}</div>
+          <button onclick="document.getElementById('dtl-guide-overlay').remove();localStorage.setItem('dtl_onboarding_dismissed','1')" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;padding:4px">✕</button>
+        </div>
+        <div style="padding:24px 24px 32px;text-align:center">
+          <div style="font-size:56px;margin-bottom:12px;line-height:1">${step.icon}</div>
+          <div style="font-size:22px;font-weight:700;margin-bottom:14px;color:var(--text)">${esc(step.title)}</div>
+          <div style="font-size:16px;color:var(--text2);line-height:1.7;white-space:pre-wrap;margin-bottom:16px;text-align:left">${esc(step.text)}</div>
+          <div style="background:rgba(196,180,84,.12);border:1px solid rgba(196,180,84,.35);border-radius:12px;padding:12px 14px;text-align:left;margin-bottom:24px">
+            <span style="font-size:13px;color:var(--text2)">💡 ${esc(step.tip)}</span>
+          </div>
+          <div style="display:flex;gap:10px">
+            ${isFirst ? '' : `<button onclick="window.showInteractiveGuide(${stepIdx - 1})" style="flex:1;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:16px;cursor:pointer">← Назад</button>`}
+            ${isLast
+              ? `<button onclick="document.getElementById('dtl-guide-overlay').remove();localStorage.setItem('dtl_onboarding_dismissed','1')" style="flex:2;padding:14px;border-radius:12px;border:none;background:var(--accent);color:#000;font-size:16px;font-weight:700;cursor:pointer">Начать работу 🚀</button>`
+              : `<button onclick="window.showInteractiveGuide(${stepIdx + 1})" style="flex:2;padding:14px;border-radius:12px;border:none;background:var(--accent);color:#000;font-size:16px;font-weight:700;cursor:pointer">Далее →</button>`
+            }
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+  };
+
+  window.checkOnboarding = function() {
+    if (localStorage.getItem('dtl_onboarding_dismissed')) return;
+    window.showInteractiveGuide(0);
   };
 
   function setupLayout() {
@@ -619,29 +651,6 @@
       }
     } catch (e) { /* silent */ }
 
-    let onboardingSteps = [];
-    if (!localStorage.getItem('dtl_onboarding_dismissed')) {
-      try { onboardingSteps = await api.get('/api/onboarding') || []; } catch(e) {}
-      if (onboardingSteps.length && onboardingSteps.every(s => s.done)) {
-        localStorage.setItem('dtl_onboarding_dismissed', '1');
-        onboardingSteps = [];
-      }
-    }
-    const onboardingCard = onboardingSteps.length ? `
-      <div style="background:linear-gradient(135deg,rgba(0,212,100,.1),rgba(0,150,255,.1));border:1px solid var(--accent);border-radius:14px;padding:14px;margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-weight:700;font-size:14px">🚀 Начало работы · ${onboardingSteps.filter(s => s.done).length}/${onboardingSteps.length}</div>
-          <button onclick="localStorage.setItem('dtl_onboarding_dismissed','1');this.closest('div[style*=gradient]').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px">✕</button>
-        </div>
-        ${onboardingSteps.map(s => `
-          <div onclick="window.completeOnboardingStep('${esc(s.key)}')" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;opacity:${s.done ? '0.5' : '1'}">
-            <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${s.done ? 'var(--accent)' : 'var(--border)'};background:${s.done ? 'var(--accent)' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-              ${s.done ? '<span style="color:#000;font-size:10px">✓</span>' : ''}
-            </div>
-            <div style="font-size:13px;${s.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${esc(s.label)}</div>
-          </div>`).join('')}
-      </div>` : '';
-
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
@@ -649,7 +658,6 @@
       <div class="stitle">Что записать?</div>
       <div class="ssub">// добро пожаловать</div>
       ${alertBannerHtml}
-      ${onboardingCard}
       <div class="menu-grid">
         ${menuCard({ icon: '⛽', label: 'База', sub: 'приёмка / рейсы', accent: true, badgeText: pendingCount > 0 ? String(pendingCount) : '', onClick: "navigate('#base')" })}
         ${menuCard({ icon: '📦', label: 'Заказы', sub: 'прогресс', onClick: "navigate('#orders')" })}
@@ -680,29 +688,6 @@
     } catch (e) {}
     try { orders = await api.get('/api/orders') || []; } catch (e) {}
 
-    let onboardingSteps = [];
-    if (!localStorage.getItem('dtl_onboarding_dismissed')) {
-      try { onboardingSteps = await api.get('/api/onboarding') || []; } catch(e) {}
-      if (onboardingSteps.length && onboardingSteps.every(s => s.done)) {
-        localStorage.setItem('dtl_onboarding_dismissed', '1');
-        onboardingSteps = [];
-      }
-    }
-    const onboardingCard = onboardingSteps.length ? `
-      <div style="background:linear-gradient(135deg,rgba(0,212,100,.1),rgba(0,150,255,.1));border:1px solid var(--accent);border-radius:14px;padding:14px;margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-weight:700;font-size:14px">🚀 Начало работы · ${onboardingSteps.filter(s => s.done).length}/${onboardingSteps.length}</div>
-          <button onclick="localStorage.setItem('dtl_onboarding_dismissed','1');this.closest('div[style*=gradient]').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px">✕</button>
-        </div>
-        ${onboardingSteps.map(s => `
-          <div onclick="window.completeOnboardingStep('${esc(s.key)}')" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;opacity:${s.done ? '0.5' : '1'}">
-            <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${s.done ? 'var(--accent)' : 'var(--border)'};background:${s.done ? 'var(--accent)' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-              ${s.done ? '<span style="color:#000;font-size:10px">✓</span>' : ''}
-            </div>
-            <div style="font-size:13px;${s.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${esc(s.label)}</div>
-          </div>`).join('')}
-      </div>` : '';
-
     const currentBal = balance ? balance.balance_cubic : '—';
     let artemDebt = null;
     try { artemDebt = await api.get('/api/base/artem-debt'); } catch (e) {}
@@ -718,7 +703,6 @@
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
     <div class="content">
-      ${onboardingCard}
       <div class="role-tag orange">🔒 Ограниченный доступ · База Тында</div>
       <div class="stitle">База Тында</div>
       <div class="ssub">// добрый день, ${esc(user.name || user.email)}</div>
@@ -754,34 +738,10 @@
     try { balance = await api.get('/api/base/balance'); } catch (e) {}
     try { pending = await api.get('/api/base/receipts/pending') || []; } catch (e) {}
 
-    let onboardingSteps = [];
-    if (!localStorage.getItem('dtl_onboarding_dismissed')) {
-      try { onboardingSteps = await api.get('/api/onboarding') || []; } catch(e) {}
-      if (onboardingSteps.length && onboardingSteps.every(s => s.done)) {
-        localStorage.setItem('dtl_onboarding_dismissed', '1');
-        onboardingSteps = [];
-      }
-    }
-    const onboardingCard = onboardingSteps.length ? `
-      <div style="background:linear-gradient(135deg,rgba(0,212,100,.1),rgba(0,150,255,.1));border:1px solid var(--accent);border-radius:14px;padding:14px;margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-weight:700;font-size:14px">🚀 Начало работы · ${onboardingSteps.filter(s => s.done).length}/${onboardingSteps.length}</div>
-          <button onclick="localStorage.setItem('dtl_onboarding_dismissed','1');this.closest('div[style*=gradient]').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px">✕</button>
-        </div>
-        ${onboardingSteps.map(s => `
-          <div onclick="window.completeOnboardingStep('${esc(s.key)}')" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;opacity:${s.done ? '0.5' : '1'}">
-            <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${s.done ? 'var(--accent)' : 'var(--border)'};background:${s.done ? 'var(--accent)' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-              ${s.done ? '<span style="color:#000;font-size:10px">✓</span>' : ''}
-            </div>
-            <div style="font-size:13px;${s.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${esc(s.label)}</div>
-          </div>`).join('')}
-      </div>` : '';
-
     const html = `
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-logo">DIZEL<span>TRADE</span></div><span class="nav-user">${esc(user.name || user.email)}</span></div>` : ''}
     <div class="content">
-      ${onboardingCard}
       <div class="role-tag blue">🔒 Минимальный доступ · Ввод данных</div>
       <div class="stitle">Что записать?</div>
       <div class="ssub">// добро пожаловать</div>
@@ -2974,49 +2934,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Настройки';
   }
 
-  window.showHelpGuide = function() {
-    localStorage.removeItem('dtl_onboarding_dismissed');
-    const sections = [
-      { icon: '🏠', title: 'Главная', text: 'Показывает остаток топлива на базе, рейсы в пути и выручку за месяц. Нажмите на карточку чтобы перейти в нужный раздел.' },
-      { icon: '🚛', title: 'База Тында', text: 'Приёмки — оформить поступление топлива с ТТН.\nРейсы — записать отгрузку на участок, отметить доставку или отмену.\nНаличные — выдача Артёму и отчёт об использовании.\nСверка — замер физического остатка.' },
-      { icon: '📦', title: 'Заказы клиентов', text: 'Создайте заказ, укажите клиента и объём. Система автоматически считает прогресс выполнения по рейсам.' },
-      { icon: '🚚', title: 'Найм (Хб→Тында)', text: 'Запись доставок по найму: клиент, поставщик, перевозчик, объём и цены. Автоматически считает маржу.' },
-      { icon: '💰', title: 'Доходы и Расходы', text: 'Фиксируйте поступления от клиентов и расходы компании. Доступны только партнёру.' },
-      { icon: '📊', title: 'Аналитика', text: 'Доля выручки по клиентам, P&L по машинам, доля закупок по поставщикам, финансовый итог за месяц/год.' },
-      { icon: '✦ ИИ', title: 'ИИ-ассистент', text: 'Напишите что нужно сделать — ИИ сам запишет. Например:\n"принял 15 куб от Камыша"\n"запиши рейс на Акурдан 12 кубов МАН"\n"поступило 500 000 от Луи Витона"\nПроверьте поля в форме и нажмите "Записать".\nТакже можно спросить: "сколько выручки за май?" или "кто самый крупный клиент?"' },
-      { icon: '⚙️', title: 'Настройки', text: 'Партнёр: управление клиентами, поставщиками, перевозчиками, участками, машинами, тарифами.\nAPI-токены: для интеграций (Cursor, внешние системы).\nАктивные сессии: история входов, завершение чужих сессий.' },
-    ];
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:0';
-    overlay.innerHTML = `
-      <div style="background:var(--card);border-radius:20px 20px 0 0;padding:0;max-width:520px;width:100%;max-height:88vh;display:flex;flex-direction:column">
-        <div style="padding:20px 20px 12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);flex-shrink:0">
-          <div style="font-size:17px;font-weight:700">📖 Справка по системе DTL</div>
-          <button onclick="this.closest('[style*=position]').remove()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">✕</button>
-        </div>
-        <div style="overflow-y:auto;padding:16px 20px 24px;flex:1">
-          ${sections.map(s => `
-          <div style="margin-bottom:18px">
-            <div style="font-size:14px;font-weight:700;margin-bottom:6px">${esc(s.icon)} ${esc(s.title)}</div>
-            <div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap">${esc(s.text)}</div>
-          </div>`).join('<div style="border-top:1px solid var(--border);margin:12px 0"></div>')}
-          <div style="margin-top:20px;padding:14px;background:rgba(196,180,84,.1);border:1px solid rgba(196,180,84,.3);border-radius:12px">
-            <div style="font-size:13px;font-weight:700;margin-bottom:6px">💡 Быстрый старт</div>
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
-              1. Откройте Базу → Приёмки → запишите поступление топлива<br>
-              2. Откройте Базу → Рейсы → нажмите "+ Рейс" чтобы отправить машину<br>
-              3. Когда машина вернулась → нажмите на рейс → "Доставлено"<br>
-              4. Или скажите ИИ: "принял 15 куб от Камыша, отправь МАН на Акурдан 12 куб"
-            </div>
-          </div>
-          <button onclick="localStorage.removeItem('dtl_onboarding_dismissed');this.closest('[style*=position]').remove();checkOnboarding()" style="width:100%;margin-top:16px;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:12px;font-size:13px;cursor:pointer">
-            🚀 Показать чек-лист начала работы
-          </button>
-        </div>
-      </div>`;
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    document.body.appendChild(overlay);
-  };
+  window.showHelpGuide = function() { window.showInteractiveGuide(0); };
 
   window.toggleSite = async function(id, active) {
     try {
