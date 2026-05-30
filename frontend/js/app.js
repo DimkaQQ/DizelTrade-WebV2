@@ -349,9 +349,20 @@
   // ── Router ───────────────────────────────────────────────────────────────
   window.addEventListener('hashchange', () => render(location.hash));
   let _resizeTimer;
+  let _prevIsDesktop = window.innerWidth >= 768;
   window.addEventListener('resize', () => {
     clearTimeout(_resizeTimer);
-    _resizeTimer = setTimeout(() => { if (user) { setupLayout(); render(location.hash); } }, 200);
+    _resizeTimer = setTimeout(() => {
+      // Only re-render when mobile↔desktop breakpoint actually crosses.
+      // iOS Safari fires resize constantly as toolbar hides/shows during scroll
+      // (height changes, width stays the same) — this caused full DOM rebuild → flicker.
+      const nowDesktop = window.innerWidth >= 768;
+      if (user && nowDesktop !== _prevIsDesktop) {
+        _prevIsDesktop = nowDesktop;
+        setupLayout();
+        render(location.hash);
+      }
+    }, 300);
   });
 
   function render(hash) {
