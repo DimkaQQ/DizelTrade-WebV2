@@ -2389,7 +2389,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       { key: 'comment',     label: 'Комментарий', type: 'text' },
     ],
     create_expense: [
-      { key: 'category',   label: 'Категория', type: 'select', opts: ['Топливо','Зарплата','Ремонт','ТО','Аренда','Прочие'], req: true },
+      { key: 'category',   label: 'Категория', type: 'text',   opts: ['Топливо','Зарплата','Ремонт','ТО','Аренда','Прочие'], req: true },
       { key: 'amount',     label: 'Сумма ₽',   type: 'number', req: true },
       { key: 'expense_at', label: 'Дата',      type: 'date' },
       { key: 'comment',    label: 'Комментарий', type: 'text' },
@@ -2404,15 +2404,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       { key: 'delivery_at',   label: 'Дата',           type: 'date' },
     ],
     create_debt: [
-      { key: 'debtor',      label: 'Должник',     type: 'text',   req: true },
+      { key: 'debtor',      label: 'Должник',     type: 'text',   req: true,  lookup: 'clients' },
       { key: 'amount',      label: 'Сумма ₽',     type: 'number', req: true },
-      { key: 'type',        label: 'Тип',         type: 'select', opts: ['ДОЛГ','ОПЛАТА'] },
+      { key: 'type',        label: 'Тип',         type: 'text',   opts: ['ДОЛГ','ОПЛАТА'] },
       { key: 'recorded_at', label: 'Дата',        type: 'date' },
       { key: 'comment',     label: 'Комментарий', type: 'text' },
     ],
     create_fleet_expense: [
       { key: 'truck_name', label: 'Машина',    type: 'text',   req: true,  lookup: 'trucks' },
-      { key: 'category',   label: 'Категория', type: 'select', opts: ['Ремонт','ТО','Зарплата','Топливо','Резина','Страховка','Прочие'], req: true },
+      { key: 'category',   label: 'Категория', type: 'text',   opts: ['Ремонт','ТО','Зарплата','Топливо','Резина','Страховка','Прочие'], req: true },
       { key: 'amount',     label: 'Сумма ₽',   type: 'number', req: true },
       { key: 'expense_at', label: 'Дата',      type: 'date' },
       { key: 'comment',    label: 'Комментарий', type: 'text' },
@@ -2446,20 +2446,17 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const id = `aif-${i}-${f.key}`;
       const val = data[f.key] !== null && data[f.key] !== undefined ? data[f.key] : '';
       let ctrl;
-      if (f.type === 'select') {
-        const opts = f.opts.map(o => `<option value="${o}"${String(val || f.opts[0]) === o ? ' selected' : ''}>${o}</option>`).join('');
-        ctrl = `<select id="${id}" style="${inpStyle}">${opts}</select>`;
-      } else if (f.type === 'date') {
+      if (f.type === 'date') {
         ctrl = `<input id="${id}" type="date" value="${val || today}" style="${inpStyle}">`;
       } else if (f.type === 'number') {
         ctrl = `<input id="${id}" type="number" value="${val}" placeholder="0" style="${inpStyle}" step="any">`;
-      } else if (f.lookup) {
-        const dlId = `${id}-dl`;
-        const suggestions = ((window._dtlLookup || {})[f.lookup] || []);
-        const dlOpts = suggestions.map(n => `<option value="${esc(n)}">`).join('');
-        ctrl = `<datalist id="${dlId}">${dlOpts}</datalist><input id="${id}" type="text" list="${dlId}" value="${esc(String(val))}" placeholder="${f.label}" autocomplete="off" style="${inpStyle}">`;
       } else {
-        ctrl = `<input id="${id}" type="text" value="${esc(String(val))}" placeholder="${f.label}" style="${inpStyle}">`;
+        const dlId = `${id}-dl`;
+        const fromLookup = f.lookup ? ((window._dtlLookup || {})[f.lookup] || []) : [];
+        const fromOpts = f.opts || [];
+        const allOpts = [...new Set([...fromOpts, ...fromLookup])];
+        const dlOpts = allOpts.map(n => `<option value="${esc(n)}">`).join('');
+        ctrl = `<datalist id="${dlId}">${dlOpts}</datalist><input id="${id}" type="text" list="${dlId}" value="${esc(String(val))}" placeholder="${f.label}" autocomplete="off" style="${inpStyle}">`;
       }
       const missing = f.req && !val;
       return `<div style="margin-bottom:10px">
