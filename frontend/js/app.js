@@ -3697,7 +3697,6 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${annualSupplierRows}
       </div>
 
-      <button class="btn-secondary" onclick="window.open('/api/annual/export?year=${selYear}')">Экспорт CSV</button>
     </div>`;
 
     setPageContent(html, getTabBar());
