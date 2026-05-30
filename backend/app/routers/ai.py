@@ -214,37 +214,70 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
 
     role = user.get("role", "")
     is_artem = role == "artem"
+    is_operator = role == "operator"
+
+    # Actions allowed per role
+    PARTNER_ACTIONS = {"create_fuel_receipt", "create_dispatch", "create_income", "create_expense",
+                       "create_hire", "create_debt", "create_fleet_expense"}
+    ARTEM_ACTIONS   = {"create_fuel_receipt", "create_dispatch", "create_fleet_expense"}
+    allowed_actions = ARTEM_ACTIONS if is_artem else (set() if is_operator else PARTNER_ACTIONS)
 
     artem_restriction = """
-ОГРАНИЧЕНИЕ ДОСТУПА: пользователь видит только fleet/dispatch данные (trucks owner='Артём', drivers, fleet_expenses, fuel_dispatches, fuel_receipts).
-Финансовые таблицы (income_records, company_expenses, debt_records, hire_deliveries, cash_to_artem) — недоступны.
+ТВОЙ ПОЛЬЗОВАТЕЛЬ — Артём (роль: artem). Он управляет базой и автопарком.
+Доступ к данным: trucks, drivers, fleet_expenses, fuel_dispatches, fuel_receipts.
+Финансовые данные (income_records, company_expenses, debt_records, hire_deliveries) — НЕДОСТУПНЫ, не отвечай по ним.
 """ if is_artem else ""
 
-    write_actions = """
-Ты также можешь ЗАПИСЫВАТЬ данные. Если пользователь просит что-то записать/добавить/зафиксировать — верни JSON действия:
-{{"type":"action","action":"ИМЯ_ДЕЙСТВИЯ","description":"Описание того что будет записано (для подтверждения пользователем)","data":{{...}}}}
+    if allowed_actions:
+        action_list_partner = """- create_fuel_receipt: принять топливо на базу. data: {received_at, supplier_name, volume_nominal (куб, обязательно), ttn_number, notes}
+- create_dispatch: рейс с базы на участок. data: {dispatched_at, truck_name, driver_name, site_name (обязательно), volume (куб, обязательно), tariff, ttn_number, notes}
+- create_income: поступление денег. data: {income_at, amount (обязательно), client_name, volume (тонн), comment}
+- create_expense: расход компании. data: {expense_at, category (Топливо/Зарплата/Ремонт/ТО/Аренда/Прочие), amount (обязательно), comment}
+- create_hire: найм-доставка. data: {delivery_at, client_name, supplier_name, carrier_name, volume_liters, price_client, amount_client, margin, comment}
+- create_debt: долг или оплата. data: {recorded_at, debtor, amount, type ("ДОЛГ" или "ОПЛАТА"), comment}
+- create_fleet_expense: расход по машине. data: {truck_name, expense_at, category (Ремонт/ТО/Зарплата/Топливо/Резина/Страховка/Прочие), amount, comment}"""
+
+        action_list_artem = """- create_fuel_receipt: принять топливо на базу. data: {received_at, supplier_name, volume_nominal (куб, обязательно), ttn_number, notes}
+- create_dispatch: рейс с базы на участок. data: {dispatched_at, truck_name, driver_name, site_name (обязательно), volume (куб, обязательно), tariff, ttn_number, notes}
+- create_fleet_expense: расход по машине. data: {truck_name, expense_at, category (Ремонт/ТО/Зарплата/Топливо/Резина/Страховка/Прочие), amount, comment}"""
+
+        action_list = action_list_artem if is_artem else action_list_partner
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        write_block = f"""
+=== ЗАПИСЬ ДАННЫХ ===
+Сегодня: {today_str}
+
+КРИТИЧЕСКИ ВАЖНО: Если пользователь говорит "запиши", "принял", "отправили", "поступило", "потратили", "добавь", "создай рейс", "оформи", "зафиксируй", "провели", "сделай запись" — ты ОБЯЗАН вернуть JSON действия. НИКОГДА не объясняй как это сделать вручную. Ты сам выполняешь запись.
+
+Формат ответа при записи — ТОЛЬКО этот JSON, без лишнего текста:
+{{"type":"action","action":"ИМЯ","description":"Что именно будет записано (цифры, клиент, участок)","data":{{...}}}}
 
 Доступные действия:
-- create_income: записать поступление денег. data: {{income_at (YYYY-MM-DD), amount (число), client_name (строка), volume (число тонн, если есть), comment}}
-- create_expense: записать расход компании. data: {{expense_at, category (одна из: Топливо, Зарплата, Ремонт, ТО, Аренда, Прочие), amount, comment}}
-- create_hire: записать найм-доставку. data: {{delivery_at, client_name, supplier_name (поставщик, может быть null), carrier_name (перевозчик, может быть null), volume_liters, price_client, amount_client, margin, comment}}
-- create_debt: записать долг или оплату долга. data: {{recorded_at, debtor (имя должника), amount, type ("ДОЛГ" или "ОПЛАТА"), comment}}
-- create_fleet_expense: расход по машине. data: {{truck_name, expense_at, category (Ремонт/ТО/Зарплата/Топливо/Резина/Страховка/Прочие), amount, comment}}
-""" if not is_artem else ""
+{action_list}
 
-    system_prompt = f"""Ты ИИ-ассистент системы управления DTL (Diesel Trade Logistic).
+Правила заполнения data:
+- Дата не указана → используй {today_str}
+- Нет критичного поля (volume/amount/site_name) → задай уточняющий вопрос текстом
+- Поле null если неизвестно
+- description пиши конкретно: "Принято 15 куб от Камыша, ТТН-005" / "Рейс 12 куб → Дипкун, КА777" / "Доход 500 000 ₽ от Луи Витона"
+"""
+    else:
+        write_block = "\nЗапись данных недоступна для вашей роли.\n"
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    system_prompt = f"""Ты ИИ-ассистент системы управления DTL (Diesel Trade Logistic). Сегодня {today_str}.
 {artem_restriction}
 {APP_NAVIGATION}
 
 База данных:
 {DB_SCHEMA_SUMMARY}
-{write_actions}
-Правила:
-1. Если вопрос о том КАК что-то сделать — ответь текстом, кратко (1-3 предложения).
-2. Если просят ДАННЫЕ (суммы, статистика) — верни JSON: {{"type":"sql","query":"SELECT ..."}}
-3. Если просят ЗАПИСАТЬ что-то — верни JSON действия (см. выше).
-4. Отвечай только на русском языке.
-5. НЕ используй markdown: никаких **, *, #, [], (), ``. Пиши обычным текстом."""
+{write_block}
+Общие правила:
+1. Вопрос о данных (суммы, статистика, остаток) → JSON: {{"type":"sql","query":"SELECT ..."}}
+2. Вопрос о навигации/как сделать → текст, 1-3 предложения
+3. Запрос на запись → JSON action (см. выше) — ВСЕГДА, без исключений
+4. Только русский язык. Без markdown (**, *, #, [], ``)."""
 
     try:
         import anthropic
@@ -268,8 +301,12 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
                 parsed = json.loads(clean)
                 if parsed.get("type") == "sql":
                     sql_query = parsed.get("query", "").strip()
-                elif parsed.get("type") == "action" and not is_artem:
-                    action_data = parsed
+                elif parsed.get("type") == "action":
+                    if parsed.get("action") in allowed_actions:
+                        action_data = parsed
+                    else:
+                        # Action not allowed for this role — return as text refusal
+                        text = "У вас нет прав на эту операцию."
             except (json.JSONDecodeError, AttributeError):
                 pass
 
@@ -326,6 +363,34 @@ class ExecuteRequest(BaseModel):
     data: Dict[str, Any]
 
 
+def _resolve_site(name: str) -> int:
+    if not name: raise HTTPException(400, "Не указан участок")
+    row = query_one("SELECT id FROM sites WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+    if not row:
+        # try partial match
+        rows = query("SELECT id, name FROM sites WHERE is_active = TRUE ORDER BY name")
+        name_lower = name.strip().lower()
+        for r in rows:
+            if name_lower in r["name"].lower() or r["name"].lower() in name_lower:
+                return r["id"]
+        raise HTTPException(400, f"Участок не найден: {name}. Доступные: {', '.join(r['name'] for r in rows)}")
+    return row["id"]
+
+
+def _resolve_driver(name: str):
+    if not name: return None
+    row = query_one("SELECT id FROM drivers WHERE LOWER(name) = LOWER(%s) AND is_active = TRUE", (name.strip(),))
+    return row["id"] if row else None
+
+
+def _resolve_truck_full(name: str):
+    """Returns (id, owner) tuple or raises."""
+    if not name: raise HTTPException(400, "Не указана машина")
+    row = query_one("SELECT id, owner FROM trucks WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+    if not row: raise HTTPException(400, f"Машина не найдена: {name}")
+    return row["id"], row.get("owner", "DTL")
+
+
 def _resolve_client(name: str) -> int:
     if not name: raise HTTPException(400, "Не указан клиент")
     row = query_one("SELECT id FROM clients WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
@@ -357,15 +422,76 @@ def _resolve_carrier(name: str):
     return row["id"]
 
 
+ROLE_ALLOWED_ACTIONS = {
+    "partner":  {"create_fuel_receipt", "create_dispatch", "create_income", "create_expense",
+                 "create_hire", "create_debt", "create_fleet_expense"},
+    "artem":    {"create_fuel_receipt", "create_dispatch", "create_fleet_expense"},
+    "operator": set(),
+}
+
+
 @router.post("/ai/execute")
-def ai_execute(body: ExecuteRequest, user: dict = Depends(require_partner)):
+def ai_execute(body: ExecuteRequest, user: dict = Depends(require_not_operator)):
     """Execute a write action confirmed by the user."""
+    role = user.get("role", "operator")
+    allowed = ROLE_ALLOWED_ACTIONS.get(role, set())
+    if body.action not in allowed:
+        raise HTTPException(403, "У вас нет прав на эту операцию")
+
     d = body.data
     uid = user["id"]
     today = datetime.now().date().isoformat()
 
     try:
-        if body.action == "create_income":
+        if body.action == "create_fuel_receipt":
+            supplier_id = _resolve_supplier(d.get("supplier_name")) if d.get("supplier_name") else None
+            vol_nom = float(d.get("volume_nominal", 0))
+            if vol_nom <= 0:
+                raise HTTPException(400, "Укажите объём приёмки")
+            vol_adj = float(d.get("volume_adjusted", vol_nom))
+            execute(
+                """INSERT INTO fuel_receipts
+                   (received_at, supplier_id, source_custom, volume_nominal, volume_adjusted,
+                    ttn_number, ttn_confirmed, entered_by, notes)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (d.get("received_at", today), supplier_id, None,
+                 vol_nom, vol_adj,
+                 d.get("ttn_number"), False, uid, d.get("notes"))
+            )
+            who = d.get("supplier_name") or "база"
+            return {"ok": True, "message": f"Приёмка {vol_nom} куб от {who} записана (ТТН ожидает подтверждения)"}
+
+        elif body.action == "create_dispatch":
+            site_id = _resolve_site(d.get("site_name", ""))
+            vol = float(d.get("volume", 0))
+            if vol <= 0:
+                raise HTTPException(400, "Укажите объём рейса")
+
+            truck_id, truck_owner = None, "наёмная"
+            truck_temp = d.get("truck_temp")
+            if d.get("truck_name"):
+                try:
+                    truck_id, truck_owner = _resolve_truck_full(d["truck_name"])
+                except HTTPException:
+                    truck_temp = d["truck_name"]
+                    truck_owner = "наёмная"
+
+            driver_id = _resolve_driver(d.get("driver_name")) if d.get("driver_name") else None
+            driver_temp = d.get("driver_name") if not driver_id and d.get("driver_name") else None
+
+            execute(
+                """INSERT INTO fuel_dispatches
+                   (dispatched_at, truck_id, truck_temp, driver_id, driver_temp, truck_owner,
+                    site_id, volume, tariff, ttn_number, status, entered_by, notes)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'dispatched',%s,%s)""",
+                (d.get("dispatched_at", today), truck_id, truck_temp, driver_id, driver_temp,
+                 truck_owner, site_id, vol, d.get("tariff"), d.get("ttn_number"), uid, d.get("notes"))
+            )
+            site_name = d.get("site_name", "участок")
+            truck_label = d.get("truck_name") or d.get("truck_temp") or "наёмная машина"
+            return {"ok": True, "message": f"Рейс {vol} куб → {site_name} ({truck_label}) записан"}
+
+        elif body.action == "create_income":
             client_id = _resolve_client(d.get("client_name", ""))
             execute(
                 "INSERT INTO income_records (income_at, client_id, amount, volume, comment, entered_by) VALUES (%s,%s,%s,%s,%s,%s)",
