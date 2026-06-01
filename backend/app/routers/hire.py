@@ -109,6 +109,7 @@ class HireCorrection(BaseModel):
     delivery_at: Optional[str] = None
     volume_liters: Optional[float] = None
     price_client: Optional[float] = None
+    price_supplier: Optional[float] = None
     price_carrier: Optional[float] = None
     comment: Optional[str] = None
     is_closed: Optional[bool] = None
@@ -121,14 +122,37 @@ def correct_hire(hire_id: int, body: HireCorrection, user: dict = Depends(requir
     row = query_one("SELECT * FROM hire_deliveries WHERE id = %s", (hire_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Not found")
+
     updates = {}
-    if body.delivery_at: updates["delivery_at"] = body.delivery_at
+    if body.delivery_at is not None: updates["delivery_at"] = body.delivery_at
     if body.volume_liters is not None: updates["volume_liters"] = body.volume_liters
     if body.price_client is not None: updates["price_client"] = body.price_client
+    if body.price_supplier is not None: updates["price_supplier"] = body.price_supplier
     if body.price_carrier is not None: updates["price_carrier"] = body.price_carrier
     if body.comment is not None: updates["comment"] = body.comment
+    if body.is_closed is not None: updates["is_closed"] = body.is_closed
+    if body.closed_comment is not None: updates["closed_comment"] = body.closed_comment
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    # Recalculate derived amounts using merged (existing + new) values
+    vol = updates.get("volume_liters", row["volume_liters"]) or 0.0
+    pc  = updates.get("price_client",  row["price_client"])  or 0.0
+    ps  = updates.get("price_supplier", row["price_supplier"]) or 0.0
+    pcr = updates.get("price_carrier", row["price_carrier"]) or 0.0
+    amount_client   = round(pc  * vol, 2)
+    amount_supplier = round(ps  * vol, 2)
+    amount_carrier  = round(pcr * vol, 2)
+    margin          = round(amount_client - amount_supplier - amount_carrier, 2)
+    margin_pct      = round(margin / amount_client * 100, 2) if amount_client else 0.0
+    updates.update({
+        "amount_client": amount_client,
+        "amount_supplier": amount_supplier,
+        "amount_carrier": amount_carrier,
+        "margin": margin,
+        "margin_pct": margin_pct,
+    })
+
     set_clause = ", ".join(f"{k} = %s" for k in updates)
     vals = list(updates.values()) + [hire_id]
     with get_db() as conn:

@@ -2001,7 +2001,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
               ${d.margin_pct ? `<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:${marginColor}">${d.margin_pct}%</div><div style="font-size:11px;color:var(--text2)">маржа</div></div>` : ''}
-              ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer">✏ Испр.</button>` : ''}
+              ${isPartner() ? `<button onclick="window.correctHire(${d.id},'${d.delivery_at ? d.delivery_at.slice(0,10) : ''}',${d.volume_liters||0},${d.price_client||0},${d.price_supplier||0},${d.price_carrier||0},'${esc(d.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer">✏ Испр.</button>` : ''}
               ${isPartner() && !d.is_closed ? `<button onclick="window.closeHireDeal(${d.id},'${esc(d.client_name||'')}')" style="background:rgba(52,199,89,.1);border:1px solid rgba(52,199,89,.3);color:var(--green);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✅ Закрыть</button>` : (d.is_closed ? badge('Закрыто','done') : '')}
             </div>
           </div>
@@ -2027,13 +2027,14 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Найм';
   }
 
-  window.correctHire = function(id, delivery_at, volume_liters, price_client, price_carrier, comment) {
+  window.correctHire = function(id, delivery_at, volume_liters, price_client, price_supplier, price_carrier, comment) {
     showCorrectionModal({
       title: 'Исправить сделку по найму',
       fields: [
         { id: 'delivery_at', label: 'Дата', type: 'date', value: delivery_at },
         { id: 'volume_liters', label: 'Объём литров', type: 'number', value: volume_liters },
         { id: 'price_client', label: 'Цена клиенту ₽/л', type: 'number', value: price_client },
+        { id: 'price_supplier', label: 'Цена топлива ₽/л', type: 'number', value: price_supplier },
         { id: 'price_carrier', label: 'Цена перевозчику ₽/л', type: 'number', value: price_carrier },
         { id: 'comment', label: 'Комментарий', value: comment || '' },
       ],
@@ -2120,16 +2121,20 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 
     const balanceEntries = Object.entries(balances);
 
-    const clientDebtsSection = clientDebts.filter(d => d.balance !== 0).length ? `
-      ${sectionHeader('Задолженность по найму (факт)')}
+    const clientDebtsSection = clientDebts.length ? `
+      ${sectionHeader('Задолженность по найму')}
       <div class="bb">
-        ${clientDebts.filter(d => d.balance !== 0).map(d => `
-          <div class="bbr" style="flex-direction:column;align-items:flex-start;padding:10px 0;gap:3px">
+        ${clientDebts.map(d => `
+          <div class="bbr" style="flex-direction:column;align-items:flex-start;padding:12px 0;gap:4px">
             <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
-              <div style="font-size:13px;font-weight:600">${esc(d.client_name)}</div>
-              <div style="font-size:14px;font-weight:800;color:${d.balance > 0 ? 'var(--orange)' : 'var(--green)'}">${d.balance > 0 ? '+' : ''}${formatNum(Math.round(d.balance))} ₽</div>
+              <div style="font-size:14px;font-weight:700">${esc(d.client_name)}</div>
+              <div style="font-size:15px;font-weight:800;color:var(--orange)">${formatNum(Math.round(d.total_debt))} ₽</div>
             </div>
-            ${d.balance > 0 ? `<div style="font-size:11px;color:var(--text2)">Топливо: ${formatNum(Math.round(d.fuel_debt))} · Доставка: ${formatNum(Math.round(d.delivery_debt))} · Выставлено: ${formatNum(Math.round(d.billed_total))} · Оплачено: ${formatNum(Math.round(d.paid_total))}</div>` : '<div style="font-size:11px;color:var(--green)">✅ Оплачено</div>'}
+            <div style="font-size:12px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap">
+              <span>⛽ Топливо: <strong style="color:var(--text)">${formatNum(Math.round(d.fuel_debt))} ₽</strong></span>
+              <span>🚚 Доставка: <strong style="color:var(--text)">${formatNum(Math.round(d.delivery_debt))} ₽</strong></span>
+              <span style="opacity:.7">${d.open_count} откр. · ${(d.volume_liters/1000).toFixed(1)} куб</span>
+            </div>
           </div>
         `).join('')}
       </div>
