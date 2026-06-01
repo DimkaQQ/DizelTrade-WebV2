@@ -1931,7 +1931,6 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${r.comment ? `<div style="font-size:12px;color:var(--text2);padding:4px 8px;background:var(--card2);border-radius:6px;margin-left:42px">${esc(r.comment)}</div>` : ''}
       </div>`).join('') : emptyState('Нет расходов')}
       ${printBtn('Распечатать / PDF')}
-      ${scrollTopBtn()}
     </div>`;
     _printData = { title: 'Расходы компании', columns: ['Дата', 'Категория', 'Сумма ₽', 'Комментарий'],
       rows: records.map(r => [r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : '—', r.category || '—', formatNum(r.amount), r.comment || '']),
@@ -2169,7 +2168,6 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         </div>
       </div>`;}).join('') : emptyState('Нет записей')}
       ${isPartner() ? printBtn('Распечатать / PDF') : ''}
-      ${scrollTopBtn()}
     </div>`;
     const totalDebt = records.filter(r => r.type === 'ДОЛГ').reduce((s,r) => s + (r.amount || 0), 0);
     const totalPaid = records.filter(r => r.type === 'ОПЛАТА').reduce((s,r) => s + (Math.abs(r.amount) || 0), 0);
