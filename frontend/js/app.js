@@ -1771,6 +1771,10 @@
     return `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="window.printCurrentPage()">🖨 ${label || 'Печать / PDF'}</button>`;
   }
 
+  function scrollTopBtn() {
+    return `<button onclick="window.scrollTo({top:0,behavior:'smooth'})" style="width:100%;margin-top:8px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:10px;padding:10px;font-size:13px;cursor:pointer">↑ Наверх</button>`;
+  }
+
   window.printCurrentPage = function() {
     if (!_printData) return;
     window.openPrintWindow(_printData.title, _printData.columns, _printData.rows, _printData.totals);
@@ -1912,6 +1916,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${statCard(formatNum(expMonthTotal) + ' ₽', 'За этот месяц', 'o')}
         ${statCard(uniqueCats || records.length, 'Категорий')}
       </div>
+      <button class="btn-primary" style="margin-bottom:14px" onclick="showExpenseModal()">+ Добавить</button>
       ${records.length ? records.map(r => `<div class="li" style="flex-direction:column;align-items:stretch;gap:4px">
         <div style="display:flex;align-items:center;gap:10px">
           <div class="lic o">📋</div>
@@ -1925,8 +1930,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         </div>
         ${r.comment ? `<div style="font-size:12px;color:var(--text2);padding:4px 8px;background:var(--card2);border-radius:6px;margin-left:42px">${esc(r.comment)}</div>` : ''}
       </div>`).join('') : emptyState('Нет расходов')}
-      <button class="btn-primary" style="margin-top:12px" onclick="showExpenseModal()">+ Добавить</button>
       ${printBtn('Распечатать / PDF')}
+      ${scrollTopBtn()}
     </div>`;
     _printData = { title: 'Расходы компании', columns: ['Дата', 'Категория', 'Сумма ₽', 'Комментарий'],
       rows: records.map(r => [r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : '—', r.category || '—', formatNum(r.amount), r.comment || '']),
@@ -2144,6 +2149,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     ${!isDesktop() ? statusBar() : ''}
     ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
+      ${isPartner() ? `<button class="btn-primary" style="margin-bottom:14px" onclick="showDebtModal()">+ Запись</button>` : ''}
       ${clientDebtsSection}
       ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
       ${records.length ? records.map(r => {
@@ -2162,8 +2168,8 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
           ${isPartner() ? `<button onclick="window.correctDebt(${r.id},'${r.recorded_at ? r.recorded_at.slice(0,10) : ''}',${r.amount||0},'${esc(r.type||'ДОЛГ')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
         </div>
       </div>`;}).join('') : emptyState('Нет записей')}
-      ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
       ${isPartner() ? printBtn('Распечатать / PDF') : ''}
+      ${scrollTopBtn()}
     </div>`;
     const totalDebt = records.filter(r => r.type === 'ДОЛГ').reduce((s,r) => s + (r.amount || 0), 0);
     const totalPaid = records.filter(r => r.type === 'ОПЛАТА').reduce((s,r) => s + (Math.abs(r.amount) || 0), 0);
