@@ -1771,6 +1771,10 @@
     return `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="window.printCurrentPage()">🖨 ${label || 'Печать / PDF'}</button>`;
   }
 
+  function scrollTopBtn() {
+    return `<button onclick="window.scrollTo({top:0,behavior:'smooth'})" style="width:100%;margin-top:8px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:10px;padding:10px;font-size:13px;cursor:pointer">↑ Наверх</button>`;
+  }
+
   window.printCurrentPage = function() {
     if (!_printData) return;
     window.openPrintWindow(_printData.title, _printData.columns, _printData.rows, _printData.totals);
@@ -1927,6 +1931,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       </div>`).join('') : emptyState('Нет расходов')}
       <button class="btn-primary" style="margin-top:12px" onclick="showExpenseModal()">+ Добавить</button>
       ${printBtn('Распечатать / PDF')}
+      ${scrollTopBtn()}
     </div>`;
     _printData = { title: 'Расходы компании', columns: ['Дата', 'Категория', 'Сумма ₽', 'Комментарий'],
       rows: records.map(r => [r.expense_at ? new Date(r.expense_at).toLocaleDateString('ru') : '—', r.category || '—', formatNum(r.amount), r.comment || '']),
@@ -2164,6 +2169,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       </div>`;}).join('') : emptyState('Нет записей')}
       ${isPartner() ? `<button class="btn-primary" style="margin-top:12px" onclick="showDebtModal()">+ Запись</button>` : ''}
       ${isPartner() ? printBtn('Распечатать / PDF') : ''}
+      ${scrollTopBtn()}
     </div>`;
     const totalDebt = records.filter(r => r.type === 'ДОЛГ').reduce((s,r) => s + (r.amount || 0), 0);
     const totalPaid = records.filter(r => r.type === 'ОПЛАТА').reduce((s,r) => s + (Math.abs(r.amount) || 0), 0);
