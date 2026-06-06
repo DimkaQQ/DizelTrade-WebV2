@@ -2051,7 +2051,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 
   window.closeHireDeal = function(id, clientName) {
     showModal(`Закрыть сделку — ${clientName}`,
-      `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Отметить сделку как закрытую (клиент оплатил сразу, долг не фиксируется).</div>
+      `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Отметить сделку оплаченной. Долг по найму по этому клиенту уменьшится автоматически.</div>
        ${formField('Комментарий', '<input class="inp" id="m-close-comment" placeholder="Например: оплата наличными на месте">')}`,
       async () => {
         const comment = document.getElementById('m-close-comment')?.value || '';
