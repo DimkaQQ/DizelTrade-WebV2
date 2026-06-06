@@ -33,20 +33,17 @@ def get_dashboard(user: dict = Depends(get_current_user)):
 
     alerts = _build_alerts(base_balance, pending_receipts)
 
-    # Client debts: total hire revenue - total income received
+    # Client debts: same logic as /analytics/client-debts (is_closed model).
+    # Open hire deals (NOT is_closed) = debt; closed = paid. Never negative.
     client_debts = query("""
         SELECT c.name,
-               COALESCE(h.total_hire, 0) AS total_hire,
-               COALESCE(i.total_paid, 0) AS total_paid,
-               COALESCE(h.total_hire, 0) - COALESCE(i.total_paid, 0) AS debt
-        FROM clients c
-        LEFT JOIN (
-            SELECT client_id, SUM(amount_client) AS total_hire FROM hire_deliveries GROUP BY client_id
-        ) h ON h.client_id = c.id
-        LEFT JOIN (
-            SELECT client_id, SUM(amount) AS total_paid FROM income_records GROUP BY client_id
-        ) i ON i.client_id = c.id
-        WHERE COALESCE(h.total_hire, 0) > 0
+               COALESCE(SUM(hd.amount_client), 0)                                  AS total_hire,
+               COALESCE(SUM(hd.amount_client) FILTER (WHERE hd.is_closed), 0)      AS total_paid,
+               COALESCE(SUM(hd.amount_client) FILTER (WHERE NOT hd.is_closed), 0)  AS debt
+        FROM hire_deliveries hd
+        JOIN clients c ON c.id = hd.client_id
+        GROUP BY c.id, c.name
+        HAVING COUNT(*) FILTER (WHERE NOT hd.is_closed) > 0
         ORDER BY debt DESC
     """)
 
