@@ -880,21 +880,21 @@ def client_debts(
     year: int = Query(default=2026),
     user: dict = Depends(require_partner),
 ):
-    """Per-client debt: open (not is_closed) hire_deliveries only.
-    fuel_debt  = SUM(amount_supplier)  on open deals
-    delivery_debt = SUM(amount_client - amount_supplier) on open deals
+    """Per-client debt from open (NOT is_closed) hire_deliveries only.
+    No income subtraction — is_closed flag marks a deal as paid.
+    fuel_debt     = SUM(amount_supplier)  for open deals
+    delivery_debt = SUM(amount_client - amount_supplier - amount_carrier) for open deals
     """
     rows = query("""
         SELECT
             c.id   AS client_id,
             c.name AS client_name,
-            COALESCE(SUM(hd.amount_client),              0) AS billed_open,
-            COALESCE(SUM(hd.amount_supplier),            0) AS fuel_open,
-            COALESCE(SUM(hd.amount_carrier),             0) AS carrier_open,
-            COALESCE(SUM(hd.volume_liters),              0) AS volume_open,
-            COUNT(*)                                        AS open_count,
-            COALESCE(SUM(hd.amount_client) FILTER (WHERE hd.is_closed), 0) AS billed_closed,
-            COUNT(*) FILTER (WHERE hd.is_closed)            AS closed_count
+            COALESCE(SUM(hd.amount_client)   FILTER (WHERE NOT hd.is_closed), 0) AS billed_open,
+            COALESCE(SUM(hd.amount_supplier) FILTER (WHERE NOT hd.is_closed), 0) AS fuel_open,
+            COALESCE(SUM(hd.amount_carrier)  FILTER (WHERE NOT hd.is_closed), 0) AS carrier_open,
+            COALESCE(SUM(hd.volume_liters)   FILTER (WHERE NOT hd.is_closed), 0) AS volume_open,
+            COUNT(*) FILTER (WHERE NOT hd.is_closed)  AS open_count,
+            COUNT(*) FILTER (WHERE hd.is_closed)      AS closed_count
         FROM hire_deliveries hd
         JOIN clients c ON c.id = hd.client_id
         GROUP BY c.id, c.name
@@ -904,9 +904,9 @@ def client_debts(
 
     result = []
     for r in rows:
+        billed_open   = float(r["billed_open"])
         fuel_debt     = float(r["fuel_open"])
         carrier_debt  = float(r["carrier_open"])
-        billed_open   = float(r["billed_open"])
         delivery_debt = round(billed_open - fuel_debt - carrier_debt, 2)
         result.append({
             "client_id":     r["client_id"],
