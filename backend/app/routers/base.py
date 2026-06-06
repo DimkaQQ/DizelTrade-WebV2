@@ -505,23 +505,31 @@ def mark_dispatch_paid(dispatch_id: int, user: dict = Depends(require_partner)):
         raise HTTPException(status_code=404, detail="Dispatch not found")
     if row["status"] != "delivered":
         raise HTTPException(status_code=400, detail="Only delivered dispatches can be marked paid")
-    updated = execute(
-        "UPDATE fuel_dispatches SET paid = TRUE, paid_at = NOW() WHERE id = %s RETURNING *",
-        (dispatch_id,), returning=True
-    )
+    with get_db() as conn:
+        updated = execute(
+            "UPDATE fuel_dispatches SET paid = TRUE, paid_at = NOW() WHERE id = %s RETURNING *",
+            (dispatch_id,), conn=conn, returning=True
+        )
+        log_action(conn, "fuel_dispatches", dispatch_id, "MARK_PAID", user["id"],
+                   old_data=dict(row), new_data=dict(updated))
+        conn.commit()
     return updated
 
 
 @router.put("/dispatches/{dispatch_id}/unpaid")
 def mark_dispatch_unpaid(dispatch_id: int, user: dict = Depends(require_partner)):
     """Unmark a dispatch paid status."""
-    row = query_one("SELECT id FROM fuel_dispatches WHERE id = %s", (dispatch_id,))
+    row = query_one("SELECT id, paid FROM fuel_dispatches WHERE id = %s", (dispatch_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Dispatch not found")
-    updated = execute(
-        "UPDATE fuel_dispatches SET paid = FALSE, paid_at = NULL WHERE id = %s RETURNING *",
-        (dispatch_id,), returning=True
-    )
+    with get_db() as conn:
+        updated = execute(
+            "UPDATE fuel_dispatches SET paid = FALSE, paid_at = NULL WHERE id = %s RETURNING *",
+            (dispatch_id,), conn=conn, returning=True
+        )
+        log_action(conn, "fuel_dispatches", dispatch_id, "MARK_UNPAID", user["id"],
+                   old_data=dict(row), new_data=dict(updated))
+        conn.commit()
     return updated
 
 
@@ -694,15 +702,18 @@ def list_cash_artem(
 @router.post("/cash-artem", status_code=201)
 def create_cash_artem(body: CashArtemCreate, user: dict = Depends(require_partner)):
     given_at = body.given_at or datetime.utcnow().isoformat()
-    row = execute(
-        """
-        INSERT INTO cash_to_artem (given_at, amount_given, purpose, entered_by, notes)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING *
-        """,
-        (given_at, body.amount_given, body.purpose, user["id"], body.notes),
-        returning=True,
-    )
+    with get_db() as conn:
+        row = execute(
+            """
+            INSERT INTO cash_to_artem (given_at, amount_given, purpose, entered_by, notes)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (given_at, body.amount_given, body.purpose, user["id"], body.notes),
+            conn=conn, returning=True,
+        )
+        log_action(conn, "cash_to_artem", row["id"], "INSERT", user["id"], new_data=dict(row))
+        conn.commit()
     return row
 
 
@@ -711,18 +722,22 @@ def report_cash_artem(record_id: int, body: CashArtemReport, user: dict = Depend
     row = query_one("SELECT * FROM cash_to_artem WHERE id = %s", (record_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Record not found")
-    updated = execute(
-        """
-        UPDATE cash_to_artem
-        SET amount_spent = COALESCE(%s, amount_spent),
-            fuel_received = COALESCE(%s, fuel_received),
-            notes = COALESCE(%s, notes)
-        WHERE id = %s
-        RETURNING *
-        """,
-        (body.amount_spent, body.fuel_received, body.notes, record_id),
-        returning=True,
-    )
+    with get_db() as conn:
+        updated = execute(
+            """
+            UPDATE cash_to_artem
+            SET amount_spent = COALESCE(%s, amount_spent),
+                fuel_received = COALESCE(%s, fuel_received),
+                notes = COALESCE(%s, notes)
+            WHERE id = %s
+            RETURNING *
+            """,
+            (body.amount_spent, body.fuel_received, body.notes, record_id),
+            conn=conn, returning=True,
+        )
+        log_action(conn, "cash_to_artem", record_id, "REPORT", user["id"],
+                   old_data=dict(row), new_data=dict(updated))
+        conn.commit()
     return updated
 
 
@@ -731,11 +746,15 @@ def settle_cash_artem(record_id: int, user: dict = Depends(require_partner)):
     row = query_one("SELECT * FROM cash_to_artem WHERE id = %s", (record_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Record not found")
-    updated = execute(
-        "UPDATE cash_to_artem SET is_settled=TRUE, settled_at=NOW() WHERE id = %s RETURNING *",
-        (record_id,),
-        returning=True,
-    )
+    with get_db() as conn:
+        updated = execute(
+            "UPDATE cash_to_artem SET is_settled=TRUE, settled_at=NOW() WHERE id = %s RETURNING *",
+            (record_id,),
+            conn=conn, returning=True,
+        )
+        log_action(conn, "cash_to_artem", record_id, "SETTLE", user["id"],
+                   old_data=dict(row), new_data=dict(updated))
+        conn.commit()
     return updated
 
 
@@ -796,18 +815,24 @@ def upsert_reconciliation(body: ReconciliationCreate, user: dict = Depends(get_c
     calc_row = query_one("SELECT balance_cubic FROM v_base_balance")
     calculated_stock = float(calc_row["balance_cubic"]) if calc_row and calc_row["balance_cubic"] else 0.0
 
-    row = execute(
-        """
-        INSERT INTO monthly_reconciliations (period, calculated_stock, physical_stock, notes, entered_by)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (period) DO UPDATE
-            SET physical_stock = EXCLUDED.physical_stock,
-                calculated_stock = EXCLUDED.calculated_stock,
-                notes = EXCLUDED.notes,
-                entered_by = EXCLUDED.entered_by
-        RETURNING *
-        """,
-        (period_date, calculated_stock, body.physical_stock, body.notes, user["id"]),
-        returning=True,
-    )
+    existing = query_one("SELECT * FROM monthly_reconciliations WHERE period = %s", (period_date,))
+    with get_db() as conn:
+        row = execute(
+            """
+            INSERT INTO monthly_reconciliations (period, calculated_stock, physical_stock, notes, entered_by)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (period) DO UPDATE
+                SET physical_stock = EXCLUDED.physical_stock,
+                    calculated_stock = EXCLUDED.calculated_stock,
+                    notes = EXCLUDED.notes,
+                    entered_by = EXCLUDED.entered_by
+            RETURNING *
+            """,
+            (period_date, calculated_stock, body.physical_stock, body.notes, user["id"]),
+            conn=conn, returning=True,
+        )
+        log_action(conn, "monthly_reconciliations", row["id"],
+                   "UPDATE" if existing else "INSERT", user["id"],
+                   old_data=dict(existing) if existing else None, new_data=dict(row))
+        conn.commit()
     return row
