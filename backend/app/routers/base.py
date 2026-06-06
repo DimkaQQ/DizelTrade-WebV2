@@ -384,7 +384,7 @@ def get_dispatch(dispatch_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.post("/dispatches", status_code=201)
-def create_dispatch(body: DispatchCreate, user: dict = Depends(get_current_user)):
+def create_dispatch(body: DispatchCreate, user: dict = Depends(require_not_operator)):
     dispatched_at = body.dispatched_at or datetime.utcnow().isoformat()
 
     with get_db() as conn:

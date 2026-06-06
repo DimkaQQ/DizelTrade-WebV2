@@ -1,5 +1,5 @@
 import hashlib
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from .database import query_one, execute
@@ -36,12 +36,29 @@ def _resolve_api_token(raw_token: str):
     return None
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+def _enforce_token_scope(request: Request, scope: str):
+    """Enforce API token scope against the HTTP method.
+    read  -> GET only;  write -> GET/POST/PUT/PATCH;  full -> everything.
+    """
+    method = request.method.upper()
+    if method in ("GET", "HEAD", "OPTIONS"):
+        return  # reads allowed for any scope
+    if scope == "read":
+        raise HTTPException(status_code=403, detail="Token scope is read-only")
+    if method == "DELETE" and scope != "full":
+        raise HTTPException(status_code=403, detail="Token scope does not allow delete")
+
+
+def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> dict:
     token = credentials.credentials
     # API token path
     if token.startswith("dtl_"):
         user = _resolve_api_token(token)
         if user:
+            _enforce_token_scope(request, user.get("_token_scope", "full"))
             return user
         raise HTTPException(status_code=401, detail="Invalid API token")
     # JWT path (existing)

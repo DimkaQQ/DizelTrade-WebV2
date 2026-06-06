@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks
 from pydantic import BaseModel
-from ..database import query, query_one, execute
+from ..database import query, execute
 from ..deps import get_current_user
 import os, json, logging
 
@@ -16,7 +16,7 @@ def _send_push(endpoint: str, p256dh: str, auth: str, title: str, body: str, url
     if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
         return
     try:
-        from pywebpush import webpush, WebPushException
+        from pywebpush import webpush
         webpush(
             subscription_info={"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}},
             data=json.dumps({"title": title, "body": body, "url": url}),

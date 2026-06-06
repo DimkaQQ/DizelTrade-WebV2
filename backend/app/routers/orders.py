@@ -2,7 +2,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from ..database import query, query_one, execute, get_db
-from ..deps import get_current_user, require_partner, require_not_operator
+from ..deps import get_current_user, require_partner
 from ..utils.audit import log_action
 
 router = APIRouter()

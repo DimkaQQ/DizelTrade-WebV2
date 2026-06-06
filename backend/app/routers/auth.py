@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from jose import jwt
 from passlib.context import CryptContext
 
-from ..database import query_one, query, execute, get_db
+from ..database import query_one, query, execute
 from ..config import settings
 from ..deps import get_current_user
 from ..security import (
@@ -184,7 +184,7 @@ def refresh(refresh_token: Optional[str] = Cookie(None)):
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token")
 
-    from ..database import query, execute as db_execute
+    from ..database import query
     tokens = query(
         "SELECT rt.id, rt.user_id, rt.token_hash, u.role, u.is_active "
         "FROM refresh_tokens rt JOIN users u ON u.id = rt.user_id "

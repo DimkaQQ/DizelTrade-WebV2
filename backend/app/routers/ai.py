@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Optional, Any, Dict
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from ..database import query, query_one, execute
@@ -141,7 +141,6 @@ def scan_ttn(body: TTNScanRequest, user: dict = Depends(get_current_user)):
 Если поле не найдено — верни null. Отвечай ТОЛЬКО JSON, без markdown, без пояснений."""
 
     try:
-        import anthropic
         resp = client.messages.create(
             model="claude-opus-4-7",
             max_tokens=500,
@@ -333,7 +332,6 @@ def ai_query(body: QueryRequest, user: dict = Depends(require_not_operator)):
     masked_question = _mask_pii(body.question)
 
     try:
-        import anthropic
         resp = client.messages.create(
             model="claude-opus-4-7",
             max_tokens=600,
@@ -650,7 +648,6 @@ def get_anomalies(user: dict = Depends(require_partner)):
 {json.dumps(stalled_orders[:10], default=str, ensure_ascii=False)}
 """
 
-        import anthropic
         resp = client.messages.create(
             model="claude-opus-4-7",
             max_tokens=800,
