@@ -880,19 +880,30 @@ def client_debts(
     year: int = Query(default=2026),
     user: dict = Depends(require_partner),
 ):
-    """Debt formula per ТЗ, using is_closed as payment signal:
-      fuel_debt     = SUM(amount_supplier WHERE NOT is_closed)
-      delivery_debt = SUM(amount_client - amount_supplier WHERE NOT is_closed)
-      paid_cub      = SUM(volume_liters WHERE is_closed) / 1000
+    """Долг по найму считается из сделок hire_deliveries автоматически.
+    Сделка с is_closed = FALSE (новая по умолчанию) = непогашенный долг;
+    кнопка «Закрыть» помечает is_closed = TRUE (оплачено).
+
+    Раздельно (эквивалент формуле ТЗ, где «оплачено куб» = объём закрытых сделок):
+      долг за топливо  = SUM(amount_supplier)               по открытым
+                       = (отгружено куб − оплачено куб) × цена топлива
+      долг за доставку = SUM(amount_client − amount_supplier) по открытым
+                       = (конечная цена − цена топлива) × объём непогашенного
+    Долг всегда >= 0 (открытые сделки), ложной переплаты быть не может.
     """
     rows = query("""
         SELECT
             c.id   AS client_id,
             c.name AS client_name,
-            COALESCE(SUM(hd.volume_liters)   FILTER (WHERE NOT hd.is_closed), 0) / 1000.0
+            -- отгружено всего (открытые + закрытые)
+            COALESCE(SUM(hd.volume_liters), 0) / 1000.0
                 AS delivered_cub,
+            -- оплачено = объём закрытых сделок
             COALESCE(SUM(hd.volume_liters)   FILTER (WHERE     hd.is_closed), 0) / 1000.0
                 AS paid_cub,
+            -- долг = объём открытых сделок
+            COALESCE(SUM(hd.volume_liters)   FILTER (WHERE NOT hd.is_closed), 0) / 1000.0
+                AS unpaid_cub,
             COALESCE(SUM(hd.amount_supplier) FILTER (WHERE NOT hd.is_closed), 0)
                 AS fuel_debt,
             COALESCE(SUM(hd.amount_client - hd.amount_supplier) FILTER (WHERE NOT hd.is_closed), 0)
@@ -910,18 +921,16 @@ def client_debts(
 
     result = []
     for r in rows:
-        delivered = float(r["delivered_cub"])
-        paid      = float(r["paid_cub"])
         result.append({
             "client_id":     r["client_id"],
             "client_name":   r["client_name"],
             "fuel_debt":     round(float(r["fuel_debt"]), 2),
             "delivery_debt": round(float(r["delivery_debt"]), 2),
             "total_debt":    round(float(r["total_debt"]), 2),
-            "delivered_cub": round(delivered, 2),
-            "paid_cub":      round(paid, 2),
-            "unpaid_cub":    round(delivered - paid, 2),
-            "volume_liters": delivered * 1000.0,
+            "delivered_cub": round(float(r["delivered_cub"]), 2),
+            "paid_cub":      round(float(r["paid_cub"]), 2),
+            "unpaid_cub":    round(float(r["unpaid_cub"]), 2),
+            "volume_liters": float(r["unpaid_cub"]) * 1000.0,
             "open_count":    r["open_count"],
             "closed_count":  r["closed_count"],
         })
