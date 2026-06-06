@@ -880,57 +880,72 @@ def client_debts(
     year: int = Query(default=2026),
     user: dict = Depends(require_partner),
 ):
-    """Долг по найму считается из сделок hire_deliveries автоматически.
-    Сделка с is_closed = FALSE (новая по умолчанию) = непогашенный долг;
-    кнопка «Закрыть» помечает is_closed = TRUE (оплачено).
+    """Долг по найму (модель B, формула ТЗ):
+      отгружено куб = объём поставок (не закрытых на месте сделок)
+      оплачено куб  = объём реальных оплат из Доходов (is_credit = FALSE)
+                      записи «в долг» НЕ считаются оплатой
+      непогашено    = max(0, отгружено − оплачено)         (без ложных минусов)
 
-    Раздельно (эквивалент формуле ТЗ, где «оплачено куб» = объём закрытых сделок):
-      долг за топливо  = SUM(amount_supplier)               по открытым
-                       = (отгружено куб − оплачено куб) × цена топлива
-      долг за доставку = SUM(amount_client − amount_supplier) по открытым
+      долг за топливо  = непогашено × средняя цена топлива
+                       = (отгружено − оплачено) × avg_price_supplier
+      долг за доставку = непогашено × (средняя конечная цена − средняя цена топлива)
                        = (конечная цена − цена топлива) × объём непогашенного
-    Долг всегда >= 0 (открытые сделки), ложной переплаты быть не может.
     """
     rows = query("""
+        WITH hire_stats AS (
+            SELECT
+                c.id   AS client_id,
+                c.name AS client_name,
+                COALESCE(SUM(hd.volume_liters)   FILTER (WHERE NOT hd.is_closed), 0) / 1000.0
+                    AS delivered_cub,
+                COALESCE(SUM(hd.amount_supplier) FILTER (WHERE NOT hd.is_closed), 0)
+                    / NULLIF(SUM(hd.volume_liters) FILTER (WHERE NOT hd.is_closed), 0)
+                    AS avg_price_supplier,
+                COALESCE(SUM(hd.amount_client)   FILTER (WHERE NOT hd.is_closed), 0)
+                    / NULLIF(SUM(hd.volume_liters) FILTER (WHERE NOT hd.is_closed), 0)
+                    AS avg_price_client,
+                COUNT(*) FILTER (WHERE NOT hd.is_closed) AS open_count,
+                COUNT(*) FILTER (WHERE     hd.is_closed) AS closed_count
+            FROM hire_deliveries hd
+            JOIN clients c ON c.id = hd.client_id
+            GROUP BY c.id, c.name
+            HAVING COUNT(*) FILTER (WHERE NOT hd.is_closed) > 0
+        ),
+        paid_stats AS (
+            SELECT client_id, COALESCE(SUM(volume), 0) AS paid_cub
+            FROM income_records
+            WHERE is_credit = FALSE AND volume IS NOT NULL AND volume > 0
+            GROUP BY client_id
+        )
         SELECT
-            c.id   AS client_id,
-            c.name AS client_name,
-            -- отгружено всего (открытые + закрытые)
-            COALESCE(SUM(hd.volume_liters), 0) / 1000.0
-                AS delivered_cub,
-            -- оплачено = объём закрытых сделок
-            COALESCE(SUM(hd.volume_liters)   FILTER (WHERE     hd.is_closed), 0) / 1000.0
-                AS paid_cub,
-            -- долг = объём открытых сделок
-            COALESCE(SUM(hd.volume_liters)   FILTER (WHERE NOT hd.is_closed), 0) / 1000.0
-                AS unpaid_cub,
-            COALESCE(SUM(hd.amount_supplier) FILTER (WHERE NOT hd.is_closed), 0)
-                AS fuel_debt,
-            COALESCE(SUM(hd.amount_client - hd.amount_supplier) FILTER (WHERE NOT hd.is_closed), 0)
-                AS delivery_debt,
-            COALESCE(SUM(hd.amount_client)   FILTER (WHERE NOT hd.is_closed), 0)
-                AS total_debt,
-            COUNT(*) FILTER (WHERE NOT hd.is_closed) AS open_count,
-            COUNT(*) FILTER (WHERE     hd.is_closed) AS closed_count
-        FROM hire_deliveries hd
-        JOIN clients c ON c.id = hd.client_id
-        GROUP BY c.id, c.name
-        HAVING COUNT(*) FILTER (WHERE NOT hd.is_closed) > 0
-        ORDER BY c.name
+            h.client_id, h.client_name, h.delivered_cub,
+            COALESCE(p.paid_cub, 0)                                   AS paid_cub,
+            GREATEST(0, h.delivered_cub - COALESCE(p.paid_cub, 0))    AS unpaid_cub,
+            COALESCE(h.avg_price_supplier, 0)                         AS avg_price_supplier,
+            COALESCE(h.avg_price_client,   0)                         AS avg_price_client,
+            h.open_count, h.closed_count
+        FROM hire_stats h
+        LEFT JOIN paid_stats p ON p.client_id = h.client_id
+        ORDER BY h.client_name
     """)
 
     result = []
     for r in rows:
+        unpaid_liters = float(r["unpaid_cub"]) * 1000.0
+        avg_ps        = float(r["avg_price_supplier"])
+        avg_pc        = float(r["avg_price_client"])
+        fuel_debt     = round(unpaid_liters * avg_ps, 2)
+        delivery_debt = round(unpaid_liters * (avg_pc - avg_ps), 2)
         result.append({
             "client_id":     r["client_id"],
             "client_name":   r["client_name"],
-            "fuel_debt":     round(float(r["fuel_debt"]), 2),
-            "delivery_debt": round(float(r["delivery_debt"]), 2),
-            "total_debt":    round(float(r["total_debt"]), 2),
+            "fuel_debt":     fuel_debt,
+            "delivery_debt": delivery_debt,
+            "total_debt":    round(fuel_debt + delivery_debt, 2),
             "delivered_cub": round(float(r["delivered_cub"]), 2),
             "paid_cub":      round(float(r["paid_cub"]), 2),
             "unpaid_cub":    round(float(r["unpaid_cub"]), 2),
-            "volume_liters": float(r["unpaid_cub"]) * 1000.0,
+            "volume_liters": unpaid_liters,
             "open_count":    r["open_count"],
             "closed_count":  r["closed_count"],
         })

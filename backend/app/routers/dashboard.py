@@ -33,19 +33,38 @@ def get_dashboard(user: dict = Depends(get_current_user)):
 
     alerts = _build_alerts(base_balance, pending_receipts)
 
-    # Client debts: same logic as /analytics/client-debts (is_closed model).
-    # Open hire deals (NOT is_closed) = debt; closed = paid. Never negative.
-    client_debts = query("""
-        SELECT c.name,
-               COALESCE(SUM(hd.amount_client), 0)                                  AS total_hire,
-               COALESCE(SUM(hd.amount_client) FILTER (WHERE hd.is_closed), 0)      AS total_paid,
-               COALESCE(SUM(hd.amount_client) FILTER (WHERE NOT hd.is_closed), 0)  AS debt
-        FROM hire_deliveries hd
-        JOIN clients c ON c.id = hd.client_id
-        GROUP BY c.id, c.name
-        HAVING COUNT(*) FILTER (WHERE NOT hd.is_closed) > 0
-        ORDER BY debt DESC
+    # Client debts: same model B as /analytics/client-debts.
+    # долг = (отгружено куб − оплачено куб) × конечная цена; оплачено = реальные
+    # оплаты из Доходов (is_credit = FALSE). Записи «в долг» не считаются. Не уходит в минус.
+    _debt_rows = query("""
+        WITH hire_stats AS (
+            SELECT c.id AS client_id, c.name,
+                   COALESCE(SUM(hd.volume_liters) FILTER (WHERE NOT hd.is_closed), 0) / 1000.0 AS delivered_cub,
+                   COALESCE(SUM(hd.amount_client) FILTER (WHERE NOT hd.is_closed), 0)          AS total_hire
+            FROM hire_deliveries hd
+            JOIN clients c ON c.id = hd.client_id
+            GROUP BY c.id, c.name
+            HAVING COUNT(*) FILTER (WHERE NOT hd.is_closed) > 0
+        ),
+        paid_stats AS (
+            SELECT client_id, COALESCE(SUM(volume), 0) AS paid_cub
+            FROM income_records WHERE is_credit = FALSE AND volume > 0
+            GROUP BY client_id
+        )
+        SELECT h.name, h.delivered_cub, h.total_hire,
+               COALESCE(p.paid_cub, 0) AS paid_cub
+        FROM hire_stats h LEFT JOIN paid_stats p ON p.client_id = h.client_id
     """)
+    client_debts = []
+    for r in _debt_rows:
+        delivered = float(r["delivered_cub"])
+        paid      = float(r["paid_cub"])
+        total_hire = float(r["total_hire"])
+        unpaid_frac = max(0.0, delivered - paid) / delivered if delivered > 0 else 0.0
+        debt = round(total_hire * unpaid_frac, 2)
+        client_debts.append({"name": r["name"], "debt": debt,
+                             "total_hire": total_hire, "total_paid": round(total_hire - debt, 2)})
+    client_debts.sort(key=lambda x: x["debt"], reverse=True)
 
     # Trucks monthly summary
     import datetime
@@ -71,7 +90,7 @@ def get_dashboard(user: dict = Depends(get_current_user)):
         "artem_cash_balance": artem_cash_balance,
         "artem_debt": artem_debt,
         "alerts": alerts,
-        "client_debts": [{"name": r["name"], "debt": float(r["debt"]), "total_hire": float(r["total_hire"]), "total_paid": float(r["total_paid"])} for r in client_debts],
+        "client_debts": client_debts,
         "trucks_month": [{"name": r["name"], "status": r["status"], "expenses": float(r["expenses"]), "trips": int(r["trips"] or 0), "revenue": float(r["revenue"] or 0)} for r in trucks_month],
     }
 

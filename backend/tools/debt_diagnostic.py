@@ -49,8 +49,11 @@ for r in income:
 
 CREDIT_WORDS = ["в долг", "долг", "дт", "доставить до", "край", "до 10", "до 15"]
 
-def is_credit(comment):
-    c = (comment or "").lower()
+def is_credit(record):
+    # Prefer the explicit is_credit flag (after migration 021); fall back to keywords.
+    if record.get("is_credit") is not None:
+        return bool(record.get("is_credit"))
+    c = (record.get("comment") or "").lower()
     return any(w in c for w in CREDIT_WORDS)
 
 print("\n" + "="*90)
@@ -72,7 +75,7 @@ for cid in sorted(all_cids, key=lambda x: clients.get(x, "")):
     if incs:
         print(f"   ДОХОДЫ ({len(incs)} записей):")
         for r in incs:
-            cr = is_credit(r.get("comment"))
+            cr = is_credit(r)
             tag = "🔴 в долг " if cr else "🟢 оплата "
             amt = float(r.get("amount") or 0); vol = float(r.get("volume") or 0)
             print(f"      {tag} {r.get('income_at','?')}  {amt:>14,.0f} ₽  {vol:>7.1f} куб   «{r.get('comment','')}»")
