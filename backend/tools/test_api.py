@@ -276,8 +276,127 @@ if code == 200 and isinstance(body, dict):
     check("Artem trucks in fleet-pnl", len(artem_trucks) > 0, f"count={len(artem_trucks)}")
 
 # ─────────────────────────────────────────────────────────
-# SUMMARY
+section("18. WRITE CYCLE — POST (create)")
 # ─────────────────────────────────────────────────────────
+
+# 18a. Создаём тестового клиента
+code, body = req("POST", "/api/clients", {"name": "__TEST_CLIENT__"})
+check("POST /clients creates client (201)", code == 201, f"status={code}")
+test_client_id = body.get("id") if code == 201 else None
+if test_client_id:
+    check("New client has id", isinstance(test_client_id, int), str(test_client_id))
+    check("New client name matches", body.get("name") == "__TEST_CLIENT__", body.get("name"))
+
+# 18b. Создаём тестовую запись дохода
+today = time.strftime("%Y-%m-%d")
+code, body = req("POST", "/api/income", {
+    "income_at": today, "client_id": test_client_id,
+    "amount": 999.0, "volume": 1.5, "comment": "TEST запись", "is_credit": False
+})
+check("POST /income creates record (201)", code == 201, f"status={code}")
+test_income_id = body.get("id") if code == 201 else None
+if test_income_id:
+    check("Income amount stored correctly", body.get("amount") == 999.0, str(body.get("amount")))
+    check("Income is_credit=False stored", body.get("is_credit") == False, str(body.get("is_credit")))
+
+# 18c. Создаём запись дохода «в долг» (is_credit=True)
+code, body = req("POST", "/api/income", {
+    "income_at": today, "client_id": test_client_id,
+    "amount": 1111.0, "volume": 2.0, "comment": "TEST в долг", "is_credit": True
+})
+check("POST /income with is_credit=True (201)", code == 201, f"status={code}")
+test_credit_id = body.get("id") if code == 201 else None
+if test_credit_id:
+    check("is_credit=True stored correctly", body.get("is_credit") == True, str(body.get("is_credit")))
+
+# ─────────────────────────────────────────────────────────
+section("19. WRITE CYCLE — PUT (update/correct)")
+# ─────────────────────────────────────────────────────────
+
+# 19a. Обновляем клиента
+if test_client_id:
+    code, body = req("PUT", f"/api/clients/{test_client_id}", {"name": "__TEST_CLIENT_UPDATED__"})
+    check("PUT /clients/{id} updates client (200)", code == 200, f"status={code}")
+    if code == 200:
+        check("Updated name matches", body.get("name") == "__TEST_CLIENT_UPDATED__", body.get("name"))
+
+# 19b. Корректируем запись дохода
+if test_income_id:
+    code, body = req("PUT", f"/api/income/{test_income_id}/correct", {
+        "amount": 1234.0, "comment": "TEST исправлено", "reason": "тест корректировки"
+    })
+    check("PUT /income/{id}/correct (200)", code == 200, f"status={code}")
+    if code == 200:
+        check("Corrected amount matches", body.get("amount") == 1234.0, str(body.get("amount")))
+        check("Corrected comment matches", body.get("comment") == "TEST исправлено", body.get("comment"))
+
+# 19c. Переключаем is_credit через correct
+if test_credit_id:
+    code, body = req("PUT", f"/api/income/{test_credit_id}/correct", {
+        "is_credit": False, "reason": "тест смены флага"
+    })
+    check("PUT /income correct is_credit False→True (200)", code == 200, f"status={code}")
+    if code == 200:
+        check("is_credit changed to False", body.get("is_credit") == False, str(body.get("is_credit")))
+
+# ─────────────────────────────────────────────────────────
+section("20. WRITE CYCLE — token scopes (read/write/full)")
+# ─────────────────────────────────────────────────────────
+
+# Создаём read-токен
+code, body = req("POST", "/api/tokens", {"name": "test-read-scope", "scope": "read"})
+check("POST /tokens creates read-scope token (201)", code == 201, f"status={code}")
+read_token_id  = body.get("id")    if code == 201 else None
+read_token_val = body.get("token") if code == 201 else None
+
+# Создаём write-токен
+code, body = req("POST", "/api/tokens", {"name": "test-write-scope", "scope": "write"})
+check("POST /tokens creates write-scope token (201)", code == 201, f"status={code}")
+write_token_id  = body.get("id")    if code == 201 else None
+write_token_val = body.get("token") if code == 201 else None
+
+if read_token_val:
+    # read-токен: GET должен работать
+    code, _ = req("GET", "/api/clients", token=read_token_val)
+    check("read-token: GET /clients allowed (200)", code == 200, f"status={code}")
+    # read-токен: POST должен блокироваться
+    code, _ = req("POST", "/api/clients", {"name": "MUST_FAIL"}, token=read_token_val)
+    check("read-token: POST /clients blocked (403)", code == 403, f"status={code}")
+    # read-токен: DELETE должен блокироваться
+    if read_token_id:
+        code, _ = req("DELETE", f"/api/tokens/{read_token_id}", token=read_token_val)
+        check("read-token: DELETE blocked (403)", code == 403, f"status={code}")
+
+if write_token_val and read_token_id:
+    # write-токен: DELETE должен блокироваться (scope write, не full)
+    code, _ = req("DELETE", f"/api/tokens/{read_token_id}", token=write_token_val)
+    check("write-token: DELETE blocked (403)", code == 403, f"status={code}")
+
+# Чистим токены через full-токен (наш основной)
+for tid in [read_token_id, write_token_id]:
+    if tid:
+        code, _ = req("DELETE", f"/api/tokens/{tid}")
+        check(f"DELETE /tokens/{tid} cleanup (200/204)", code in (200, 204), f"status={code}")
+
+# ─────────────────────────────────────────────────────────
+section("21. VERIFY — read back after write")
+# ─────────────────────────────────────────────────────────
+
+# Проверяем что запись дохода с обновлённой суммой реально в БД
+if test_income_id:
+    code, body = req("GET", f"/api/income/{test_income_id}")
+    check("GET /income/{id} returns updated record (200)", code == 200, f"status={code}")
+    if code == 200:
+        check("Persisted amount = 1234", body.get("amount") == 1234.0, str(body.get("amount")))
+        check("Persisted comment updated", body.get("comment") == "TEST исправлено", body.get("comment"))
+
+# Клиент с обновлённым именем в общем списке
+code, body = req("GET", "/api/clients")
+if isinstance(body, list):
+    found = any(c.get("name") == "__TEST_CLIENT_UPDATED__" for c in body)
+    check("Updated client visible in GET /clients", found)
+
+
 total = len(results)
 passed = sum(1 for _, ok, _ in results if ok)
 failed = total - passed
