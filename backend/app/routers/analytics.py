@@ -403,7 +403,25 @@ def analytics_fleet_pnl(
         })
     trucks_out.sort(key=lambda x: x["revenue"], reverse=True)
 
-    # Own fleet totals
+    def _fleet_totals(trucks):
+        rev = sum(t["revenue"] for t in trucks)
+        exp = sum(t["expenses"] for t in trucks)
+        mar = rev - exp
+        tri = sum(t["trips"] for t in trucks)
+        vol = round(sum(t["volume"] for t in trucks), 2)
+        return {
+            "revenue": round(rev, 2),
+            "expenses": round(exp, 2),
+            "margin": round(mar, 2),
+            "margin_pct": round((mar / rev * 100), 1) if rev > 0 else 0.0,
+            "trips": tri,
+            "volume": vol,
+        }
+
+    dtl_trucks   = [t for t in trucks_out if t["owner"] == "DTL"]
+    artem_trucks = [t for t in trucks_out if t["owner"] == "Артём"]
+
+    # Own fleet totals (all trucks combined, for net_profit)
     own_revenue = sum(t["revenue"] for t in trucks_out)
     own_expenses = sum(t["expenses"] for t in trucks_out)
     own_margin = own_revenue - own_expenses
@@ -458,6 +476,8 @@ def analytics_fleet_pnl(
             "trips": own_trips,
             "volume": own_volume,
         },
+        "dtl_fleet":   _fleet_totals(dtl_trucks),
+        "artem_fleet": _fleet_totals(artem_trucks),
         "hire": {
             "revenue": round(hire_rev, 2),
             "expenses": round(hire_exp, 2),

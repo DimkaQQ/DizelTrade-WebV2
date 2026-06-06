@@ -222,6 +222,7 @@
       <div class="tab-item" data-tab="home" onclick="navigate('#home')"><div class="tab-icon">🏠</div><div class="tab-label">Главная</div></div>
       <div class="tab-item" data-tab="base/receipts/new" onclick="navigate('#base/receipts/new')"><div class="tab-icon">📥</div><div class="tab-label">Принял</div></div>
       <div class="tab-item" data-tab="base/dispatches/new" onclick="navigate('#base/dispatches/new')"><div class="tab-icon">🚚</div><div class="tab-label">Рейс</div></div>
+      <div class="tab-item" data-tab="fleet" onclick="navigate('#fleet')"><div class="tab-icon">🏗</div><div class="tab-label">Парк</div></div>
     </div>`;
   }
 
@@ -262,6 +263,10 @@
           ${isArtem() ? `
           <div class="nav-group-label">Автопарк</div>
           <div class="nav-item" data-page="fleet" onclick="navigate('#fleet')"><span class="ni-icon">🏗</span> Мой автопарк</div>
+          ` : ''}
+          ${isOp() ? `
+          <div class="nav-group-label">Автопарк</div>
+          <div class="nav-item" data-page="fleet" onclick="navigate('#fleet')"><span class="ni-icon">🏗</span> Парк Артёма</div>
           ` : ''}
           ${isPartner() ? `
           <div class="nav-group-label">Аналитика</div>
@@ -799,6 +804,7 @@
       <div class="menu-grid">
         ${menuCard({ icon: '📥', label: 'Принял топливо', accent: true, onClick: "navigate('#base/receipts/new')" })}
         ${!isOp() ? menuCard({ icon: '🚚', label: 'Рейс на участок', onClick: "navigate('#base/dispatches/new')" }) : ''}
+        ${isOp() ? menuCard({ icon: '🏗', label: 'Парк Артёма', sub: 'расходы', onClick: "navigate('#fleet')" }) : ''}
       </div>
       ${sectionHeader('Ожидают подтверждения')}
       ${pending.length ? `<div class="pending-block"><div class="pt">⏳ Требуют действия (${pending.length})</div>
@@ -2342,7 +2348,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     let trucks = [];
     let archivedTrucks = [];
     let artemDebtData = null;
-    try { trucks = (isArtem() ? await api.get('/api/trucks?owner=Артём') : await api.get('/api/trucks')) || []; } catch (e) {}
+    try { trucks = (isArtem() || isOp() ? await api.get('/api/trucks?owner=Артём') : await api.get('/api/trucks')) || []; } catch (e) {}
     if (isPartner() || isArtem()) {
       try {
         const all = (isArtem() ? await api.get('/api/trucks?owner=Артём&status=archived') : await api.get('/api/trucks?status=archived')) || [];
@@ -2362,9 +2368,10 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
-    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">${isArtem() ? '🏗 Мой автопарк' : '🚛 Автопарк DTL'}</div><div style="width:55px"></div></div>` : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">${isArtem() ? '🏗 Мой автопарк' : isOp() ? '🏗 Парк Артёма' : '🚛 Автопарк DTL'}</div><div style="width:55px"></div></div>` : ''}
     <div class="content">
       ${isArtem() ? `<div class="role-tag">Управляешь сам · партнёры DTL видят P&amp;L только просмотром</div>` : ''}
+      ${isOp() ? `<div class="role-tag blue">🔒 Только ввод расходов · редактирование машин недоступно</div>` : ''}
       <div class="stats">
         ${statCard(trucks.length || '—', 'Машин')}
         ${statCard(tripsMonth || '—', 'Рейсов (май)', 'o')}
@@ -2405,13 +2412,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         </div>
       </details>
       ` : ''}
-      ${isArtem() ? `
+      ${(isArtem() || isOp()) ? `
       ${sectionHeader('Внести расход')}
       ${formField('Машина', chipGroup(trucks.map(t => ({ value: String(t.id), label: t.name })), trucks[0] ? String(trucks[0].id) : '', 'fleet-truck'))}
       ${formField('Категория', chipGroup(['Ремонт', 'ТО', 'Зарплата', 'Топливо', 'Резина', 'Прочее'], 'Ремонт', 'fleet-cat'))}
       ${formField('Сумма, ₽', `<input class="inp" type="number" id="fleet-amount" placeholder="0">`)}
       ${formField('Комментарий', `<input class="inp" type="text" id="fleet-note" placeholder="Детали...">`)}
       <button class="btn-primary" onclick="submitFleetExpense()">Записать расход</button>
+      ` : ''}
+      ${isArtem() ? `
       ${sectionHeader('Долг DTL передо мной')}
       <div class="bb">
         <div class="bbr"><div class="bbl">Рейсы моих машин (всего)</div><div class="bbv" style="color:var(--red)">${formatNum(Math.round(debtRub))} ₽</div></div>
@@ -3396,16 +3405,19 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     // Fleet P&L table
     const mkM = v => v >= 1000000 ? (v / 1000000).toFixed(2) + ' млн' : v >= 1000 ? (v / 1000).toFixed(0) + ' т.₽' : formatNum(v);
     const mkC = (v, good, ok) => v >= good ? 'var(--accent)' : v >= ok ? 'var(--orange)' : 'var(--red)';
-    const pnlTrucks = fleetPnl ? fleetPnl.trucks : [];
-    const pnlOwn   = fleetPnl ? fleetPnl.own_fleet : null;
-    const pnlHire  = fleetPnl ? fleetPnl.hire : null;
-    const pnlCoExp = fleetPnl ? fleetPnl.company_expenses : 0;
-    const pnlNet   = fleetPnl ? fleetPnl.net_profit : 0;
+    const pnlTrucks    = fleetPnl ? fleetPnl.trucks : [];
+    const pnlOwn       = fleetPnl ? fleetPnl.own_fleet : null;
+    const pnlDtl       = fleetPnl ? fleetPnl.dtl_fleet : null;
+    const pnlArtem     = fleetPnl ? fleetPnl.artem_fleet : null;
+    const pnlHire      = fleetPnl ? fleetPnl.hire : null;
+    const pnlCoExp     = fleetPnl ? fleetPnl.company_expenses : 0;
+    const pnlNet       = fleetPnl ? fleetPnl.net_profit : 0;
 
     const pnlTruckRows = pnlTrucks.map(t => {
       const mc = mkC(t.margin_pct, 30, 10);
+      const ownerIcon = t.owner === 'Артём' ? '🏗' : '🚛';
       return `<tr>
-        <td style="font-weight:600">${esc(t.truck_name)}</td>
+        <td style="font-weight:600">${ownerIcon} ${esc(t.truck_name)}</td>
         <td style="color:var(--accent)">${mkM(t.revenue)}</td>
         <td style="color:var(--red)">${mkM(t.expenses)}</td>
         <td style="color:${mc};font-weight:700">${t.margin_pct}%</td>
@@ -3416,7 +3428,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     }).join('');
 
     const pnlHireRow = pnlHire ? `<tr style="border-top:1px solid var(--border)">
-      <td style="font-weight:600;color:var(--orange)">Найм (итого)</td>
+      <td style="font-weight:600;color:var(--orange)">🔁 Найм (итого)</td>
       <td style="color:var(--accent)">${mkM(pnlHire.revenue)}</td>
       <td style="color:var(--red)">${mkM(pnlHire.expenses)}</td>
       <td style="color:${mkC(pnlHire.margin_pct, 20, 5)};font-weight:700">${pnlHire.margin_pct}%</td>
@@ -3425,8 +3437,21 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       <td style="color:var(--text2)">${pnlHire.volume}</td>
     </tr>` : '';
 
-    const pnlOwnRow = pnlOwn ? `<tr style="background:var(--card2);font-weight:700">
-      <td>Свой парк итого</td>
+    const mkSubtotalRow = (label, data, icon) => data && data.trips > 0 ? `<tr style="background:var(--card2);font-weight:700;font-size:11px;color:var(--text2)">
+      <td>${icon} ${label}</td>
+      <td style="color:var(--accent)">${mkM(data.revenue)}</td>
+      <td style="color:var(--red)">${mkM(data.expenses)}</td>
+      <td style="color:${mkC(data.margin_pct, 30, 10)}">${data.margin_pct}%</td>
+      <td>${data.trips}</td>
+      <td>—</td>
+      <td>${data.volume}</td>
+    </tr>` : '';
+
+    const pnlOwnRow = pnlOwn ? `
+      ${mkSubtotalRow('DTL итого', pnlDtl, '🚛')}
+      ${mkSubtotalRow('Артём итого', pnlArtem, '🏗')}
+      <tr style="background:rgba(0,0,0,.04);font-weight:700;border-top:2px solid var(--border)">
+      <td>Весь парк итого</td>
       <td style="color:var(--accent)">${mkM(pnlOwn.revenue)}</td>
       <td style="color:var(--red)">${mkM(pnlOwn.expenses)}</td>
       <td style="color:${mkC(pnlOwn.margin_pct, 30, 10)}">${pnlOwn.margin_pct}%</td>

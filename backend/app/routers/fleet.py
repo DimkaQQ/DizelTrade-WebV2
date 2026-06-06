@@ -309,12 +309,12 @@ def get_fleet_expense(expense_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.post("/fleet/expenses", status_code=201)
-def create_fleet_expense(body: ExpenseCreate, user: dict = Depends(require_not_operator)):
+def create_fleet_expense(body: ExpenseCreate, user: dict = Depends(get_current_user)):
     truck = query_one("SELECT owner FROM trucks WHERE id = %s", (body.truck_id,))
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
-    if user["role"] == "artem" and truck["owner"] != "Артём":
-        raise HTTPException(status_code=403, detail="Artem can only add expenses for his trucks")
+    if user["role"] in ("artem", "operator") and truck["owner"] != "Артём":
+        raise HTTPException(status_code=403, detail="Can only add expenses for Artem's trucks")
 
     with get_db() as conn:
         row = execute("""
