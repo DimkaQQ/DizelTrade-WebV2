@@ -880,42 +880,70 @@ def client_debts(
     year: int = Query(default=2026),
     user: dict = Depends(require_partner),
 ):
-    """Per-client debt: open (not is_closed) hire_deliveries only.
-    fuel_debt  = SUM(amount_supplier)  on open deals
-    delivery_debt = SUM(amount_client - amount_supplier) on open deals
+    """Per ТЗ formula:
+      fuel_debt     = (delivered_cub - paid_cub) x avg_price_supplier
+      delivery_debt = (avg_price_client - avg_price_supplier) x unpaid_volume
+    paid_cub = income_records.volume (cubic meters paid by client).
+    GREATEST(0,...) prevents false negatives when income > delivered.
     """
     rows = query("""
+        WITH hire_stats AS (
+            SELECT
+                c.id   AS client_id,
+                c.name AS client_name,
+                COALESCE(SUM(hd.volume_liters)   FILTER (WHERE NOT hd.is_closed), 0) / 1000.0
+                    AS delivered_cub,
+                COALESCE(SUM(hd.amount_supplier) FILTER (WHERE NOT hd.is_closed), 0)
+                    / NULLIF(SUM(hd.volume_liters) FILTER (WHERE NOT hd.is_closed), 0)
+                    AS avg_price_supplier,
+                COALESCE(SUM(hd.amount_client)   FILTER (WHERE NOT hd.is_closed), 0)
+                    / NULLIF(SUM(hd.volume_liters) FILTER (WHERE NOT hd.is_closed), 0)
+                    AS avg_price_client,
+                COUNT(*) FILTER (WHERE NOT hd.is_closed) AS open_count,
+                COUNT(*) FILTER (WHERE     hd.is_closed) AS closed_count
+            FROM hire_deliveries hd
+            JOIN clients c ON c.id = hd.client_id
+            GROUP BY c.id, c.name
+            HAVING COUNT(*) FILTER (WHERE NOT hd.is_closed) > 0
+        ),
+        income_stats AS (
+            SELECT client_id, COALESCE(SUM(volume), 0) AS paid_cub
+            FROM income_records
+            WHERE volume IS NOT NULL AND volume > 0
+            GROUP BY client_id
+        )
         SELECT
-            c.id   AS client_id,
-            c.name AS client_name,
-            COALESCE(SUM(hd.amount_client),              0) AS billed_open,
-            COALESCE(SUM(hd.amount_supplier),            0) AS fuel_open,
-            COALESCE(SUM(hd.amount_carrier),             0) AS carrier_open,
-            COALESCE(SUM(hd.volume_liters),              0) AS volume_open,
-            COUNT(*)                                        AS open_count,
-            COALESCE(SUM(hd.amount_client) FILTER (WHERE hd.is_closed), 0) AS billed_closed,
-            COUNT(*) FILTER (WHERE hd.is_closed)            AS closed_count
-        FROM hire_deliveries hd
-        JOIN clients c ON c.id = hd.client_id
-        GROUP BY c.id, c.name
-        HAVING COUNT(*) FILTER (WHERE NOT hd.is_closed) > 0
-        ORDER BY c.name
+            h.client_id,
+            h.client_name,
+            h.delivered_cub,
+            COALESCE(i.paid_cub, 0)                                        AS paid_cub,
+            GREATEST(0, h.delivered_cub - COALESCE(i.paid_cub, 0))        AS unpaid_cub,
+            COALESCE(h.avg_price_supplier, 0)                              AS avg_price_supplier,
+            COALESCE(h.avg_price_client,   0)                              AS avg_price_client,
+            h.open_count,
+            h.closed_count
+        FROM hire_stats h
+        LEFT JOIN income_stats i ON i.client_id = h.client_id
+        ORDER BY h.client_name
     """)
 
     result = []
     for r in rows:
-        fuel_debt     = float(r["fuel_open"])
-        carrier_debt  = float(r["carrier_open"])
-        billed_open   = float(r["billed_open"])
-        delivery_debt = round(billed_open - fuel_debt - carrier_debt, 2)
+        unpaid_liters = float(r["unpaid_cub"]) * 1000.0
+        avg_ps        = float(r["avg_price_supplier"])
+        avg_pc        = float(r["avg_price_client"])
+        fuel_debt     = round(unpaid_liters * avg_ps, 2)
+        delivery_debt = round(unpaid_liters * (avg_pc - avg_ps), 2)
         result.append({
             "client_id":     r["client_id"],
             "client_name":   r["client_name"],
-            "fuel_debt":     round(fuel_debt, 2),
+            "fuel_debt":     fuel_debt,
             "delivery_debt": delivery_debt,
-            "carrier_debt":  round(carrier_debt, 2),
-            "total_debt":    round(billed_open, 2),
-            "volume_liters": float(r["volume_open"]),
+            "total_debt":    round(fuel_debt + delivery_debt, 2),
+            "delivered_cub": round(float(r["delivered_cub"]), 2),
+            "paid_cub":      round(float(r["paid_cub"]), 2),
+            "unpaid_cub":    round(float(r["unpaid_cub"]), 2),
+            "volume_liters": float(r["delivered_cub"]) * 1000.0,
             "open_count":    r["open_count"],
             "closed_count":  r["closed_count"],
         })

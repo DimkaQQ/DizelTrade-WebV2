@@ -2137,7 +2137,9 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
             <div style="font-size:12px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap">
               <span>⛽ Топливо: <strong style="color:var(--text)">${formatNum(Math.round(d.fuel_debt))} ₽</strong></span>
               <span>🚚 Доставка: <strong style="color:var(--text)">${formatNum(Math.round(d.delivery_debt))} ₽</strong></span>
-              <span style="opacity:.7">${d.open_count} откр. · ${(d.volume_liters/1000).toFixed(1)} куб</span>
+            </div>
+            <div style="font-size:11px;color:var(--text2);opacity:.7">
+              Отгружено: ${d.delivered_cub} куб · Оплачено: ${d.paid_cub} куб · Долг: ${d.unpaid_cub} куб · ${d.open_count} откр.
             </div>
           </div>
         `).join('')}
