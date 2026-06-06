@@ -906,14 +906,13 @@ def client_debts(
     for r in rows:
         billed_open   = float(r["billed_open"])
         fuel_debt     = float(r["fuel_open"])
-        carrier_debt  = float(r["carrier_open"])
-        delivery_debt = round(billed_open - fuel_debt - carrier_debt, 2)
+        # delivery_debt = (price_client − price_fuel) × volume — per ТЗ, carrier included in delivery
+        delivery_debt = round(billed_open - fuel_debt, 2)
         result.append({
             "client_id":     r["client_id"],
             "client_name":   r["client_name"],
             "fuel_debt":     round(fuel_debt, 2),
             "delivery_debt": delivery_debt,
-            "carrier_debt":  round(carrier_debt, 2),
             "total_debt":    round(billed_open, 2),
             "volume_liters": float(r["volume_open"]),
             "open_count":    r["open_count"],
