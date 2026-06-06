@@ -396,6 +396,60 @@ if isinstance(body, list):
     found = any(c.get("name") == "__TEST_CLIENT_UPDATED__" for c in body)
     check("Updated client visible in GET /clients", found)
 
+# ─────────────────────────────────────────────────────────
+section("22. CLEANUP — удаление тестовых записей из БД")
+# ─────────────────────────────────────────────────────────
+# У clients/income нет DELETE в API, поэтому чистим напрямую через БД
+# (тем же DATABASE_URL, что и приложение). Удаляем по конкретным ID +
+# страховка по паттерну, чтобы не осталось мусора после прогона.
+def _cleanup_db():
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    backend = os.path.dirname(here)
+    sys.path.insert(0, backend)
+    cwd = os.getcwd()
+    try:
+        os.chdir(backend)  # чтобы pydantic нашёл backend/.env
+        import psycopg2
+        from app.config import settings
+        conn = psycopg2.connect(settings.DATABASE_URL)
+        try:
+            with conn.cursor() as cur:
+                # сначала доходы (FK на clients), потом сам клиент
+                cur.execute("DELETE FROM income_records WHERE comment LIKE 'TEST%%'")
+                inc_deleted = cur.rowcount
+                cur.execute(
+                    "DELETE FROM clients WHERE name IN ('__TEST_CLIENT__', '__TEST_CLIENT_UPDATED__')"
+                )
+                cli_deleted = cur.rowcount
+            conn.commit()
+            return True, f"доходов={inc_deleted}, клиентов={cli_deleted}"
+        finally:
+            conn.close()
+    except Exception as e:
+        return False, str(e)[:120]
+    finally:
+        os.chdir(cwd)
+
+ok, detail = _cleanup_db()
+if ok:
+    check("Тестовые записи удалены из БД", True, detail)
+    # подтверждаем что клиент действительно исчез из API
+    code, body = req("GET", "/api/clients")
+    if isinstance(body, list):
+        gone = not any(
+            c.get("name") in ("__TEST_CLIENT__", "__TEST_CLIENT_UPDATED__") for c in body
+        )
+        check("Тестовый клиент больше не виден в GET /clients", gone)
+else:
+    # Не падаем, если запускают не на сервере (нет доступа к БД) — просто предупреждаем
+    print(f"  {WARN}  Авто-очистка пропущена (нет доступа к БД): {detail}")
+    print(f"         Почистите вручную на сервере:")
+    print(f"         sudo -u postgres psql -d dtl_db -c \\")
+    print(f"           \"DELETE FROM income_records WHERE comment LIKE 'TEST%';\"")
+    print(f"         sudo -u postgres psql -d dtl_db -c \\")
+    print(f"           \"DELETE FROM clients WHERE name LIKE '__TEST_CLIENT%';\"")
+
 
 total = len(results)
 passed = sum(1 for _, ok, _ in results if ok)
