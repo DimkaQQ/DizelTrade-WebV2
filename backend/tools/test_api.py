@@ -253,8 +253,23 @@ check("GET /tariffs returns 200", code == 200, f"status={code}")
 # ─────────────────────────────────────────────────────────
 section("16. FLEET EXPENSES (own-park receipts)")
 # ─────────────────────────────────────────────────────────
-code, body = req("GET", "/api/fleet-expenses")
-check("GET /fleet-expenses returns 200", code == 200, f"status={code}")
+code, body = req("GET", "/api/fleet/expenses")
+check("GET /fleet/expenses returns 200", code == 200, f"status={code}")
+
+# ─────────────────────────────────────────────────────────
+section("17. FLEET P&L — DTL/Artem split")
+# ─────────────────────────────────────────────────────────
+code, body = req("GET", "/api/analytics/fleet-pnl?year=2026&month=5")
+check("GET /analytics/fleet-pnl returns 200", code == 200, f"status={code}")
+if code == 200 and isinstance(body, dict):
+    check("fleet-pnl has dtl_fleet field",   "dtl_fleet"   in body)
+    check("fleet-pnl has artem_fleet field", "artem_fleet" in body)
+    check("fleet-pnl has own_fleet field",   "own_fleet"   in body)
+    trucks = body.get("trucks", [])
+    owners = {t.get("owner") for t in trucks}
+    check("trucks list has owner field", all(t.get("owner") for t in trucks), str(owners))
+    artem_trucks = [t for t in trucks if t.get("owner") == "Артём"]
+    check("Artem trucks in fleet-pnl", len(artem_trucks) > 0, f"count={len(artem_trucks)}")
 
 # ─────────────────────────────────────────────────────────
 # SUMMARY
