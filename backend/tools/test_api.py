@@ -35,6 +35,8 @@ def req(method: str, path: str, body=None, token=TOKEN, extra_headers=None, expe
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     if extra_headers:
         headers.update(extra_headers)
@@ -145,11 +147,12 @@ if isinstance(body, list):
     delivery_ok = all(d.get("delivery_debt") is not None for d in body)
     check("fuel_debt field present on all rows", fuel_ok)
     check("delivery_debt field present on all rows", delivery_ok)
+    # unpaid = max(0, delivered - paid); overpayment (paid > delivered) is valid (prepayment)
     cub_ok = all(
-        abs(d.get("delivered_cub",0) - d.get("paid_cub",0) - d.get("unpaid_cub",0)) < 0.01
+        abs(d.get("unpaid_cub", 0) - max(0, d.get("delivered_cub", 0) - d.get("paid_cub", 0))) < 0.01
         for d in body
     )
-    check("delivered = paid + unpaid (cub balance)", cub_ok)
+    check("unpaid_cub = max(0, delivered - paid) (cub balance)", cub_ok)
     by_name = {d.get("client_name"): d for d in body}
     # After migration 021 (Model B): fully-paid clients must be 0
     for paid_client in ["Зея", "Трасса"]:
@@ -216,9 +219,10 @@ section("11. DASHBOARD")
 code, body = req("GET", "/api/dashboard")
 check("GET /dashboard returns 200", code == 200, f"status={code}")
 if code == 200 and isinstance(body, dict):
-    check("dashboard has revenue_fleet", "revenue_fleet" in body)
-    check("dashboard has revenue_hire",  "revenue_hire"  in body)
-    check("dashboard has client_debts",  "client_debts"  in body)
+    check("dashboard has base_balance",    "base_balance"    in body)
+    check("dashboard has client_debts",    "client_debts"    in body)
+    check("dashboard has trucks_month",    "trucks_month"    in body)
+    check("dashboard has trips_in_transit","trips_in_transit" in body)
 
 # ─────────────────────────────────────────────────────────
 section("12. ANALYTICS — annual summary")
