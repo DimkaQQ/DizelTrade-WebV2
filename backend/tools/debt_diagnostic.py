@@ -89,11 +89,10 @@ for cid in sorted(all_cids, key=lambda x: clients.get(x, "")):
     print(f"   ─ Записи в долг (🔴):    {credit_amount:,.0f} ₽ / {credit_vol:.1f} куб")
     print(f"   ── ДОЛГ по моделям:")
     print(f"       A) hire − ВСЕ доходы       = {hire_amt - pay_amount - credit_amount:>14,.0f} ₽   (старая, даёт минусы)")
-    print(f"       B) hire − только оплаты(🟢) = {max(0, hire_amt - pay_amount):>14,.0f} ₽   (исключая в долг)")
-    print(f"       C) is_closed (открытые)     = {hire_amt if h['closed']==0 else '?':>14} ₽   (текущая)")
+    print(f"       B) hire − только оплаты(🟢) = {max(0, hire_amt - pay_amount):>14,.0f} ₽   (ТЕКУЩАЯ модель, исключая в долг)")
 
 print("\n" + "="*90)
-print("Текущий ответ /analytics/client-debts (модель is_closed):")
+print("Текущий ответ /analytics/client-debts (модель B: отгружено − реальные оплаты):")
 print("="*90)
 for d in debts:
     print(f"   {d['client_name']:10} итого={d['total_debt']:>14,.0f} ₽  "
