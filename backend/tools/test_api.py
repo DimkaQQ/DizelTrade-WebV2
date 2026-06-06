@@ -150,6 +150,14 @@ if isinstance(body, list):
         for d in body
     )
     check("delivered = paid + unpaid (cub balance)", cub_ok)
+    by_name = {d.get("client_name"): d for d in body}
+    # After migration 021 (Model B): fully-paid clients must be 0
+    for paid_client in ["Зея", "Трасса"]:
+        d = by_name.get(paid_client)
+        if d is not None:
+            check(f"  {paid_client} fully paid → debt 0",
+                  abs(d.get("total_debt", 0)) < 1,
+                  f"total={d.get('total_debt'):,.0f} (нужно 0 после миграции 021)")
     for d in body:
         name = d.get("client_name")
         td   = d.get("total_debt",0)

@@ -1303,11 +1303,20 @@
   function showCorrectionModal({ title, fields, onSubmit }) {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
-    const fieldsHtml = fields.map(f => `
-      <div style="margin-bottom:10px">
+    const fieldsHtml = fields.map(f => {
+      if (f.type === 'checkbox') {
+        return `<div style="margin-bottom:10px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2)">
+            <input id="corr-${f.id}" type="checkbox" ${f.value ? 'checked' : ''} style="width:16px;height:16px">
+            ${esc(f.label)}
+          </label>
+        </div>`;
+      }
+      return `<div style="margin-bottom:10px">
         <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${esc(f.label)}</div>
         <input id="corr-${f.id}" class="inp" type="${f.type || 'text'}" value="${esc(String(f.value || ''))}" placeholder="${esc(f.label)}" style="width:100%">
-      </div>`).join('');
+      </div>`;
+    }).join('');
     overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%;max-height:85vh;overflow-y:auto">
       <div style="font-size:17px;font-weight:700;margin-bottom:16px">${esc(title)}</div>
       ${fieldsHtml}
@@ -1334,7 +1343,10 @@
     const data = { reason };
     (window._correctionFields || []).forEach(f => {
       const el = document.getElementById('corr-' + f.id);
-      if (el && el.value !== String(f.value || '')) {
+      if (!el) return;
+      if (f.type === 'checkbox') {
+        if (el.checked !== !!f.value) data[f.id] = el.checked;
+      } else if (el.value !== String(f.value || '')) {
         data[f.id] = f.type === 'number' ? (parseFloat(el.value) || null) : el.value;
       }
     });
@@ -1848,11 +1860,11 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div style="display:flex;align-items:center;gap:10px">
           <div class="lic g">💰</div>
           <div class="lit" style="flex:1">
-            <div class="lim">${formatNum(r.amount)} ₽ · ${esc(r.client_name || '—')}</div>
-            <div class="lis">${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}${r.volume ? ` · ${r.volume} т` : ''}${r.entered_by_name ? ` · ${esc(r.entered_by_name)}` : ''}</div>
+            <div class="lim">${formatNum(r.amount)} ₽ · ${esc(r.client_name || '—')}${r.is_credit ? ` <span style="font-size:10px;background:rgba(255,159,10,.15);color:var(--orange);padding:1px 6px;border-radius:5px;vertical-align:middle">в долг</span>` : ''}</div>
+            <div class="lis">${r.income_at ? new Date(r.income_at).toLocaleDateString('ru') : ''}${r.volume ? ` · ${r.volume} куб` : ''}${r.entered_by_name ? ` · ${esc(r.entered_by_name)}` : ''}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
-            ${isPartner() ? `<button onclick="window.correctIncome(${r.id},'${r.income_at ? r.income_at.slice(0,10) : ''}',${r.amount || 0},'${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
+            ${isPartner() ? `<button onclick="window.correctIncome(${r.id},'${r.income_at ? r.income_at.slice(0,10) : ''}',${r.amount || 0},${r.volume || 0},'${esc(r.comment||'')}',${r.is_credit ? 'true' : 'false'})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
           </div>
         </div>
         ${r.comment ? `<div style="font-size:12px;color:var(--text2);padding:4px 8px;background:var(--card2);border-radius:6px;margin-left:42px">${esc(r.comment)}</div>` : ''}
@@ -1867,13 +1879,15 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Доходы';
   }
 
-  window.correctIncome = function(id, income_at, amount, comment) {
+  window.correctIncome = function(id, income_at, amount, volume, comment, is_credit) {
     showCorrectionModal({
       title: 'Исправить запись доходов',
       fields: [
         { id: 'income_at', label: 'Дата', type: 'date', value: income_at },
         { id: 'amount', label: 'Сумма ₽', type: 'number', value: amount },
+        { id: 'volume', label: 'Объём, куб', type: 'number', value: volume || 0 },
         { id: 'comment', label: 'Комментарий', value: comment || '' },
+        { id: 'is_credit', label: 'В долг (не оплата)', type: 'checkbox', value: is_credit },
       ],
       onSubmit: async (data) => {
         await api.put('/api/income/' + id + '/correct', data);
@@ -1882,16 +1896,29 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     });
   };
 
-  window.showIncomeModal = function () {
+  window.showIncomeModal = async function () {
+    let clients = [];
+    try { clients = await api.get('/api/clients') || []; } catch (e) {}
+    const clientOpts = '<option value="">— клиент —</option>' +
+      clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     showModal('Добавить доход', `
       ${formField('Дата', `<input class="inp" type="date" id="m-income-at" value="${new Date().toISOString().slice(0,10)}">`)}
+      ${formField('Клиент', `<select class="inp" id="m-client">${clientOpts}</select>`)}
       ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
+      ${formField('Объём, куб', `<input class="inp" type="number" step="0.01" id="m-volume" placeholder="0">`)}
       ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Детали...">`)}
+      <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;font-size:13px;color:var(--text2)">
+        <input type="checkbox" id="m-credit" style="width:16px;height:16px">
+        Это «в долг» (не считать оплатой при расчёте долга)
+      </label>
     `, async () => {
       const income_at = document.getElementById('m-income-at').value;
-      const amount = parseFloat(document.getElementById('m-amount').value);
+      const client_id = parseInt(document.getElementById('m-client').value) || null;
+      const amount = parseFloat(document.getElementById('m-amount').value) || null;
+      const volume = parseFloat(document.getElementById('m-volume').value) || null;
       const comment = document.getElementById('m-note').value;
-      await api.post('/api/income', { income_at, amount, comment });
+      const is_credit = document.getElementById('m-credit').checked;
+      await api.post('/api/income', { income_at, client_id, amount, volume, comment, is_credit });
       toast('✅ Доход записан!');
       viewIncome();
     });

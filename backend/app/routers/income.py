@@ -14,6 +14,7 @@ class IncomeCreate(BaseModel):
     amount: Optional[float] = None
     volume: Optional[float] = None
     comment: Optional[str] = None
+    is_credit: bool = False  # True = «в долг» (не считается оплатой для долга)
 
 
 @router.get("/income")
@@ -60,9 +61,9 @@ def get_income(income_id: int, user: dict = Depends(require_partner)):
 def create_income(body: IncomeCreate, user: dict = Depends(require_partner)):
     with get_db() as conn:
         row = execute("""
-            INSERT INTO income_records (income_at, client_id, amount, volume, comment, entered_by)
-            VALUES (%s, %s, %s, %s, %s, %s) RETURNING *
-        """, (body.income_at, body.client_id, body.amount, body.volume, body.comment, user["id"]),
+            INSERT INTO income_records (income_at, client_id, amount, volume, comment, is_credit, entered_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (body.income_at, body.client_id, body.amount, body.volume, body.comment, body.is_credit, user["id"]),
             conn=conn, returning=True)
         log_action(conn, "income_records", row["id"], "INSERT", user["id"], new_data=dict(row))
         conn.commit()
@@ -72,7 +73,9 @@ def create_income(body: IncomeCreate, user: dict = Depends(require_partner)):
 class IncomeCorrection(BaseModel):
     income_at: Optional[str] = None
     amount: Optional[float] = None
+    volume: Optional[float] = None
     comment: Optional[str] = None
+    is_credit: Optional[bool] = None
     reason: str  # mandatory
 
 
@@ -84,7 +87,9 @@ def correct_income(income_id: int, body: IncomeCorrection, user: dict = Depends(
     updates = {}
     if body.income_at: updates["income_at"] = body.income_at
     if body.amount is not None: updates["amount"] = body.amount
+    if body.volume is not None: updates["volume"] = body.volume
     if body.comment is not None: updates["comment"] = body.comment
+    if body.is_credit is not None: updates["is_credit"] = body.is_credit
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
     set_clause = ", ".join(f"{k} = %s" for k in updates)
@@ -104,9 +109,9 @@ def update_income(income_id: int, body: IncomeCreate, user: dict = Depends(requi
     with get_db() as conn:
         row = execute("""
             UPDATE income_records
-            SET income_at=%s, client_id=%s, amount=%s, volume=%s, comment=%s
+            SET income_at=%s, client_id=%s, amount=%s, volume=%s, comment=%s, is_credit=%s
             WHERE id=%s RETURNING *
-        """, (body.income_at, body.client_id, body.amount, body.volume, body.comment, income_id),
+        """, (body.income_at, body.client_id, body.amount, body.volume, body.comment, body.is_credit, income_id),
             conn=conn, returning=True)
         log_action(conn, "income_records", income_id, "UPDATE", user["id"],
                    old_data=dict(existing), new_data=dict(row))
