@@ -154,6 +154,14 @@ if os.path.isdir(_frontend):
             return FileResponse(icon_path)
         return FileResponse(os.path.join(_frontend, "manifest.json"))  # fallback
 
+    @app.get("/lite")
+    def lite():
+        with open(os.path.join(_frontend, "lite.html"), encoding="utf-8") as f:
+            html = f.read()
+        html = html.replace("/js/api.js", f"/js/api.js?v={_js_ver}")
+        html = html.replace("/js/lite.js", f"/js/lite.js?v={_js_ver}")
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
     @app.get("/{full_path:path}")
     def serve_frontend(full_path: str):
         with open(os.path.join(_frontend, "index.html"), encoding="utf-8") as f:
