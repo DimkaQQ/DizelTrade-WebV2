@@ -298,6 +298,7 @@
             <div><div class="ts-val" style="color:var(--orange)" id="tb-trips">—</div><div class="ts-lbl">Рейса в пути</div></div>
           </div>
           ${isPartner() || isArtem() ? `<button onclick="window.openAiChat()" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap">✦ ИИ</button>` : ''}
+          <button onclick="window.switchToLite()" title="Перейти на упрощённую версию" style="background:var(--card2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">⚡ Лёгкая версия</button>
           <div class="topbar-alert" id="tb-alert" style="display:none" onclick="navigate('#base')">⏳ <span id="tb-alert-text">Ожидают</span></div>
         </div>
         <div id="content"></div>
@@ -311,6 +312,16 @@
   function buildMobileLayout() {
     const el = document.getElementById('app');
     el.innerHTML = `<div class="app-shell" id="mobile-shell"></div>`;
+    // Кнопка перехода на лёгкую версию (моб.) — добавляем один раз
+    if (!document.getElementById('lite-switch-fab')) {
+      const b = document.createElement('button');
+      b.id = 'lite-switch-fab';
+      b.textContent = '⚡';
+      b.title = 'Лёгкая версия';
+      b.style.cssText = 'position:fixed;top:10px;right:12px;width:38px;height:38px;border-radius:50%;background:var(--card2);color:var(--text);border:1px solid var(--border2);font-size:18px;cursor:pointer;z-index:8000;display:flex;align-items:center;justify-content:center';
+      b.onclick = () => window.switchToLite();
+      document.body.appendChild(b);
+    }
     // Floating AI button for mobile — add only once
     if ((isPartner() || isArtem()) && !document.getElementById('ai-fab')) {
       const fab = document.createElement('button');
@@ -573,6 +584,12 @@
     user = null;
     setupLayout();
     viewLogin();
+  };
+
+  // Переключение на упрощённую («лёгкую») версию интерфейса
+  window.switchToLite = function () {
+    try { localStorage.setItem('dtl_ui', 'lite'); } catch (e) { /* */ }
+    location.href = '/lite';
   };
 
   // ══════════════════════════════════════════════════════════════════════════
