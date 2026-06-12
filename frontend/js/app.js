@@ -255,7 +255,6 @@
           <div class="nav-group-label">Финансы</div>
           <div class="nav-item" data-page="income" onclick="navigate('#income')"><span class="ni-icon">💰</span> Доходы</div>
           <div class="nav-item" data-page="expenses" onclick="navigate('#expenses')"><span class="ni-icon">📋</span> Расходы</div>
-          <div class="nav-item" data-page="debts" onclick="navigate('#debts')"><span class="ni-icon">📄</span> Долги</div>
           <div class="nav-group-label">Операционка</div>
           <div class="nav-item" data-page="fleet" onclick="navigate('#fleet')"><span class="ni-icon">🚛</span> Автопарк DTL</div>
           <div class="nav-item" data-page="hire" onclick="navigate('#hire')"><span class="ni-icon">🔁</span> Найм</div>
@@ -397,7 +396,7 @@
     if (h === 'income') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewIncome(); return; }
     if (h === 'expenses') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewExpenses(); return; }
     if (h === 'hire') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewHire(); return; }
-    if (h === 'debts') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewDebts(); return; }
+
     if (h === 'dashboard') { if (!isPartner()) { navigate('#home'); return; } viewDashboard(); return; }
     if (h === 'fleet') { viewFleet(); return; }
     if (h === 'analytics' || h.startsWith('analytics?')) { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewAnalytics(); return; }
@@ -732,7 +731,6 @@
         ${menuCard({ icon: '💰', label: 'Доходы', onClick: "navigate('#income')" })}
         ${menuCard({ icon: '📋', label: 'Расходы', onClick: "navigate('#expenses')" })}
         ${menuCard({ icon: '🔁', label: 'Найм', sub: 'Хб → Тында', onClick: "navigate('#hire')" })}
-        ${menuCard({ icon: '📄', label: 'Долги', onClick: "navigate('#debts')" })}
         ${menuCard({ icon: '📈', label: 'Аналитика', onClick: "navigate('#analytics')" })}
         ${menuCard({ icon: '⚖️', label: 'Баланс', onClick: "navigate('#balance')" })}
         ${menuCard({ icon: '📅', label: 'Год. итоги', onClick: "navigate('#annual')" })}
@@ -2159,131 +2157,6 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     if (el) el.innerHTML = `Маржа: <strong>${formatNum(Math.round(marginRub))} ₽</strong> (${marginPct}% от выручки)`;
   };
 
-  // ── Debts ─────────────────────────────────────────────────────────────────
-  async function viewDebts() {
-    let balances = {}, records = [];
-    try {
-      const debtData = await api.get('/api/debts');
-      if (debtData && debtData.records) {
-        records = debtData.records;
-        balances = debtData.balances || {};
-      }
-    } catch (e) {}
-
-    let clientDebts = [];
-    try { clientDebts = await api.get('/api/analytics/client-debts') || []; } catch(e) {}
-
-    const balanceEntries = Object.entries(balances);
-
-    const clientDebtsSection = clientDebts.length ? `
-      ${sectionHeader('Задолженность по найму')}
-      <div class="bb">
-        ${clientDebts.map(d => `
-          <div class="bbr" style="flex-direction:column;align-items:flex-start;padding:12px 0;gap:4px">
-            <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
-              <div style="font-size:14px;font-weight:700">${esc(d.client_name)}</div>
-              <div style="font-size:15px;font-weight:800;color:var(--orange)">${formatNum(Math.round(d.total_debt))} ₽</div>
-            </div>
-            <div style="font-size:12px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap">
-              <span>⛽ Топливо: <strong style="color:var(--text)">${formatNum(Math.round(d.fuel_debt))} ₽</strong></span>
-              <span>🚚 Доставка: <strong style="color:var(--text)">${formatNum(Math.round(d.delivery_debt))} ₽</strong></span>
-            </div>
-            <div style="font-size:11px;color:var(--text2);opacity:.7">
-              Отгружено: ${d.delivered_cub} куб · Оплачено: ${d.paid_cub} куб · Долг: ${d.unpaid_cub} куб · ${d.open_count} откр.
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    ` : '';
-
-    const html = `
-    ${!isDesktop() ? statusBar() : ''}
-    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
-    <div class="content">
-      ${isPartner() ? `<button class="btn-primary" style="margin-bottom:14px" onclick="showDebtModal()">+ Запись</button>` : ''}
-      ${clientDebtsSection}
-      ${balanceEntries.length ? `<div class="bb">${balanceEntries.map(([debtor, bal]) => `<div class="bbr"><div class="bbl">${esc(debtor)}</div><div class="bbv" style="color:var(--${bal > 0 ? 'orange' : 'green'})">${bal > 0 ? '+' : ''}${formatNum(bal)} ₽</div></div>`).join('')}</div>` : ''}
-      ${records.length ? records.map(r => {
-        const rem = r.remaining != null ? parseFloat(r.remaining) : null;
-        const remStr = r.type === 'ДОЛГ' && rem != null ? (rem <= 0 ? '<span style="color:var(--green);font-size:11px">✅ Оплачен</span>' : `<span style="color:var(--orange);font-size:11px">Остаток: ${formatNum(rem)} ₽</span>`) : '';
-        const parentNote = r.parent_id ? `<span style="color:var(--text3);font-size:11px"> · к долгу #${r.parent_id}</span>` : '';
-        return `<div class="li">
-        <div class="lic ${r.type === 'ДОЛГ' ? 'o' : 'g'}">📄</div>
-        <div class="lit">
-          <div class="lim">${esc(r.debtor)} — ${formatNum(Math.abs(r.amount))} ₽${parentNote}</div>
-          <div class="lis">${[r.type === 'ОПЛАТА' ? 'Оплата' : 'Долг', r.comment || '', r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : ''].filter(Boolean).join(' · ')}</div>
-          ${remStr}
-        </div>
-        <div class="lir" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          ${isPartner() && r.type === 'ДОЛГ' && rem > 0 ? `<button onclick="window.payDebtModal(${r.id},'${esc(r.debtor)}',${rem})" style="background:rgba(52,199,89,.1);border:1px solid rgba(52,199,89,.4);color:var(--green);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">💳 Оплатить</button>` : ''}
-          ${isPartner() ? `<button onclick="window.correctDebt(${r.id},'${r.recorded_at ? r.recorded_at.slice(0,10) : ''}',${r.amount||0},'${esc(r.type||'ДОЛГ')}','${esc(r.comment||'')}')" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer">✏ Испр.</button>` : ''}
-        </div>
-      </div>`;}).join('') : emptyState('Нет записей')}
-      ${isPartner() ? printBtn('Распечатать / PDF') : ''}
-    </div>`;
-    const totalDebt = records.filter(r => r.type === 'ДОЛГ').reduce((s,r) => s + (r.amount || 0), 0);
-    const totalPaid = records.filter(r => r.type === 'ОПЛАТА').reduce((s,r) => s + (Math.abs(r.amount) || 0), 0);
-    _printData = { title: 'Долги и платежи', columns: ['Дата', 'Контрагент', 'Тип', 'Сумма ₽', 'Комментарий'],
-      rows: records.map(r => [r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('ru') : '—', r.debtor || '—', r.type || 'ДОЛГ', formatNum(Math.abs(r.amount)), r.comment || '']),
-      totals: ['', 'Долг: ' + formatNum(totalDebt) + ' · Оплачено: ' + formatNum(totalPaid), '', '', ''] };
-    setPageContent(html, getTabBar());
-    if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Долги';
-  }
-
-  window.correctDebt = function(id, recorded_at, amount, type, comment) {
-    showCorrectionModal({
-      title: 'Исправить запись долга',
-      fields: [
-        { id: 'recorded_at', label: 'Дата', type: 'date', value: recorded_at },
-        { id: 'amount', label: 'Сумма ₽', type: 'number', value: amount },
-        { id: 'type', label: 'Тип (ДОЛГ / ОПЛАТА)', value: type || 'ДОЛГ' },
-        { id: 'comment', label: 'Комментарий', value: comment || '' },
-      ],
-      onSubmit: async (data) => {
-        await api.put('/api/debts/' + id + '/correct', data);
-        viewDebts();
-      },
-    });
-  };
-
-  window.showDebtModal = function () {
-    showModal('Добавить запись долга', `
-      ${formField('Дата', `<input class="inp" type="date" id="m-recorded-at" value="${new Date().toISOString().slice(0,10)}">`)}
-      ${formField('Контрагент (должник)', `<input class="inp" type="text" id="m-cp" placeholder="Кто">`)}
-      ${formField('Тип', `<div class="chips" data-group="debt-type"><div class="chip sel" data-val="ДОЛГ">Долг</div><div class="chip" data-val="ОПЛАТА">Оплата</div></div>`)}
-      ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
-      ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Детали...">`)}
-    `, async () => {
-      const recorded_at = document.getElementById('m-recorded-at').value;
-      const debtor = document.getElementById('m-cp').value;
-      const typeEl = document.querySelector('.chips[data-group="debt-type"] .chip.sel');
-      const type = typeEl ? typeEl.getAttribute('data-val') : 'ДОЛГ';
-      const amount = parseFloat(document.getElementById('m-amount').value);
-      const comment = document.getElementById('m-note').value;
-      await api.post('/api/debts', { recorded_at, debtor, type, amount, comment });
-      toast('✅ Записано!');
-      viewDebts();
-    });
-  };
-
-  window.payDebtModal = function(debtId, debtor, remaining) {
-    showModal(`Оплата долга — ${debtor}`,`
-      ${formField('Дата оплаты', `<input class="inp" type="date" id="m-pay-at" value="${new Date().toISOString().slice(0,10)}">`)}
-      ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-pay-amount" placeholder="${remaining}" value="${remaining}">`)}
-      ${formField('Комментарий', `<input class="inp" type="text" id="m-pay-note" placeholder="Детали...">`)}
-      <div style="font-size:12px;color:var(--text2);margin-top:4px">Остаток долга: ${formatNum(remaining)} ₽</div>
-    `, async () => {
-      const recorded_at = document.getElementById('m-pay-at').value;
-      const amount = parseFloat(document.getElementById('m-pay-amount').value);
-      const comment = document.getElementById('m-pay-note').value;
-      if (!amount || amount <= 0) throw new Error('Введите сумму');
-      if (amount > remaining + 0.01) throw new Error(`Сумма больше остатка долга (${formatNum(remaining)} ₽)`);
-      await api.post('/api/debts', { recorded_at, debtor, type: 'ОПЛАТА', amount, comment, parent_id: debtId });
-      toast('✅ Оплата записана!');
-      viewDebts();
-    });
-  };
-
   // ── Dashboard ─────────────────────────────────────────────────────────────
   async function viewDashboard() {
     let dash = null, orders = [];
@@ -2936,7 +2809,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     try { logs = await api.get('/api/logs?limit=500') || []; } catch (e) {}
 
     const actionColors = { INSERT: 'var(--green)', UPDATE: 'var(--orange)', CORRECTION: 'var(--red)', DELETE: 'var(--red)' };
-    const tableNames = { fuel_receipts: 'Приёмка', fuel_dispatches: 'Рейс', income_records: 'Доход', company_expenses: 'Расход', debt_records: 'Долг', hire_deliveries: 'Найм', orders: 'Заказ', trucks: 'Машина' };
+    const tableNames = { fuel_receipts: 'Приёмка', fuel_dispatches: 'Рейс', income_records: 'Доход', company_expenses: 'Расход', hire_deliveries: 'Найм', orders: 'Заказ', trucks: 'Машина' };
 
     const rows = logs.length ? logs.map(l => `<div class="li">
       <div class="lic" style="background:var(--card2);font-size:10px;color:${actionColors[l.action]||'var(--text2)'};font-weight:700">${(l.action||'').slice(0,3)}</div>

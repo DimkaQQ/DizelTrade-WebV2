@@ -962,15 +962,14 @@
   /* ═══════════════════════════ ФИНАНСЫ ═══════════════════════════ */
   async function financeScreen(tab) {
     if (!isPartner()) { location.hash = '#home'; return; }
-    const tabs = [{ v: 'income', l: 'Доходы' }, { v: 'expenses', l: 'Расходы' }, { v: 'hire', l: 'Найм' }, { v: 'debts', l: 'Долги' }];
+    const tabs = [{ v: 'income', l: 'Доходы' }, { v: 'expenses', l: 'Расходы' }, { v: 'hire', l: 'Найм' }];
     if (!tabs.find(t => t.v === tab)) tab = 'income';
     const head = pageHead('Финансы', '') + subTabs(tabs, tab, 'finance');
     setContent(head + spinner());
     let body = '';
     if (tab === 'income') body = await finIncome();
     else if (tab === 'expenses') body = await finExpenses();
-    else if (tab === 'hire') body = await finHire();
-    else body = await finDebts();
+    else body = await finHire();
     setContent(head + body);
   }
 
@@ -1099,52 +1098,6 @@
       { name: 'price_carrier', label: 'Перевозка ₽/л', type: 'number', half: true },
       { name: 'comment', label: 'Комментарий', type: 'text' },
     ], { delivery_at: (r.delivery_at || '').slice(0, 10), volume_liters: r.volume_liters, price_client: r.price_client, price_supplier: r.price_supplier, price_carrier: r.price_carrier, comment: r.comment });
-  };
-
-  async function finDebts() {
-    const [d, cd] = await Promise.all([api.get('/api/debts'), api.get('/api/analytics/client-debts').catch(() => [])]);
-    const balances = d.balances || {}; const records = d.records || [];
-    let html = `<button class="btn-add" onclick="L.formDebt()">+ Долг / оплата</button>`;
-    const balKeys = Object.keys(balances).filter(k => Math.abs(balances[k]) > 0.01);
-    if (balKeys.length) html += `<div class="section-title">Остатки</div><div class="list">` + balKeys.map(k => row({ icon: '⚖️', iconKind: balances[k] > 0 ? 'red' : 'green', title: esc(k), val: fmtMoney(balances[k]), valKind: balances[k] > 0 ? 'red' : 'green' })).join('') + `</div>`;
-    const hd = (cd || []).filter(c => c.total_debt > 0);
-    if (hd.length) html += `<div class="section-title">Задолженность по найму</div><div class="list">` + hd.map(c => row({ icon: '🚛', iconKind: 'orange', title: esc(c.client_name), sub: 'Отгружено ' + fmtCub(c.delivered_cub) + ' · оплачено ' + fmtCub(c.paid_cub), val: fmtMoney(c.total_debt), valKind: 'red' })).join('') + `</div>`;
-    if (records.length) html += `<div class="section-title">История</div><div class="list">` + records.slice(0, 80).map(r => {
-      const isDebt = r.type === 'ДОЛГ';
-      const pay = (isDebt && r.remaining > 0) ? `<button class="btn-add" style="padding:6px 10px;font-size:12px" onclick="event.stopPropagation();L.payDebt(${r.id})">Оплата</button>` : '';
-      return row({ icon: isDebt ? '🔴' : '🟢', title: esc(r.debtor), sub: fmtDate(r.recorded_at) + (r.comment ? ' · ' + esc(r.comment) : ''), val: fmtMoney(r.amount), valKind: isDebt ? 'red' : 'green', badge: pay || badge(r.type, isDebt ? 'red' : 'green'), onClick: `L.correctDebt(${r.id})` });
-    }).join('') + `</div>`;
-    return html;
-  }
-  L.formDebt = async () => {
-    await openSheet({
-      title: 'Долг / оплата', submitLabel: 'Записать',
-      fields: [
-        { name: 'recorded_at', label: 'Дата', type: 'date', value: todayISO(), half: true },
-        { name: 'type', label: 'Тип', type: 'chips', value: 'ДОЛГ', options: [{ value: 'ДОЛГ', label: 'Долг' }, { value: 'ОПЛАТА', label: 'Оплата' }], half: true },
-        { name: 'debtor', label: 'Должник', type: 'text', required: true },
-        { name: 'amount', label: 'Сумма ₽', type: 'number', required: true, half: true },
-        { name: 'comment', label: 'Комментарий', type: 'text', half: true },
-      ],
-      onSubmit: async (v) => { await api.post('/api/debts', { recorded_at: v.recorded_at, debtor: str(v.debtor), type: v.type, amount: num(v.amount), comment: str(v.comment) }); afterWrite('Записано'); },
-    });
-  };
-  L.payDebt = async (id) => {
-    const data = await api.get('/api/debts'); const r = (data.records || []).find(x => x.id === id);
-    if (!r) { toast('Не найдено', 'err'); return; }
-    await openSheet({
-      title: 'Оплата долга — ' + r.debtor, submitLabel: 'Записать оплату',
-      fields: [{ name: 'recorded_at', label: 'Дата', type: 'date', value: todayISO() }, { name: 'amount', label: 'Сумма ₽ (остаток ' + fmtMoney(r.remaining) + ')', type: 'number', required: true }, { name: 'comment', label: 'Комментарий', type: 'text' }],
-      onSubmit: async (v) => { const a = num(v.amount); if (a > r.remaining) { toast('Больше остатка', 'err'); return false; } await api.post('/api/debts', { recorded_at: v.recorded_at, debtor: r.debtor, type: 'ОПЛАТА', amount: a, comment: str(v.comment), parent_id: id }); afterWrite('Оплата записана'); },
-    });
-  };
-  L.correctDebt = async (id) => {
-    const r = (await api.get('/api/debts')).records.find(x => x.id === id); if (!r) return;
-    correctForm('Изменить запись', `/api/debts/${id}/correct`, [
-      { name: 'recorded_at', label: 'Дата', type: 'date', half: true },
-      { name: 'amount', label: 'Сумма ₽', type: 'number', half: true },
-      { name: 'comment', label: 'Комментарий', type: 'text' },
-    ], { recorded_at: (r.recorded_at || '').slice(0, 10), amount: r.amount, comment: r.comment });
   };
 
   /* ═══════════════════════════ ПАРК ═══════════════════════════ */
