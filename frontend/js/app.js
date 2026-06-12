@@ -2025,12 +2025,14 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   // ── Hire ──────────────────────────────────────────────────────────────────
   async function viewHire() {
     if (!isPartner()) { navigate('#home'); return; }
-    let deals = [];
+    let deals = [], clientDebts = [];
     try { deals = await api.get('/api/hire') || []; } catch (e) {}
+    try { clientDebts = await api.get('/api/analytics/client-debts') || []; } catch (e) {}
 
     const totalRevenue = deals.reduce((s, d) => s + (parseFloat(d.amount_client) || 0), 0);
     const totalMargin = deals.reduce((s, d) => s + (parseFloat(d.margin) || 0), 0);
     const avgMarginPct = totalRevenue > 0 ? Math.round(totalMargin / totalRevenue * 100) : 0;
+    const debtors = clientDebts.filter(c => c.total_debt > 0);
 
     const html = `
     ${!isDesktop() ? statusBar() : ''}
@@ -2041,6 +2043,14 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         ${statCard(totalRevenue > 0 ? (totalRevenue/1000000).toFixed(1) + ' млн' : '—', 'Выручка ₽', 'a')}
         ${statCard(avgMarginPct + '%', 'Маржа ср.', 'g')}
       </div>
+      ${debtors.length ? `
+        ${sectionHeader('Задолженность клиентов')}
+        <div class="bb" style="margin-bottom:14px">
+          ${debtors.map(c => `<div class="bbr">
+            <div class="bbl"><div style="font-size:14px;font-weight:600">${esc(c.client_name)}</div><div style="font-size:12px;color:var(--text2)">Отгружено ${(c.delivered_cub||0)} куб · оплачено ${(c.paid_cub||0)} куб</div></div>
+            <div class="bbv" style="color:var(--red)">${formatNum(Math.round(c.total_debt))} ₽</div>
+          </div>`).join('')}
+        </div>` : ''}
       ${isPartner() ? `<button class="btn-primary" style="margin-bottom:14px" onclick="showHireModal()">+ Новая сделка</button>` : ''}
       ${deals.length ? deals.map(d => {
         const volCub = d.volume_liters ? (d.volume_liters / 1000).toFixed(1) : null;

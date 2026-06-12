@@ -1051,7 +1051,10 @@
     const list = await api.get('/api/hire');
     const rev = list.reduce((s, r) => s + (r.amount_client || 0), 0);
     const mar = list.reduce((s, r) => s + (r.margin || 0), 0);
+    const cd = await api.get('/api/analytics/client-debts').catch(() => []);
+    const hd = (cd || []).filter(c => c.total_debt > 0);
     let html = `<div class="stat-grid">${stat('Сделок', fmtNum(list.length))}${stat('Оборот', fmtMoney(rev), 'accent')}${stat('Маржа', rev ? (mar / rev * 100).toFixed(1) + ' %' : '—', mar >= 0 ? 'green' : 'red')}</div>`;
+    if (hd.length) html += `<div class="section-title">Задолженность клиентов</div><div class="list">` + hd.map(c => row({ icon: '⚠️', iconKind: 'red', title: esc(c.client_name), sub: 'Отгружено ' + fmtCub(c.delivered_cub) + ' · оплачено ' + fmtCub(c.paid_cub), val: fmtMoney(c.total_debt), valKind: 'red' })).join('') + `</div>`;
     html += `<button class="btn-add" onclick="L.formHire()">+ Сделка найма</button>`;
     html += `<div class="list" style="margin-top:16px">` + list.slice(0, 80).map(r => row({
       icon: '🔄', iconKind: r.is_closed ? 'green' : 'accent',
