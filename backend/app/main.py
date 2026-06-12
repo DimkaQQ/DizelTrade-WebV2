@@ -7,7 +7,7 @@ import logging
 import time
 from .config import settings
 from .security import SecurityMiddleware
-from .routers import auth, dashboard, base, orders, fleet, reference, hire, income, expenses, debts, settings_router, notifications, logs as logs_router, uploads as uploads_router
+from .routers import auth, dashboard, base, orders, fleet, reference, hire, income, expenses, settings_router, notifications, logs as logs_router, uploads as uploads_router
 from .routers import analytics as analytics_router
 from .routers import ai as ai_router
 from .routers import tokens as tokens_router
@@ -45,7 +45,6 @@ app.include_router(reference.router, prefix="/api", tags=["reference"])
 app.include_router(hire.router, prefix="/api", tags=["hire"])
 app.include_router(income.router, prefix="/api", tags=["income"])
 app.include_router(expenses.router, prefix="/api", tags=["expenses"])
-app.include_router(debts.router, prefix="/api", tags=["debts"])
 app.include_router(settings_router.router, prefix="/api", tags=["settings"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(analytics_router.router, prefix="/api", tags=["analytics"])

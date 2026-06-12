@@ -1,8 +1,11 @@
+import csv
+import io
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from ..database import query, query_one, execute, get_db
-from ..deps import require_partner
+from ..deps import get_current_user, require_partner
 from ..utils.audit import log_action
 
 router = APIRouter()
@@ -117,3 +120,54 @@ def update_income(income_id: int, body: IncomeCreate, user: dict = Depends(requi
                    old_data=dict(existing), new_data=dict(row))
         conn.commit()
     return row
+
+
+@router.get("/reports/export")
+def export_csv(
+    section: str = Query(...),
+    period: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+):
+    section_map = {
+        "hire": ("hire_deliveries", "delivery_at"),
+        "income": ("income_records", "income_at"),
+        "expenses": ("company_expenses", "expense_at"),
+        "fleet_expenses": ("fleet_expenses", "expense_at"),
+        "receipts": ("fuel_receipts", "received_at"),
+        "dispatches": ("fuel_dispatches", "dispatched_at"),
+        "orders": ("orders", "paid_at"),
+    }
+    if section not in section_map:
+        raise HTTPException(status_code=400, detail=f"section must be one of {list(section_map)}")
+
+    partner_only_sections = {"hire", "income", "expenses", "fleet_expenses"}
+    if section in partner_only_sections and user["role"] not in ("partner",):
+        raise HTTPException(status_code=403, detail="Partners only")
+
+    table, date_col = section_map[section]
+    params = []
+    where = "1=1"
+    if period:
+        try:
+            y, m = period.split("-")
+            where = f"EXTRACT(YEAR FROM {date_col}) = %s AND EXTRACT(MONTH FROM {date_col}) = %s"
+            params.extend([int(y), int(m)])
+        except ValueError:
+            pass
+
+    rows = query(f"SELECT * FROM {table} WHERE {where} ORDER BY {date_col} DESC", params)
+
+    output = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({k: str(v) if v is not None else "" for k, v in r.items()})
+
+    output.seek(0)
+    filename = f"{section}_{period or 'all'}.csv"
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8-sig")),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
