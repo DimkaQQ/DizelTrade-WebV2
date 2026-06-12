@@ -962,14 +962,15 @@
   /* ═══════════════════════════ ФИНАНСЫ ═══════════════════════════ */
   async function financeScreen(tab) {
     if (!isPartner()) { location.hash = '#home'; return; }
-    const tabs = [{ v: 'income', l: 'Доходы' }, { v: 'expenses', l: 'Расходы' }, { v: 'hire', l: 'Найм' }];
+    const tabs = [{ v: 'income', l: 'Доходы' }, { v: 'expenses', l: 'Расходы' }, { v: 'hire', l: 'Найм' }, { v: 'debts', l: 'Долги' }];
     if (!tabs.find(t => t.v === tab)) tab = 'income';
     const head = pageHead('Финансы', '') + subTabs(tabs, tab, 'finance');
     setContent(head + spinner());
     let body = '';
     if (tab === 'income') body = await finIncome();
     else if (tab === 'expenses') body = await finExpenses();
-    else body = await finHire();
+    else if (tab === 'hire') body = await finHire();
+    else body = await finDebts();
     setContent(head + body);
   }
 
@@ -1046,6 +1047,21 @@
       { name: 'comment', label: 'Комментарий', type: 'text' },
     ], { expense_at: (r.expense_at || '').slice(0, 10), amount: r.amount, category: r.category, comment: r.comment });
   };
+
+  async function finDebts() {
+    const cd = await api.get('/api/analytics/client-debts').catch(() => []);
+    const hd = (cd || []).filter(c => c.total_debt > 0);
+    const total = hd.reduce((s, c) => s + c.total_debt, 0);
+    let html = `<div class="stat-grid">${stat('Должников', fmtNum(hd.length), hd.length ? 'red' : '')}${stat('Итого долг', fmtMoney(total), total > 0 ? 'red' : 'green')}</div>`;
+    if (!hd.length) return html + empty('Все клиенты рассчитались', '✅');
+    html += `<div class="section-title">По клиентам</div><div class="list">` + hd.map(c => row({
+      icon: '🚛', iconKind: 'red',
+      title: esc(c.client_name),
+      sub: 'Отгружено ' + fmtCub(c.delivered_cub) + ' · оплачено ' + fmtCub(c.paid_cub) + ' · неоплачено ' + fmtCub(c.unpaid_cub),
+      val: fmtMoney(c.total_debt), valKind: 'red',
+    })).join('') + `</div>`;
+    return html;
+  }
 
   async function finHire() {
     const list = await api.get('/api/hire');

@@ -255,6 +255,7 @@
           <div class="nav-group-label">Финансы</div>
           <div class="nav-item" data-page="income" onclick="navigate('#income')"><span class="ni-icon">💰</span> Доходы</div>
           <div class="nav-item" data-page="expenses" onclick="navigate('#expenses')"><span class="ni-icon">📋</span> Расходы</div>
+          <div class="nav-item" data-page="debts" onclick="navigate('#debts')"><span class="ni-icon">📄</span> Долги</div>
           <div class="nav-group-label">Операционка</div>
           <div class="nav-item" data-page="fleet" onclick="navigate('#fleet')"><span class="ni-icon">🚛</span> Автопарк DTL</div>
           <div class="nav-item" data-page="hire" onclick="navigate('#hire')"><span class="ni-icon">🔁</span> Найм</div>
@@ -396,6 +397,7 @@
     if (h === 'income') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewIncome(); return; }
     if (h === 'expenses') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewExpenses(); return; }
     if (h === 'hire') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewHire(); return; }
+    if (h === 'debts') { if (!isPartner()) { toast('Нет доступа', 'error'); navigate('#home'); return; } viewDebts(); return; }
 
     if (h === 'dashboard') { if (!isPartner()) { navigate('#home'); return; } viewDashboard(); return; }
     if (h === 'fleet') { viewFleet(); return; }
@@ -731,6 +733,7 @@
         ${menuCard({ icon: '💰', label: 'Доходы', onClick: "navigate('#income')" })}
         ${menuCard({ icon: '📋', label: 'Расходы', onClick: "navigate('#expenses')" })}
         ${menuCard({ icon: '🔁', label: 'Найм', sub: 'Хб → Тында', onClick: "navigate('#hire')" })}
+        ${menuCard({ icon: '📄', label: 'Долги', onClick: "navigate('#debts')" })}
         ${menuCard({ icon: '📈', label: 'Аналитика', onClick: "navigate('#analytics')" })}
         ${menuCard({ icon: '⚖️', label: 'Баланс', onClick: "navigate('#balance')" })}
         ${menuCard({ icon: '📅', label: 'Год. итоги', onClick: "navigate('#annual')" })}
@@ -2156,6 +2159,41 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     const el = document.getElementById('hire-calc');
     if (el) el.innerHTML = `Маржа: <strong>${formatNum(Math.round(marginRub))} ₽</strong> (${marginPct}% от выручки)`;
   };
+
+  // ── Debts (auto-calculated from hire) ─────────────────────────────────────
+  async function viewDebts() {
+    let clientDebts = [];
+    try { clientDebts = await api.get('/api/analytics/client-debts') || []; } catch (e) {}
+    const debtors = clientDebts.filter(c => c.total_debt > 0);
+    const total = debtors.reduce((s, c) => s + c.total_debt, 0);
+
+    const html = `
+    ${!isDesktop() ? statusBar() : ''}
+    ${!isDesktop() ? `<div class="nav-bar"><div class="nav-back" onclick="navigate('#home')">Главная</div><div class="nav-title">📄 Долги</div><div style="width:55px"></div></div>` : ''}
+    <div class="content">
+      <div class="stats">
+        ${statCard(debtors.length, 'Должников', debtors.length ? 'o' : 'g')}
+        ${statCard(total > 0 ? (total/1000).toFixed(0) + ' тыс' : '0', 'Итого долг ₽', total > 0 ? 'r' : 'g')}
+      </div>
+      ${debtors.length ? `
+        <div class="bb">
+          ${debtors.map(c => `
+            <div class="bbr" style="flex-direction:column;align-items:flex-start;padding:12px 0;gap:4px">
+              <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
+                <div style="font-size:15px;font-weight:700">${esc(c.client_name)}</div>
+                <div style="font-size:16px;font-weight:800;color:var(--red)">${formatNum(Math.round(c.total_debt))} ₽</div>
+              </div>
+              <div style="font-size:12px;color:var(--text2)">
+                Отгружено ${c.delivered_cub} куб · Оплачено ${c.paid_cub} куб · Неоплачено ${c.unpaid_cub} куб
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : emptyState('Все клиенты рассчитались ✅')}
+    </div>`;
+    setPageContent(html, getTabBar());
+    if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Долги';
+  }
 
   // ── Dashboard ─────────────────────────────────────────────────────────────
   async function viewDashboard() {
