@@ -2173,7 +2173,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     <div class="content">
       <div class="stats">
         ${statCard(debtors.length, 'Должников', debtors.length ? 'o' : 'g')}
-        ${statCard(total > 0 ? (total/1000).toFixed(0) + ' тыс' : '0', 'Итого долг ₽', total > 0 ? 'r' : 'g')}
+        ${statCard(total > 0 ? (total >= 1000000 ? (total/1000000).toFixed(1) + ' млн' : formatNum(Math.round(total))) : '0', 'Итого долг ₽', total > 0 ? 'r' : 'g')}
       </div>
       ${debtors.length ? `
         <div class="bb">
