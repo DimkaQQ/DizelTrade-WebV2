@@ -797,7 +797,7 @@
       title: 'Приёмка топлива', submitLabel: 'Записать приёмку',
       fields: [
         { name: 'source_custom', label: 'Откуда', type: 'chips', value: 'Хабаровск', options: ['Хабаровск', 'Ангарск', 'Коля', 'Восточка', 'Артём закупил', 'Другое'] },
-        { name: 'volume_nominal', label: 'Объём (куб)', type: 'number', value: 200, required: true, half: true },
+        { name: 'volume_nominal', label: 'Объём (литры)', type: 'number', value: 200, required: true, half: true },
         { name: 'ttn_number', label: 'Номер ТТН', type: 'text', half: true },
         { name: 'temperature', label: 'Температура °C', type: 'number', value: 15, half: true },
         { name: 'density', label: 'Плотность', type: 'number', value: 0.840, half: true, calcId: 'rec-calc' },
@@ -896,7 +896,7 @@
   L.correctReceipt = async (id) => {
     const r = await api.get('/api/base/receipts/' + id);
     correctForm('Изменить приёмку', `/api/base/receipts/${id}/correct`, [
-      { name: 'volume_nominal', label: 'Объём (куб)', type: 'number' },
+      { name: 'volume_nominal', label: 'Объём (литры)', type: 'number' },
       { name: 'density', label: 'Плотность', type: 'number', half: true },
       { name: 'temperature', label: 'Температура °C', type: 'number', half: true },
       { name: 'ttn_number', label: 'ТТН', type: 'text' },
