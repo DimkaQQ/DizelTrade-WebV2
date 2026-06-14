@@ -53,45 +53,49 @@ VALUES
 -- ── РЕЙСЫ (volume в КУБ) ──────────────────────────────────────────────────────
 -- Итого отгружено: ~80 куб → остаток базы ≈ 170 куб
 
-INSERT INTO fuel_dispatches (dispatched_at, truck_id, driver_id, site_id, volume, tariff, status, delivered_at, entered_by)
-VALUES
-  -- Доставлено
-  ('2026-06-07',
-   (SELECT id FROM trucks WHERE name = 'Кантер' LIMIT 1),
-   (SELECT id FROM drivers WHERE is_active = TRUE ORDER BY id LIMIT 1),
-   (SELECT id FROM sites WHERE name = 'Дипкун ближний' LIMIT 1),
-   18.5, 12, 'delivered', '2026-06-07',
-   (SELECT id FROM users WHERE role = 'partner' ORDER BY id LIMIT 1)),
+DO $$
+DECLARE
+  uid     INTEGER := (SELECT id FROM users WHERE role = 'partner' ORDER BY id LIMIT 1);
+  drv1    INTEGER := (SELECT id FROM drivers WHERE is_active = TRUE ORDER BY id LIMIT 1);
+  drv2    INTEGER := (SELECT id FROM drivers WHERE is_active = TRUE ORDER BY id OFFSET 1 LIMIT 1);
+  drv3    INTEGER := (SELECT id FROM drivers WHERE is_active = TRUE ORDER BY id OFFSET 2 LIMIT 1);
+BEGIN
+  INSERT INTO fuel_dispatches (dispatched_at, truck_id, truck_owner, driver_id, site_id, volume, tariff, status, delivered_at, entered_by) VALUES
+    ('2026-06-07',
+     (SELECT id FROM trucks WHERE name = 'Кантер' LIMIT 1),
+     (SELECT owner FROM trucks WHERE name = 'Кантер' LIMIT 1),
+     drv1,
+     (SELECT id FROM sites WHERE name = 'Дипкун ближний' LIMIT 1),
+     18.5, 12, 'delivered', '2026-06-07', uid),
 
-  ('2026-06-08',
-   (SELECT id FROM trucks WHERE name = 'Шахман-1' LIMIT 1),
-   (SELECT id FROM drivers WHERE is_active = TRUE ORDER BY id OFFSET 1 LIMIT 1),
-   (SELECT id FROM sites WHERE name = 'Акурдан' LIMIT 1),
-   23.0, 15, 'delivered', '2026-06-08',
-   (SELECT id FROM users WHERE role = 'partner' ORDER BY id LIMIT 1)),
+    ('2026-06-08',
+     (SELECT id FROM trucks WHERE name = 'Шахман-1' LIMIT 1),
+     (SELECT owner FROM trucks WHERE name = 'Шахман-1' LIMIT 1),
+     drv2,
+     (SELECT id FROM sites WHERE name = 'Акурдан' LIMIT 1),
+     23.0, 15, 'delivered', '2026-06-08', uid),
 
-  ('2026-06-10',
-   (SELECT id FROM trucks WHERE name = 'Шахман-2' LIMIT 1),
-   (SELECT id FROM drivers WHERE is_active = TRUE ORDER BY id OFFSET 2 LIMIT 1),
-   (SELECT id FROM sites WHERE name = 'Сагинах' LIMIT 1),
-   20.0, 18, 'delivered', '2026-06-10',
-   (SELECT id FROM users WHERE role = 'partner' ORDER BY id LIMIT 1)),
+    ('2026-06-10',
+     (SELECT id FROM trucks WHERE name = 'Шахман-2' LIMIT 1),
+     (SELECT owner FROM trucks WHERE name = 'Шахман-2' LIMIT 1),
+     drv3,
+     (SELECT id FROM sites WHERE name = 'Сагинах' LIMIT 1),
+     20.0, 18, 'delivered', '2026-06-10', uid),
 
-  -- В пути
-  ('2026-06-12',
-   (SELECT id FROM trucks WHERE name = 'Кантер' LIMIT 1),
-   (SELECT id FROM drivers WHERE is_active = TRUE ORDER BY id LIMIT 1),
-   (SELECT id FROM sites WHERE name = 'Дипкун дальний' LIMIT 1),
-   22.0, 14, 'in_transit', NULL,
-   (SELECT id FROM users WHERE role = 'partner' ORDER BY id LIMIT 1)),
+    ('2026-06-12',
+     (SELECT id FROM trucks WHERE name = 'Кантер' LIMIT 1),
+     (SELECT owner FROM trucks WHERE name = 'Кантер' LIMIT 1),
+     drv1,
+     (SELECT id FROM sites WHERE name = 'Дипкун дальний' LIMIT 1),
+     22.0, 14, 'in_transit', NULL, uid),
 
-  -- Только отправлен
-  ('2026-06-13',
-   (SELECT id FROM trucks WHERE name = 'Шахман-3' LIMIT 1),
-   (SELECT id FROM drivers WHERE is_active = TRUE ORDER BY id OFFSET 1 LIMIT 1),
-   (SELECT id FROM sites WHERE name = 'Нагорная' LIMIT 1),
-   19.5, 16, 'dispatched', NULL,
-   (SELECT id FROM users WHERE role = 'partner' ORDER BY id LIMIT 1));
+    ('2026-06-13',
+     (SELECT id FROM trucks WHERE name = 'Шахман-3' LIMIT 1),
+     (SELECT owner FROM trucks WHERE name = 'Шахман-3' LIMIT 1),
+     drv2,
+     (SELECT id FROM sites WHERE name = 'Нагорная' LIMIT 1),
+     19.5, 16, 'dispatched', NULL, uid);
+END $$;
 
 -- ── НАЙМ (volume_liters) ──────────────────────────────────────────────────────
 INSERT INTO hire_deliveries (delivery_at, client_id, supplier_id, carrier_id, volume_liters, price_client, amount_client, margin, margin_pct, comment)
