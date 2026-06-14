@@ -52,10 +52,10 @@ def get_balance(user: dict = Depends(get_current_user)):
 
     return {
         "balance_cubic": balance,
-        "total_received": float(received["total"]) if received else 0,
+        "total_received": float(received["total"]) / 1000.0 if received else 0,
         "total_dispatched": float(dispatched["delivered"]) if dispatched else 0,
         "in_transit": float(dispatched["in_transit"]) if dispatched else 0,
-        "received_today": float(received_today["total"]) if received_today else 0,
+        "received_today": float(received_today["total"]) / 1000.0 if received_today else 0,
     }
 
 

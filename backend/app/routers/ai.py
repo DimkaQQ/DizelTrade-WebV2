@@ -618,7 +618,9 @@ def get_anomalies(user: dict = Depends(require_partner)):
     try:
         # Gather data for anomaly detection
         recent_receipts = query("""
-            SELECT source, volume_adjusted, received_at::date as date
+            SELECT COALESCE(source_custom, 'неизвестно') AS source,
+                   volume_adjusted / 1000.0 AS volume_adjusted,
+                   received_at::date as date
             FROM fuel_receipts WHERE received_at > NOW() - INTERVAL '30 days'
             AND ttn_confirmed = TRUE ORDER BY received_at DESC
         """)

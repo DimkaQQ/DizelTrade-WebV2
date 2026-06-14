@@ -1378,6 +1378,7 @@
       await window._correctionOnSubmit(data);
       toast('✅ Исправлено и записано в аудит-лог');
       document.querySelector('[style*="z-index:9999"]')?.remove();
+      window.dispatchEvent(new Event('hashchange'));
     } catch (e) { toast(e.message, 'error'); }
   };
 
@@ -1432,7 +1433,7 @@
       <div style="color:var(--text2);font-size:11px;margin-bottom:8px">// шаг 1 из 4</div>
       <div style="background:var(--card);border-radius:6px;height:3px;margin-bottom:18px;overflow:hidden"><div style="width:25%;height:100%;background:var(--accent);border-radius:6px"></div></div>
       ${formField('Источник топлива', chipGroup(sources, 'Хабаровск', 'source'))}
-      ${formField('Объём, кубометры', `<input class="inp" type="number" id="f-volume" value="200" placeholder="Куб" oninput="recalcReceipt()">`)}
+      ${formField('Объём, литры', `<input class="inp" type="number" id="f-volume" value="200" placeholder="Литры" oninput="recalcReceipt()">`)}
       ${formField('Температура и плотность', `<div class="inp-row">
         <input class="inp" type="number" id="f-temp" value="15" placeholder="°C" oninput="recalcReceipt()">
         <input class="inp" type="number" id="f-density" value="0.840" step="0.001" placeholder="г/см³" oninput="recalcReceipt()">

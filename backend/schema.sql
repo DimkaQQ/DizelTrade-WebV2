@@ -232,6 +232,8 @@ CREATE TABLE fuel_dispatches (
     status          VARCHAR(20) DEFAULT 'dispatched'
                     CHECK (status IN ('dispatched', 'in_transit', 'delivered', 'cancelled')),
     delivered_at    TIMESTAMP,
+    paid            BOOLEAN NOT NULL DEFAULT FALSE,
+    paid_at         TIMESTAMP,
     entered_by      INT REFERENCES users(id),
     notes           TEXT,
     created_at      TIMESTAMP DEFAULT NOW()
@@ -385,7 +387,7 @@ CREATE TABLE audit_log (
     table_name  VARCHAR(100) NOT NULL,
     record_id   INT,
     action      VARCHAR(20) NOT NULL
-                CHECK (action IN ('INSERT', 'UPDATE', 'CORRECTION')),
+                CHECK (action IN ('INSERT', 'UPDATE', 'CORRECTION', 'MARK_PAID', 'MARK_UNPAID')),
     old_data    JSONB,
     new_data    JSONB,
     reason      TEXT,   -- обязательно при CORRECTION
@@ -421,7 +423,7 @@ CREATE INDEX idx_refresh_tokens_user          ON refresh_tokens(user_id);
 CREATE VIEW v_base_balance AS
 SELECT
     COALESCE(
-        (SELECT SUM(volume_adjusted)
+        (SELECT SUM(volume_adjusted) / 1000.0
          FROM fuel_receipts
          WHERE ttn_confirmed = TRUE), 0
     )
