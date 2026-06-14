@@ -3527,7 +3527,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="modal-title">Новый API токен</div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Название токена</label><input id="token-name-inp" class="inp" placeholder="Например: Курсор MCP"></div>
-          <div class="form-group"><label class="form-label">Скоуп</label><div id="tk-scope-sel" data-scope="full" style="display:flex;gap:8px;margin-top:4px"><div id="tks-full" onclick="window._setTokenScope('full')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--accent);background:var(--accent);color:#000">Full</div><div id="tks-write" onclick="window._setTokenScope('write')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Write</div><div id="tks-read" onclick="window._setTokenScope('read')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Read only</div></div></div>
+          <div class="form-group"><label class="form-label">Скоуп</label><div id="tk-scope-sel" data-scope="read" style="display:flex;gap:8px;margin-top:4px"><div id="tks-full" onclick="window._setTokenScope('full')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Full</div><div id="tks-write" onclick="window._setTokenScope('write')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Write</div><div id="tks-read" onclick="window._setTokenScope('read')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--accent);background:var(--accent);color:#000">Read only</div></div></div>
           <div class="form-group"><label class="form-label">Лимит расходов</label><input class="inp" type="number" id="m-tk-limit" placeholder="Лимит $/день (необязательно)" step="0.01"></div>
           <div id="token-result" style="display:none;margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;word-break:break-all;font-size:12px;font-family:monospace;color:var(--accent)"></div>
         </div>
@@ -3559,7 +3559,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     if (!name) { toast('Введите название', 'error'); return; }
     try {
       const sel = document.getElementById('tk-scope-sel');
-      const scope = sel ? sel.getAttribute('data-scope') || 'full' : 'full';
+      const scope = sel ? sel.getAttribute('data-scope') || 'read' : 'read';
       const limitVal = document.getElementById('m-tk-limit')?.value;
       const daily_cost_limit_usd = limitVal ? parseFloat(limitVal) : null;
       const res = await api.post('/api/tokens', { name, scope, daily_cost_limit_usd });

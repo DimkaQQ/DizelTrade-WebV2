@@ -18,7 +18,7 @@ _VALID_SCOPES = {'read', 'write', 'full'}
 
 class TokenCreate(BaseModel):
     name: str
-    scope: str = 'full'
+    scope: str = 'read'
     daily_cost_limit_usd: Optional[float] = None
 
 
