@@ -260,6 +260,7 @@ receipt_payload = {
     "purchase_amount": 1788000.0,
     "price_per_liter": 60.0,
     "order_id": ORDER_ID,
+    "cash_record_id": CASH_ID,
 }
 code, body = req("POST", "/api/base/receipts", receipt_payload)
 check("POST /receipts с purchase_amount+order_id → 201", code == 201,
@@ -422,7 +423,23 @@ if FLEET_EXP_ID:
           str(body.get("cash_record_id")))
 
 # ═══════════════════════════════════════════════════════════
-section("12. CLEANUP (удаляем тестовые данные)")
+section("12. ПЕРЕГРУЗ — система принимает без ошибки (C1.4)")
+# ═══════════════════════════════════════════════════════════
+if ORDER_ID and truck_id:
+    code, body = req("POST", "/api/base/dispatches", {
+        "order_id": ORDER_ID,
+        "truck_id": truck_id,
+        "driver_id": driver_id,
+        "site_id": site_id,
+        "truck_owner": "DTL",
+        "volume": 200.0,
+        "ttn_number": "TEST-OVERBOOK",
+    })
+    check("POST /dispatches 200 куб > объёма заказа → 201 (без ошибки)", code == 201,
+          f"status={code}, detail={body.get('detail','')}")
+
+# ═══════════════════════════════════════════════════════════
+section("13. CLEANUP (удаляем тестовые данные)")
 # ═══════════════════════════════════════════════════════════
 def delete_if(label, path, record_id):
     if not record_id:

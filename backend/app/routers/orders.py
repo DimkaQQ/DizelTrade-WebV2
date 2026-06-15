@@ -132,9 +132,9 @@ def get_order(order_id: int, user: dict = Depends(get_current_user)):
     )
     spent_row = query_one("""
         SELECT
-            COALESCE((SELECT SUM(purchase_amount) FROM fuel_receipts WHERE order_id = %s), 0) +
-            COALESCE((SELECT SUM(amount) FROM company_expenses WHERE order_id = %s), 0) +
-            COALESCE((SELECT SUM(amount) FROM fleet_expenses WHERE order_id = %s), 0)
+            COALESCE((SELECT SUM(purchase_amount) FROM fuel_receipts WHERE order_id = %s AND cash_record_id IS NOT NULL), 0) +
+            COALESCE((SELECT SUM(amount) FROM company_expenses WHERE order_id = %s AND cash_record_id IS NOT NULL), 0) +
+            COALESCE((SELECT SUM(amount) FROM fleet_expenses WHERE order_id = %s AND cash_record_id IS NOT NULL), 0)
             AS total_spent
     """, (order_id, order_id, order_id))
     total_received = float(cash_row["total_received"]) if cash_row else 0

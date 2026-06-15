@@ -687,6 +687,7 @@ class CashArtemReport(BaseModel):
 @router.get("/cash-artem")
 def list_cash_artem(
     period: Optional[str] = Query(None),
+    order_id: Optional[int] = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
@@ -697,6 +698,9 @@ def list_cash_artem(
     if period_sql:
         where_parts.append(period_sql.lstrip(" AND "))
         params.extend(period_params)
+    if order_id is not None:
+        where_parts.append("ca.order_id = %s")
+        params.append(order_id)
     where = " AND ".join(where_parts)
     return query(
         f"""

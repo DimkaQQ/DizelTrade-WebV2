@@ -823,11 +823,12 @@
   };
 
   L.formDispatch = async () => {
-    const [trucks, r, orders] = await Promise.all([fetchTrucks(), loadRef(['drivers', 'sites']), openOrders(null)]);
+    const [trucks, r, allOrders] = await Promise.all([fetchTrucks(), loadRef(['drivers', 'sites', 'clients']), openOrders(null)]);
     await openSheet({
       title: 'Рейс на участок', submitLabel: 'Создать рейс',
       fields: [
-        { name: 'order_id', label: 'Заказ клиента', type: 'select', placeholder: orders.length ? '— выбрать заказ —' : '⚠ Нет открытых заказов', required: true, options: orders },
+        { name: 'client_id', label: 'Клиент', type: 'select', placeholder: '— выбрать клиента —', options: listOpts(r.clients) },
+        { name: 'order_id', label: 'Заказ клиента', type: 'select', placeholder: allOrders.length ? '— выбрать заказ —' : '⚠ Нет открытых заказов', required: true, options: allOrders, calcId: 'disp-order-hint' },
         { name: 'owner', label: 'Чья машина', type: 'chips', value: 'DTL', options: [{ value: 'DTL', label: 'Наш DTL' }, { value: 'Артём', label: 'Автопарк Артёма' }, { value: 'наёмная', label: 'Наёмная' }] },
         { name: 'truck_id', label: 'Машина', type: 'select', placeholder: '— выбрать —', options: truckOpts(trucks) },
         { name: 'driver_id', label: 'Водитель', type: 'select', placeholder: '— выбрать —', options: listOpts(r.drivers), half: true },
@@ -836,9 +837,33 @@
         { name: 'ttn_number', label: 'Номер ТТН', type: 'text', half: true },
       ],
       onChange: async (v, sheet) => {
-        const box = sheet.querySelector('#disp-tariff'); if (!box || !v.site_id || !v.owner) return;
-        const key = v.site_id + '|' + v.owner; if (box._k === key) return; box._k = key;
-        try { const t = await api.get(`/api/tariffs?site_id=${v.site_id}&truck_owner=${encodeURIComponent(v.owner)}&latest=true`); box.style.display = ''; box.textContent = (t && t.amount) ? 'Тариф: ' + fmtMoney(t.amount) : 'Тариф не задан'; } catch (e) {}
+        // Tariff display
+        const box = sheet.querySelector('#disp-tariff');
+        if (box && v.site_id && v.owner) {
+          const key = v.site_id + '|' + v.owner; if (box._k !== key) { box._k = key;
+            try { const t = await api.get(`/api/tariffs?site_id=${v.site_id}&truck_owner=${encodeURIComponent(v.owner)}&latest=true`); box.style.display = ''; box.textContent = (t && t.amount) ? 'Тариф: ' + fmtMoney(t.amount) : 'Тариф не задан'; } catch (e) {}
+          }
+        }
+        // Client → filter orders
+        const hintBox = sheet.querySelector('#disp-order-hint');
+        const clientId = num(v.client_id);
+        const clientKey = 'c' + clientId;
+        if (hintBox && hintBox._ck !== clientKey) {
+          hintBox._ck = clientKey;
+          const clientOrders = await openOrders(clientId || null);
+          const orderSel = sheet.querySelector('[data-name="order_id"]');
+          if (orderSel) {
+            orderSel.innerHTML = clientOrders.length
+              ? `<option value="">— выбрать заказ —</option>` + clientOrders.map(o => `<option value="${o.value}">${o.label}</option>`).join('')
+              : `<option value="">⚠ Нет открытых заказов</option>`;
+          }
+          if (hintBox) {
+            if (!clientOrders.length && clientId) {
+              hintBox.innerHTML = `→ Нет заказов. <a href="#" onclick="return L._quickCreateOrder(${clientId})">Создать заказ</a>`;
+              hintBox.style.color = 'var(--red, #ff3b30)'; hintBox.style.display = '';
+            } else { hintBox.textContent = ''; hintBox.style.display = 'none'; }
+          }
+        }
       },
       onSubmit: async (v) => {
         await api.post('/api/base/dispatches', { order_id: num(v.order_id), truck_id: num(v.truck_id), driver_id: num(v.driver_id), site_id: num(v.site_id), truck_owner: v.owner, volume: num(v.volume), ttn_number: str(v.ttn_number) });
@@ -1130,12 +1155,56 @@
               : `<option value="">⚠ Нет заказов для этого клиента</option>`;
           }
           hintBox.style.display = '';
-          hintBox.textContent = clientOrders.length ? '' : '→ Сначала создайте заказ в разделе «Заказы»';
+          if (clientOrders.length) {
+            hintBox.textContent = '';
+          } else {
+            hintBox.innerHTML = `→ Нет заказов. <a href="#" onclick="return L._quickCreateOrder(${num(v.client_id)})">Создать заказ</a>`;
+          }
           hintBox.style.color = clientOrders.length ? '' : 'var(--red, #ff3b30)';
         }
       },
       onSubmit: async (v) => { await api.post('/api/hire', { client_id: num(v.client_id), order_id: num(v.order_id), supplier_id: num(v.supplier_id), carrier_id: num(v.carrier_id), delivery_at: v.delivery_at, volume_liters: num(v.volume_liters), price_client: num(v.price_client), price_supplier: num(v.price_supplier), price_carrier: num(v.price_carrier), cash_record_id: num(v.cash_record_id) || null }); afterWrite('Сделка создана'); },
     });
+  };
+  L._quickCreateOrder = async (clientId) => {
+    // Find parent sheet to update its order dropdown after creation
+    const overlays = document.querySelectorAll('.overlay');
+    const parentSheet = overlays.length > 0 ? overlays[overlays.length - 1] : null;
+    await openSheet({
+      title: 'Новый заказ для клиента',
+      submitLabel: 'Создать заказ',
+      fields: [
+        { name: 'paid_at', label: 'Дата', type: 'date', value: todayISO(), half: true },
+        { name: 'volume_ordered', label: 'Объём (куб)', type: 'number', required: true, half: true },
+        { name: 'price_per_liter', label: 'Цена ₽/л', type: 'number', half: true },
+        { name: 'amount_paid', label: 'Предоплата ₽', type: 'number', half: true },
+      ],
+      onSubmit: async (v) => {
+        const ord = await api.post('/api/orders', {
+          client_id: clientId,
+          paid_at: v.paid_at || todayISO(),
+          volume_ordered: num(v.volume_ordered),
+          price_per_liter: num(v.price_per_liter) || null,
+          amount_paid: num(v.amount_paid) || 0,
+          delivery_type: 'до участка',
+        });
+        // Update parent sheet's order dropdown
+        if (parentSheet && ord && ord.id) {
+          const orderSel = parentSheet.querySelector('[data-name="order_id"]');
+          if (orderSel) {
+            const opt = document.createElement('option');
+            opt.value = ord.id; opt.selected = true;
+            opt.textContent = `#${ord.id} — ${fmtMoney(ord.amount_paid || 0)} · ${ord.volume_ordered || 0} куб`;
+            orderSel.appendChild(opt);
+          }
+          const hintEl = parentSheet.querySelector('#hire-order-hint, #disp-order-hint');
+          if (hintEl) { hintEl.textContent = ''; hintEl.style.display = 'none'; }
+        }
+        toast('✅ Заказ создан');
+        // Don't call afterWrite — keep parent sheet open
+      }
+    });
+    return false;
   };
   L.closeHire = async (id) => {
     await openSheet({ title: 'Закрыть сделку', submitLabel: 'Закрыть', fields: [{ name: 'comment', label: 'Комментарий', type: 'text' }], onSubmit: async (v) => { await api.post(`/api/hire/${id}/close`, { comment: str(v.comment) || '' }); afterWrite('Сделка закрыта'); } });

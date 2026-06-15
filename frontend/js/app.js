@@ -1512,14 +1512,15 @@
 
   // ── Dispatch form ─────────────────────────────────────────────────────────
   async function viewBaseDispatchNew() {
-    let trucks = [], drivers = [], sites = [], openOrdersList = [];
-    [trucks, drivers, sites, openOrdersList] = await Promise.all([
+    let trucks = [], drivers = [], sites = [], openOrdersList = [], clientsList = [];
+    [trucks, drivers, sites, openOrdersList, clientsList] = await Promise.all([
       api.get('/api/trucks').catch(() => []),
       api.get('/api/drivers').catch(() => []),
       api.get('/api/sites').catch(() => []),
       api.get('/api/orders?status=active').catch(() => []),
+      api.get('/api/clients').catch(() => []),
     ]);
-    trucks = trucks || []; drivers = drivers || []; sites = sites || []; openOrdersList = openOrdersList || [];
+    trucks = trucks || []; drivers = drivers || []; sites = sites || []; openOrdersList = openOrdersList || []; clientsList = clientsList || [];
 
     const ownerTypes = ['Наш DTL', 'Автопарк Артёма', 'Наёмная'];
     const truckOpts = trucks.length ? trucks.map(t => ({ value: String(t.id), label: t.name })) : [{ value: 'shkh-1', label: 'Шахман-1' }, { value: 'shkh-2', label: 'Шахман-2' }];
@@ -1550,7 +1551,9 @@
         <div class="tariff-label" id="tariff-label">Тариф (Тында → ${esc(siteOpts[0]?.label || '')})</div>
         <div class="tariff-val" id="tariff-val">—</div>
       </div>
+      ${formField('Клиент', `<select class="inp" id="f-client-d"><option value="">— все клиенты —</option>${clientsList.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>`)}
       ${formField('Заказ клиента', `<select class="inp" id="f-order-d" required><option value="">— выбрать заказ —</option>${openOrdersList.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('')}</select>`)}
+      <div id="f-order-hint" style="display:none;font-size:12px;margin-top:-8px;margin-bottom:8px;padding:0 4px;color:var(--red,#ff3b30)"></div>
       ${formField('Номер ТТН', `<input class="inp" type="text" id="f-ttn-d" placeholder="ТТН-2026-...">`)}
       ${formField('Фото ТТН', photoButton('f-photo-d'))}
       <div style="background:rgba(50,215,75,.06);border:1px solid rgba(50,215,75,.15);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:var(--green)">
@@ -1562,6 +1565,26 @@
     </div>`;
     setPageContent(html, getTabBar());
     if (isDesktop() && document.getElementById('topbar-title')) document.getElementById('topbar-title').textContent = 'Рейс на участок';
+
+    // Client filter → reload order dropdown
+    document.getElementById('f-client-d')?.addEventListener('change', () => {
+      const cid = document.getElementById('f-client-d')?.value;
+      const filtered = cid ? openOrdersList.filter(o => String(o.client_id) === cid) : openOrdersList;
+      const sel = document.getElementById('f-order-d');
+      const hint = document.getElementById('f-order-hint');
+      if (sel) {
+        sel.innerHTML = `<option value="">— выбрать заказ —</option>` +
+          filtered.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
+      }
+      if (hint) {
+        if (!filtered.length && cid) {
+          hint.innerHTML = `→ У клиента нет открытых заказов. <a href="#" onclick="navigate('#orders');return false">Создать заказ →</a>`;
+          hint.style.display = '';
+        } else {
+          hint.style.display = 'none';
+        }
+      }
+    });
 
     const ownerMap = { 'Наш DTL': 'DTL', 'Автопарк Артёма': 'Артём', 'Наёмная': 'наёмная' };
 
@@ -2141,9 +2164,10 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     const orderOpts = orders.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
     const cashOpts = cashRecords.map(c => `<option value="${c.id}">#${c.id} ${fmtMoney(c.amount_given)} — ${esc(c.purpose||'')}</option>`).join('');
     showModal('Новая сделка по найму', `
-      ${formField('Заказ клиента', `<select class="inp" id="m-order"><option value="">— выбрать заказ —</option>${orderOpts}</select>`)}
-      ${formField('Дата сделки', `<input class="inp" type="date" id="m-deal-date" value="${new Date().toISOString().slice(0,10)}">`)}
       ${formField('Клиент', sel('m-client', clients, 'клиента'))}
+      ${formField('Заказ клиента', `<select class="inp" id="m-order"><option value="">— выбрать заказ —</option>${orderOpts}</select>`)}
+      <div id="m-order-hint" style="display:none;font-size:12px;margin-top:-8px;margin-bottom:8px;padding:0 4px;color:var(--red,#ff3b30)"></div>
+      ${formField('Дата сделки', `<input class="inp" type="date" id="m-deal-date" value="${new Date().toISOString().slice(0,10)}">`)}
       ${formField('Поставщик', sel('m-supplier', suppliers, 'поставщика'))}
       ${formField('Перевозчик', sel('m-carrier', carriers, 'перевозчика'))}
       ${formField('Объём, л', `<input class="inp" type="number" id="m-volume" placeholder="0" oninput="calcHireMargin()">`)}
@@ -2169,6 +2193,26 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       await api.post('/api/hire', { order_id, client_id, supplier_id, carrier_id, delivery_at, volume_liters, price_client, price_supplier, price_carrier, cash_record_id });
       toast('✅ Сделка записана!'); viewHire();
     });
+    // Bind client change → filter orders
+    const _clientSel = document.getElementById('m-client');
+    const _orderSel = document.getElementById('m-order');
+    const _orderHint = document.getElementById('m-order-hint');
+    if (_clientSel && _orderSel) {
+      _clientSel.addEventListener('change', () => {
+        const cid = _clientSel.value;
+        const filtered = cid ? orders.filter(o => String(o.client_id) === cid) : orders;
+        _orderSel.innerHTML = `<option value="">— выбрать заказ —</option>` +
+          filtered.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
+        if (_orderHint) {
+          if (!filtered.length && cid) {
+            _orderHint.innerHTML = `→ У клиента нет открытых заказов. <a href="#" onclick="closeModal();navigate('#orders');return false">Создать заказ →</a>`;
+            _orderHint.style.display = '';
+          } else {
+            _orderHint.style.display = 'none';
+          }
+        }
+      });
+    }
   };
 
   window.calcHireMargin = function () {
