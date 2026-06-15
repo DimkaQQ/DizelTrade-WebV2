@@ -439,6 +439,14 @@
     .map(t => ({ value: t.id, label: t.name + (t.plate ? ' · ' + t.plate : '') }));
   const listOpts = (list, labelKey = 'name') => (list || []).map(o => ({ value: o.id, label: o[labelKey] }));
 
+  async function openOrders(clientId) {
+    try {
+      const url = clientId ? `/api/orders?status=active&client_id=${clientId}` : '/api/orders?status=active';
+      const orders = await api.get(url) || [];
+      return orders.map(o => ({ value: String(o.id), label: `#${o.id} ${o.client_name || ''} · ${o.volume_ordered || 0} куб` }));
+    } catch(e) { return []; }
+  }
+
   // window.L — действия, вызываемые из inline onclick
   const L = {};
   window.L = L;
@@ -693,11 +701,8 @@
 
   async function screenOrderDetail(id) {
     setContent(pageHead('Заказ', '') + spinner());
-    const [o, allDisp] = await Promise.all([
-      api.get('/api/orders/' + id),
-      api.get('/api/base/dispatches'),
-    ]);
-    const disp = (allDisp || []).filter(d => String(d.order_id) === String(id));
+    const o = await api.get('/api/orders/' + id);
+    const disp = (o.dispatches || []);
     let delivered = 0, inTransit = 0;
     disp.forEach(d => { if (d.status === 'delivered') delivered += d.volume || 0; else if (d.status !== 'cancelled') inTransit += d.volume || 0; });
     const total = o.volume_ordered || 0;
@@ -793,6 +798,7 @@
   L.cancelDispatch = async (id) => { if (!await confirmAction({ title: 'Отменить рейс?', danger: true, okLabel: 'Отменить' })) return; await api.put(`/api/base/dispatches/${id}/status`, { status: 'cancelled' }); afterWrite('Рейс отменён'); };
 
   L.formReceipt = async () => {
+    const allOrders = await openOrders(null);
     await openSheet({
       title: 'Приёмка топлива', submitLabel: 'Записать приёмку',
       fields: [
@@ -801,23 +807,27 @@
         { name: 'ttn_number', label: 'Номер ТТН', type: 'text', half: true },
         { name: 'temperature', label: 'Температура °C', type: 'number', value: 15, half: true },
         { name: 'density', label: 'Плотность', type: 'number', value: 0.840, half: true, calcId: 'rec-calc' },
+        { name: 'purchase_amount', label: 'Сумма закупки ₽', type: 'number', half: true },
+        { name: 'price_per_liter', label: 'Цена ₽/л', type: 'number', half: true },
+        { name: 'order_id', label: 'Заказ (необязательно)', type: 'select', placeholder: '— не указан —', options: allOrders },
       ],
       onChange: (v, sheet) => {
         const box = sheet.querySelector('#rec-calc'); const vol = num(v.volume_nominal), den = num(v.density);
         if (box && vol && den) { box.style.display = ''; box.textContent = 'Пересчитано при 20°C: ' + (vol * den / 0.840).toFixed(1) + ' куб'; }
       },
       onSubmit: async (v) => {
-        await api.post('/api/base/receipts', { source_custom: v.source_custom, volume_nominal: num(v.volume_nominal), density: num(v.density), temperature: num(v.temperature), ttn_number: str(v.ttn_number) });
+        await api.post('/api/base/receipts', { source_custom: v.source_custom, volume_nominal: num(v.volume_nominal), density: num(v.density), temperature: num(v.temperature), ttn_number: str(v.ttn_number), purchase_amount: num(v.purchase_amount) || null, price_per_liter: num(v.price_per_liter) || null, order_id: num(v.order_id) || null });
         afterWrite('Приёмка записана');
       },
     });
   };
 
   L.formDispatch = async () => {
-    const [trucks, r] = await Promise.all([fetchTrucks(), loadRef(['drivers', 'sites'])]);
+    const [trucks, r, orders] = await Promise.all([fetchTrucks(), loadRef(['drivers', 'sites']), openOrders(null)]);
     await openSheet({
       title: 'Рейс на участок', submitLabel: 'Создать рейс',
       fields: [
+        { name: 'order_id', label: 'Заказ клиента', type: 'select', placeholder: orders.length ? '— выбрать заказ —' : '⚠ Нет открытых заказов', required: true, options: orders },
         { name: 'owner', label: 'Чья машина', type: 'chips', value: 'DTL', options: [{ value: 'DTL', label: 'Наш DTL' }, { value: 'Артём', label: 'Автопарк Артёма' }, { value: 'наёмная', label: 'Наёмная' }] },
         { name: 'truck_id', label: 'Машина', type: 'select', placeholder: '— выбрать —', options: truckOpts(trucks) },
         { name: 'driver_id', label: 'Водитель', type: 'select', placeholder: '— выбрать —', options: listOpts(r.drivers), half: true },
@@ -831,17 +841,23 @@
         try { const t = await api.get(`/api/tariffs?site_id=${v.site_id}&truck_owner=${encodeURIComponent(v.owner)}&latest=true`); box.style.display = ''; box.textContent = (t && t.amount) ? 'Тариф: ' + fmtMoney(t.amount) : 'Тариф не задан'; } catch (e) {}
       },
       onSubmit: async (v) => {
-        await api.post('/api/base/dispatches', { truck_id: num(v.truck_id), driver_id: num(v.driver_id), site_id: num(v.site_id), truck_owner: v.owner, volume: num(v.volume), ttn_number: str(v.ttn_number) });
+        await api.post('/api/base/dispatches', { order_id: num(v.order_id), truck_id: num(v.truck_id), driver_id: num(v.driver_id), site_id: num(v.site_id), truck_owner: v.owner, volume: num(v.volume), ttn_number: str(v.ttn_number) });
         afterWrite('Рейс создан');
       },
     });
   };
 
   L.formCashGive = async () => {
+    const orders = await openOrders(null);
     await openSheet({
       title: 'Выдать наличные Артёму', submitLabel: 'Выдать',
-      fields: [{ name: 'given_at', label: 'Дата', type: 'date', value: todayISO() }, { name: 'amount_given', label: 'Сумма ₽', type: 'number', required: true }, { name: 'purpose', label: 'Назначение', type: 'text' }],
-      onSubmit: async (v) => { await api.post('/api/base/cash-artem', { given_at: v.given_at, amount_given: num(v.amount_given), purpose: str(v.purpose) }); afterWrite('Выдано'); },
+      fields: [
+        { name: 'order_id', label: 'Заказ клиента', type: 'select', placeholder: orders.length ? '— выбрать заказ —' : '⚠ Нет открытых заказов', required: true, options: orders },
+        { name: 'given_at', label: 'Дата', type: 'date', value: todayISO(), half: true },
+        { name: 'amount_given', label: 'Сумма ₽', type: 'number', required: true, half: true },
+        { name: 'purpose', label: 'Назначение', type: 'text' },
+      ],
+      onSubmit: async (v) => { await api.post('/api/base/cash-artem', { given_at: v.given_at, amount_given: num(v.amount_given), purpose: str(v.purpose), order_id: num(v.order_id) }); afterWrite('Выдано'); },
     });
   };
   L.formCashReport = async (id) => {
@@ -990,18 +1006,19 @@
     return html;
   }
   L.formIncome = async () => {
-    const r = await loadRef(['clients']);
+    const [r, allOrders] = await Promise.all([loadRef(['clients']), openOrders(null)]);
     await openSheet({
       title: 'Доход', submitLabel: 'Записать доход',
       fields: [
         { name: 'income_at', label: 'Дата', type: 'date', value: todayISO(), half: true },
         { name: 'is_credit', label: 'Тип', type: 'chips', value: 'false', options: [{ value: 'false', label: 'Оплата' }, { value: 'true', label: 'В долг' }], half: true },
         { name: 'client_id', label: 'Клиент', type: 'select', placeholder: '— не указан —', options: listOpts(r.clients) },
+        { name: 'order_id', label: 'Заказ (необязательно)', type: 'select', placeholder: '— не указан —', options: allOrders },
         { name: 'amount', label: 'Сумма ₽', type: 'number', half: true },
         { name: 'volume', label: 'Объём куб', type: 'number', half: true },
         { name: 'comment', label: 'Комментарий', type: 'text' },
       ],
-      onSubmit: async (v) => { await api.post('/api/income', { income_at: v.income_at, client_id: num(v.client_id), amount: num(v.amount), volume: num(v.volume), comment: str(v.comment), is_credit: v.is_credit === 'true' }); afterWrite('Доход записан'); },
+      onSubmit: async (v) => { await api.post('/api/income', { income_at: v.income_at, client_id: num(v.client_id), order_id: num(v.order_id) || null, amount: num(v.amount), volume: num(v.volume), comment: str(v.comment), is_credit: v.is_credit === 'true' }); afterWrite('Доход записан'); },
     });
   };
   L.correctIncome = async (id) => {
@@ -1027,15 +1044,17 @@
     return html;
   }
   L.formExpense = async () => {
+    const allOrders = await openOrders(null);
     await openSheet({
       title: 'Расход', submitLabel: 'Записать расход',
       fields: [
         { name: 'expense_at', label: 'Дата', type: 'date', value: todayISO(), half: true },
         { name: 'amount', label: 'Сумма ₽', type: 'number', required: true, half: true },
         { name: 'category', label: 'Категория', type: 'select', value: 'Прочие', options: ['Бухгалтерия', 'Аренда', 'Кредиты (тело)', 'Проценты по кредитам', 'Налоги/штрафы', 'Командировочные', 'Зарплата партнёрам', 'Финансовые расходы (налоги/вывод)', 'Прочие'] },
+        { name: 'order_id', label: 'Заказ (необязательно)', type: 'select', placeholder: '— не указан —', options: allOrders },
         { name: 'comment', label: 'Комментарий', type: 'text' },
       ],
-      onSubmit: async (v) => { await api.post('/api/expenses', { expense_at: v.expense_at, category: v.category, amount: num(v.amount), comment: str(v.comment) }); afterWrite('Расход записан'); },
+      onSubmit: async (v) => { await api.post('/api/expenses', { expense_at: v.expense_at, category: v.category, amount: num(v.amount), comment: str(v.comment), order_id: num(v.order_id) || null }); afterWrite('Расход записан'); },
     });
   };
   L.correctExpense = async (id) => {
@@ -1079,26 +1098,42 @@
     return html;
   }
   L.formHire = async () => {
-    const r = await loadRef(['clients', 'suppliers', 'carriers']);
+    const [r, allOrders] = await Promise.all([loadRef(['clients', 'suppliers', 'carriers']), openOrders(null)]);
     await openSheet({
       title: 'Найм (перепродажа)', submitLabel: 'Создать сделку',
       fields: [
+        { name: 'client_id', label: 'Клиент', type: 'select', placeholder: '— выбрать —', required: true, options: listOpts(r.clients) },
+        { name: 'order_id', label: 'Заказ клиента', type: 'select', placeholder: '— выбрать заказ —', required: true, options: allOrders, calcId: 'hire-order-hint' },
         { name: 'delivery_at', label: 'Дата', type: 'date', value: todayISO(), half: true },
         { name: 'volume_liters', label: 'Объём (литры)', type: 'number', required: true, half: true },
-        { name: 'client_id', label: 'Клиент', type: 'select', placeholder: '— выбрать —', required: true, options: listOpts(r.clients) },
         { name: 'supplier_id', label: 'Поставщик', type: 'select', placeholder: '— выбрать —', required: true, options: listOpts(r.suppliers), half: true },
         { name: 'carrier_id', label: 'Перевозчик', type: 'select', placeholder: '— нет —', options: listOpts(r.carriers), half: true },
         { name: 'price_client', label: 'Клиенту ₽/л', type: 'number', half: true },
         { name: 'price_supplier', label: 'Поставщик ₽/л', type: 'number', half: true },
         { name: 'price_carrier', label: 'Перевозка ₽/л', type: 'number', half: true, calcId: 'hire-calc' },
       ],
-      onChange: (v, sheet) => {
-        const box = sheet.querySelector('#hire-calc'); if (!box) return;
-        const pc = num(v.price_client) || 0, ps = num(v.price_supplier) || 0, pk = num(v.price_carrier) || 0, vol = num(v.volume_liters) || 0;
-        const m = pc - ps - pk; box.style.display = '';
-        box.textContent = 'Маржа: ' + m.toFixed(2) + ' ₽/л · итого ' + fmtMoney(m * vol) + (pc ? ' · ' + (m / pc * 100).toFixed(1) + '%' : '');
+      onChange: async (v, sheet) => {
+        const calcBox = sheet.querySelector('#hire-calc');
+        if (calcBox) {
+          const pc = num(v.price_client)||0, ps = num(v.price_supplier)||0, pk = num(v.price_carrier)||0, vol = num(v.volume_liters)||0;
+          const m = pc - ps - pk; calcBox.style.display = '';
+          calcBox.textContent = 'Маржа: ' + m.toFixed(2) + ' ₽/л · итого ' + fmtMoney(m * vol) + (pc ? ' · ' + (m/pc*100).toFixed(1) + '%' : '');
+        }
+        const hintBox = sheet.querySelector('#hire-order-hint');
+        if (v.client_id && hintBox) {
+          const clientOrders = await openOrders(num(v.client_id));
+          const orderSel = sheet.querySelector('[data-name="order_id"]');
+          if (orderSel) {
+            orderSel.innerHTML = clientOrders.length
+              ? `<option value="">— выбрать заказ —</option>` + clientOrders.map(o => `<option value="${o.value}">${o.label}</option>`).join('')
+              : `<option value="">⚠ Нет заказов для этого клиента</option>`;
+          }
+          hintBox.style.display = '';
+          hintBox.textContent = clientOrders.length ? '' : '→ Сначала создайте заказ в разделе «Заказы»';
+          hintBox.style.color = clientOrders.length ? '' : 'var(--red, #ff3b30)';
+        }
       },
-      onSubmit: async (v) => { await api.post('/api/hire', { client_id: num(v.client_id), supplier_id: num(v.supplier_id), carrier_id: num(v.carrier_id), delivery_at: v.delivery_at, volume_liters: num(v.volume_liters), price_client: num(v.price_client), price_supplier: num(v.price_supplier), price_carrier: num(v.price_carrier) }); afterWrite('Сделка создана'); },
+      onSubmit: async (v) => { await api.post('/api/hire', { client_id: num(v.client_id), order_id: num(v.order_id), supplier_id: num(v.supplier_id), carrier_id: num(v.carrier_id), delivery_at: v.delivery_at, volume_liters: num(v.volume_liters), price_client: num(v.price_client), price_supplier: num(v.price_supplier), price_carrier: num(v.price_carrier) }); afterWrite('Сделка создана'); },
     });
   };
   L.closeHire = async (id) => {

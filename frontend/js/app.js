@@ -1185,18 +1185,7 @@
     }
   };
 
-  window.showCashForm = function () {
-    showModal('Выдать наличные Артёму', `
-      ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
-      ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Назначение...">`)}
-    `, async () => {
-      const amount_given = parseFloat(document.getElementById('m-amount').value);
-      const purpose = document.getElementById('m-note').value;
-      await api.post('/api/base/cash-artem', { amount_given, purpose });
-      toast('✅ Записано!');
-      viewBase('cash');
-    });
-  };
+  window.showCashForm = function () { window.addCashArtemModal(); };
 
   // ── Advances global functions ─────────────────────────────────────────────
   window.returnAdvance = async function(advanceId) {
@@ -1244,11 +1233,18 @@
   };
 
   // ── Cash Artem global functions ───────────────────────────────────────────
-  window.addCashArtemModal = function() {
+  window.addCashArtemModal = async function() {
+    let orders = [];
+    try { orders = await api.get('/api/orders?status=active') || []; } catch(e) {}
+    const orderOpts = orders.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
     overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%">
       <div style="font-size:17px;font-weight:700;margin-bottom:16px">Выдать наличные Артёму</div>
+      <select id="cash-order" class="inp" style="width:100%;margin-bottom:10px">
+        <option value="">— выбрать заказ —</option>
+        ${orderOpts}
+      </select>
       <input id="cash-amount" class="inp" type="number" placeholder="Сумма ₽" style="width:100%;margin-bottom:10px">
       <input id="cash-purpose" class="inp" placeholder="Назначение (закупка Ангарск, прочее)" style="width:100%;margin-bottom:16px">
       <div style="display:flex;gap:8px">
@@ -1261,12 +1257,14 @@
   };
 
   window._submitCashArtem = async function() {
+    const order_id = parseInt(document.getElementById('cash-order')?.value) || null;
     const amount = parseFloat(document.getElementById('cash-amount')?.value);
     const purpose = document.getElementById('cash-purpose')?.value?.trim() || null;
+    if (!order_id) { toast('Выберите заказ клиента', 'error'); return; }
     if (!amount || amount <= 0) { toast('Укажите сумму', 'error'); return; }
     try {
       const today = new Date().toISOString().slice(0, 10);
-      await api.post('/api/base/cash-artem', { given_at: today, amount_given: amount, purpose });
+      await api.post('/api/base/cash-artem', { given_at: today, amount_given: amount, purpose, order_id });
       toast('✅ Записано');
       document.querySelector('[style*="z-index:9999"]')?.remove();
       navigate('#base?tab=cash');
@@ -1514,10 +1512,14 @@
 
   // ── Dispatch form ─────────────────────────────────────────────────────────
   async function viewBaseDispatchNew() {
-    let trucks = [], drivers = [], sites = [];
-    try { trucks = await api.get('/api/trucks') || []; } catch (e) {}
-    try { drivers = await api.get('/api/drivers') || []; } catch (e) {}
-    try { sites = await api.get('/api/sites') || []; } catch (e) {}
+    let trucks = [], drivers = [], sites = [], openOrdersList = [];
+    [trucks, drivers, sites, openOrdersList] = await Promise.all([
+      api.get('/api/trucks').catch(() => []),
+      api.get('/api/drivers').catch(() => []),
+      api.get('/api/sites').catch(() => []),
+      api.get('/api/orders?status=active').catch(() => []),
+    ]);
+    trucks = trucks || []; drivers = drivers || []; sites = sites || []; openOrdersList = openOrdersList || [];
 
     const ownerTypes = ['Наш DTL', 'Автопарк Артёма', 'Наёмная'];
     const truckOpts = trucks.length ? trucks.map(t => ({ value: String(t.id), label: t.name })) : [{ value: 'shkh-1', label: 'Шахман-1' }, { value: 'shkh-2', label: 'Шахман-2' }];
@@ -1548,6 +1550,7 @@
         <div class="tariff-label" id="tariff-label">Тариф (Тында → ${esc(siteOpts[0]?.label || '')})</div>
         <div class="tariff-val" id="tariff-val">—</div>
       </div>
+      ${formField('Заказ клиента', `<select class="inp" id="f-order-d" required><option value="">— выбрать заказ —</option>${openOrdersList.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('')}</select>`)}
       ${formField('Номер ТТН', `<input class="inp" type="text" id="f-ttn-d" placeholder="ТТН-2026-...">`)}
       ${formField('Фото ТТН', photoButton('f-photo-d'))}
       <div style="background:rgba(50,215,75,.06);border:1px solid rgba(50,215,75,.15);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:var(--green)">
@@ -1616,7 +1619,10 @@
     const ownerMap = { 'Наш DTL': 'DTL', 'Автопарк Артёма': 'Артём', 'Наёмная': 'наёмная' };
     const ownerRaw = ownerEl ? ownerEl.getAttribute('data-val') : 'Наш DTL';
     try {
+      const orderIdVal = parseInt(document.getElementById('f-order-d')?.value) || null;
+      if (!orderIdVal) { toast('Выберите заказ клиента', 'error'); return; }
       const res = await api.post('/api/base/dispatches', {
+        order_id: orderIdVal,
         truck_id: truckEl ? parseInt(truckEl.getAttribute('data-val')) || null : null,
         driver_id: driverEl ? parseInt(driverEl.getAttribute('data-val')) || null : null,
         site_id: siteEl ? parseInt(siteEl.getAttribute('data-val')) : null,
@@ -1675,10 +1681,7 @@
     let order = null, dispatches = [];
     try { order = await api.get(`/api/orders/${id}`); } catch (e) {}
     if (!order) { navigate('#orders'); return; }
-    try {
-      const allD = await api.get(`/api/base/dispatches`) || [];
-      dispatches = allD.filter(d => d.order_id == id);
-    } catch (e) {}
+    dispatches = order.dispatches || [];
 
     const delivered = dispatches.filter(d => d.status === 'delivered').reduce((s, d) => s + (parseFloat(d.volume) || 0), 0);
     const inTransit = dispatches.filter(d => ['dispatched','in_transit'].includes(d.status)).reduce((s, d) => s + (parseFloat(d.volume) || 0), 0);
@@ -1922,13 +1925,19 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   };
 
   window.showIncomeModal = async function () {
-    let clients = [];
-    try { clients = await api.get('/api/clients') || []; } catch (e) {}
+    let clients = [], orders = [];
+    try { [clients, orders] = await Promise.all([
+      api.get('/api/clients').catch(() => []),
+      api.get('/api/orders?status=active').catch(() => []),
+    ]); } catch (e) {}
+    clients = clients || []; orders = orders || [];
     const clientOpts = '<option value="">— клиент —</option>' +
       clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    const orderOpts = orders.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
     showModal('Добавить доход', `
       ${formField('Дата', `<input class="inp" type="date" id="m-income-at" value="${new Date().toISOString().slice(0,10)}">`)}
       ${formField('Клиент', `<select class="inp" id="m-client">${clientOpts}</select>`)}
+      ${formField('Заказ (необязательно)', `<select class="inp" id="m-income-order"><option value="">— не указан —</option>${orderOpts}</select>`)}
       ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
       ${formField('Объём, куб', `<input class="inp" type="number" step="0.01" id="m-volume" placeholder="0">`)}
       ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Детали...">`)}
@@ -1939,11 +1948,12 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     `, async () => {
       const income_at = document.getElementById('m-income-at').value;
       const client_id = parseInt(document.getElementById('m-client').value) || null;
+      const order_id = parseInt(document.getElementById('m-income-order').value) || null;
       const amount = parseFloat(document.getElementById('m-amount').value) || null;
       const volume = parseFloat(document.getElementById('m-volume').value) || null;
       const comment = document.getElementById('m-note').value;
       const is_credit = document.getElementById('m-credit').checked;
-      await api.post('/api/income', { income_at, client_id, amount, volume, comment, is_credit });
+      await api.post('/api/income', { income_at, client_id, order_id, amount, volume, comment, is_credit });
       toast('✅ Доход записан!');
       viewIncome();
     });
@@ -2115,15 +2125,21 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   };
 
   window.showHireModal = async function () {
-    let clients = [], suppliers = [], carriers = [];
-    try { clients = await api.get('/api/clients') || []; } catch (e) {}
-    try { suppliers = await api.get('/api/suppliers') || []; } catch (e) {}
-    try { carriers = await api.get('/api/carriers') || []; } catch (e) {}
+    let clients = [], suppliers = [], carriers = [], orders = [];
+    try { [clients, suppliers, carriers, orders] = await Promise.all([
+      api.get('/api/clients').catch(() => []),
+      api.get('/api/suppliers').catch(() => []),
+      api.get('/api/carriers').catch(() => []),
+      api.get('/api/orders?status=active').catch(() => []),
+    ]); } catch (e) {}
+    clients = clients || []; suppliers = suppliers || []; carriers = carriers || []; orders = orders || [];
     const sel = (id, items, label) => `<select class="inp" id="${id}">
       <option value="">— выбери ${label} —</option>
       ${items.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('')}
     </select>`;
+    const orderOpts = orders.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
     showModal('Новая сделка по найму', `
+      ${formField('Заказ клиента', `<select class="inp" id="m-order"><option value="">— выбрать заказ —</option>${orderOpts}</select>`)}
       ${formField('Дата сделки', `<input class="inp" type="date" id="m-deal-date" value="${new Date().toISOString().slice(0,10)}">`)}
       ${formField('Клиент', sel('m-client', clients, 'клиента'))}
       ${formField('Поставщик', sel('m-supplier', suppliers, 'поставщика'))}
@@ -2134,6 +2150,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${formField('Цена перевозчику, ₽/л', `<input class="inp" type="number" id="m-price-t" placeholder="7" oninput="calcHireMargin()">`)}
       <div class="auto-calc" id="hire-calc">Маржа: — ₽ (—%)</div>
     `, async () => {
+      const order_id = parseInt(document.getElementById('m-order').value) || null;
       const client_id = parseInt(document.getElementById('m-client').value) || null;
       const supplier_id = parseInt(document.getElementById('m-supplier').value) || null;
       const carrier_id = parseInt(document.getElementById('m-carrier').value) || null;
@@ -2142,9 +2159,10 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const price_client = parseFloat(document.getElementById('m-price-c').value) || 0;
       const price_supplier = parseFloat(document.getElementById('m-price-s').value) || 0;
       const price_carrier = parseFloat(document.getElementById('m-price-t').value) || 0;
+      if (!order_id) throw new Error('Выберите заказ клиента');
       if (!client_id) throw new Error('Выберите клиента');
       if (!supplier_id) throw new Error('Выберите поставщика');
-      await api.post('/api/hire', { client_id, supplier_id, carrier_id, delivery_at, volume_liters, price_client, price_supplier, price_carrier });
+      await api.post('/api/hire', { order_id, client_id, supplier_id, carrier_id, delivery_at, volume_liters, price_client, price_supplier, price_carrier });
       toast('✅ Сделка записана!'); viewHire();
     });
   };
@@ -3527,7 +3545,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="modal-title">Новый API токен</div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Название токена</label><input id="token-name-inp" class="inp" placeholder="Например: Курсор MCP"></div>
-          <div class="form-group"><label class="form-label">Скоуп</label><div id="tk-scope-sel" data-scope="full" style="display:flex;gap:8px;margin-top:4px"><div id="tks-full" onclick="window._setTokenScope('full')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--accent);background:var(--accent);color:#000">Full</div><div id="tks-write" onclick="window._setTokenScope('write')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Write</div><div id="tks-read" onclick="window._setTokenScope('read')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Read only</div></div></div>
+          <div class="form-group"><label class="form-label">Скоуп</label><div id="tk-scope-sel" data-scope="read" style="display:flex;gap:8px;margin-top:4px"><div id="tks-full" onclick="window._setTokenScope('full')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Full</div><div id="tks-write" onclick="window._setTokenScope('write')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text2)">Write</div><div id="tks-read" onclick="window._setTokenScope('read')" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--accent);background:var(--accent);color:#000">Read only</div></div></div>
           <div class="form-group"><label class="form-label">Лимит расходов</label><input class="inp" type="number" id="m-tk-limit" placeholder="Лимит $/день (необязательно)" step="0.01"></div>
           <div id="token-result" style="display:none;margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;word-break:break-all;font-size:12px;font-family:monospace;color:var(--accent)"></div>
         </div>
@@ -3559,7 +3577,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     if (!name) { toast('Введите название', 'error'); return; }
     try {
       const sel = document.getElementById('tk-scope-sel');
-      const scope = sel ? sel.getAttribute('data-scope') || 'full' : 'full';
+      const scope = sel ? sel.getAttribute('data-scope') || 'read' : 'read';
       const limitVal = document.getElementById('m-tk-limit')?.value;
       const daily_cost_limit_usd = limitVal ? parseFloat(limitVal) : null;
       const res = await api.post('/api/tokens', { name, scope, daily_cost_limit_usd });
