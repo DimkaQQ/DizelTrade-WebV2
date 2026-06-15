@@ -184,6 +184,9 @@ if ORDER_ID:
     DISPATCH_ID = body.get("id") if code == 201 else None
     if DISPATCH_ID:
         info(f"Создан рейс #{DISPATCH_ID} под заказ #{ORDER_ID}")
+        # Отмечаем рейс как доставленный — иначе delivery_summary не считает DTL-объём
+        code2, _ = req("PUT", f"/api/base/dispatches/{DISPATCH_ID}/status", {"status": "delivered"})
+        check("PUT /dispatches/{id}/status → delivered (200)", code2 == 200, f"status={code2}")
 
 # ═══════════════════════════════════════════════════════════
 section("5. CASH ARTEM — обязательный order_id")
