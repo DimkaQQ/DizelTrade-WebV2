@@ -19,6 +19,8 @@ class ExpenseCreate(BaseModel):
     category: str
     amount: Optional[float] = None
     comment: Optional[str] = None
+    cash_record_id: Optional[int] = None
+    order_id: Optional[int] = None
 
 
 @router.get("/expenses")
@@ -64,9 +66,9 @@ def get_expense(expense_id: int, user: dict = Depends(require_partner)):
 def create_expense(body: ExpenseCreate, user: dict = Depends(require_partner)):
     with get_db() as conn:
         row = execute("""
-            INSERT INTO company_expenses (expense_at, category, amount, comment, entered_by)
-            VALUES (%s, %s, %s, %s, %s) RETURNING *
-        """, (body.expense_at, body.category, body.amount, body.comment, user["id"]),
+            INSERT INTO company_expenses (expense_at, category, amount, comment, entered_by, cash_record_id, order_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (body.expense_at, body.category, body.amount, body.comment, user["id"], body.cash_record_id, body.order_id),
             conn=conn, returning=True)
         log_action(conn, "company_expenses", row["id"], "INSERT", user["id"], new_data=dict(row))
         conn.commit()

@@ -18,6 +18,7 @@ class IncomeCreate(BaseModel):
     volume: Optional[float] = None
     comment: Optional[str] = None
     is_credit: bool = False  # True = «в долг» (не считается оплатой для долга)
+    order_id: Optional[int] = None
 
 
 @router.get("/income")
@@ -64,9 +65,9 @@ def get_income(income_id: int, user: dict = Depends(require_partner)):
 def create_income(body: IncomeCreate, user: dict = Depends(require_partner)):
     with get_db() as conn:
         row = execute("""
-            INSERT INTO income_records (income_at, client_id, amount, volume, comment, is_credit, entered_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *
-        """, (body.income_at, body.client_id, body.amount, body.volume, body.comment, body.is_credit, user["id"]),
+            INSERT INTO income_records (income_at, client_id, amount, volume, comment, is_credit, entered_by, order_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+        """, (body.income_at, body.client_id, body.amount, body.volume, body.comment, body.is_credit, user["id"], body.order_id),
             conn=conn, returning=True)
         log_action(conn, "income_records", row["id"], "INSERT", user["id"], new_data=dict(row))
         conn.commit()

@@ -19,6 +19,7 @@ class HireCreate(BaseModel):
     price_supplier: Optional[float] = None
     price_carrier: Optional[float] = None
     comment: Optional[str] = None
+    order_id: Optional[int] = None
 
 
 def _calc_amounts(body: HireCreate) -> dict:
@@ -84,6 +85,8 @@ def get_hire(hire_id: int, user: dict = Depends(require_partner)):
 
 @router.post("/hire", status_code=201)
 def create_hire(body: HireCreate, user: dict = Depends(require_partner)):
+    if not body.order_id:
+        raise HTTPException(400, "Создание найм-доставки возможно только под заказ клиента.")
     amt = _calc_amounts(body)
     with get_db() as conn:
         row = execute("""
@@ -91,14 +94,14 @@ def create_hire(body: HireCreate, user: dict = Depends(require_partner)):
                 (delivery_at, client_id, supplier_id, carrier_id, carrier_custom,
                  volume_liters, price_client, price_supplier, price_carrier,
                  amount_client, amount_supplier, amount_carrier, margin, margin_pct,
-                 comment, entered_by)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *
+                 comment, entered_by, order_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *
         """, (
             body.delivery_at, body.client_id, body.supplier_id, body.carrier_id,
             body.carrier_custom, body.volume_liters, body.price_client, body.price_supplier,
             body.price_carrier, amt["amount_client"], amt["amount_supplier"],
             amt["amount_carrier"], amt["margin"], amt["margin_pct"],
-            body.comment, user["id"]
+            body.comment, user["id"], body.order_id
         ), conn=conn, returning=True)
         log_action(conn, "hire_deliveries", row["id"], "INSERT", user["id"], new_data=dict(row))
         conn.commit()

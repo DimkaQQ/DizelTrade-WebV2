@@ -245,6 +245,8 @@ class ExpenseCreate(BaseModel):
     trips: Optional[int] = None
     revenue: Optional[float] = None
     comment: Optional[str] = None
+    cash_record_id: Optional[int] = None
+    order_id: Optional[int] = None
 
 
 class ExpenseCorrect(BaseModel):
@@ -319,10 +321,10 @@ def create_fleet_expense(body: ExpenseCreate, user: dict = Depends(get_current_u
     with get_db() as conn:
         row = execute("""
             INSERT INTO fleet_expenses
-                (truck_id, expense_at, category, amount, trips, revenue, comment, entered_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+                (truck_id, expense_at, category, amount, trips, revenue, comment, entered_by, cash_record_id, order_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (body.truck_id, body.expense_at, body.category, body.amount,
-              body.trips, body.revenue, body.comment, user["id"]),
+              body.trips, body.revenue, body.comment, user["id"], body.cash_record_id, body.order_id),
             conn=conn, returning=True)
         log_action(conn, "fleet_expenses", row["id"], "INSERT", user["id"], new_data=dict(row))
         conn.commit()
