@@ -43,6 +43,7 @@ def _order_fields(user: dict) -> str:
 @router.get("/orders")
 def list_orders(
     status: Optional[str] = Query(None),
+    client_id: Optional[int] = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
@@ -52,6 +53,9 @@ def list_orders(
     if status:
         parts.append("o.status = %s")
         params.append(status)
+    if client_id is not None:
+        parts.append("o.client_id = %s")
+        params.append(client_id)
     where = " AND ".join(parts)
 
     fields = _order_fields(user)
@@ -108,6 +112,61 @@ def get_order(order_id: int, user: dict = Depends(get_current_user)):
         WHERE os.order_id = %s
     """, (order_id,))
     row["sites"] = sites
+
+    # Add hire deliveries
+    hire_rows = query("""
+        SELECT hd.*, c.name AS client_name, s.name AS supplier_name, cr.name AS carrier_name
+        FROM hire_deliveries hd
+        LEFT JOIN clients c ON c.id = hd.client_id
+        LEFT JOIN suppliers s ON s.id = hd.supplier_id
+        LEFT JOIN carriers cr ON cr.id = hd.carrier_id
+        WHERE hd.order_id = %s
+        ORDER BY hd.delivery_at DESC
+    """, (order_id,))
+    row["hire_deliveries"] = hire_rows
+
+    # cash_summary
+    cash_row = query_one(
+        "SELECT COALESCE(SUM(amount_given),0) AS total_received FROM cash_to_artem WHERE order_id = %s",
+        (order_id,)
+    )
+    spent_row = query_one("""
+        SELECT
+            COALESCE((SELECT SUM(purchase_amount) FROM fuel_receipts WHERE order_id = %s), 0) +
+            COALESCE((SELECT SUM(amount) FROM company_expenses WHERE order_id = %s), 0) +
+            COALESCE((SELECT SUM(amount) FROM fleet_expenses WHERE order_id = %s), 0)
+            AS total_spent
+    """, (order_id, order_id, order_id))
+    total_received = float(cash_row["total_received"]) if cash_row else 0
+    total_spent = float(spent_row["total_spent"]) if spent_row else 0
+    row["cash_summary"] = {
+        "total_received": total_received,
+        "total_spent": total_spent,
+        "remaining": total_received - total_spent,
+    }
+
+    # delivery_summary
+    dtl_v = query_one("SELECT COALESCE(SUM(volume),0) AS v FROM fuel_dispatches WHERE order_id=%s AND status='delivered' AND truck_owner='DTL'", (order_id,))
+    artem_v = query_one("SELECT COALESCE(SUM(volume),0) AS v FROM fuel_dispatches WHERE order_id=%s AND status='delivered' AND truck_owner='Артём'", (order_id,))
+    hire_v = query_one("SELECT COALESCE(SUM(volume_liters)/1000.0,0) AS v FROM hire_deliveries WHERE order_id=%s", (order_id,))
+    other_v = query_one("SELECT COALESCE(SUM(volume),0) AS v FROM fuel_dispatches WHERE order_id=%s AND status='delivered' AND truck_owner NOT IN ('DTL','Артём')", (order_id,))
+    delivered_cub = float(dtl_v["v"]) + float(artem_v["v"]) + float(hire_v["v"]) + float(other_v["v"])
+    vol_ordered = float(row.get("volume_ordered") or 0)
+    row["delivery_summary"] = {
+        "delivered_volume_cub": round(delivered_cub, 2),
+        "remaining_volume_cub": round(vol_ordered - delivered_cub, 2),
+        "by_owner": {"DTL": float(dtl_v["v"]), "Артём": float(artem_v["v"]), "найм": float(hire_v["v"])},
+    }
+
+    # payment_summary
+    inc_row = query_one("SELECT COALESCE(SUM(amount),0) AS total FROM income_records WHERE order_id=%s", (order_id,))
+    client_paid = float(inc_row["total"]) if inc_row else 0
+    amount_paid_order = float(row.get("amount_paid") or 0)
+    row["payment_summary"] = {
+        "client_total_paid": client_paid,
+        "client_debt": max(0, amount_paid_order - client_paid),
+    }
+
     return row
 
 

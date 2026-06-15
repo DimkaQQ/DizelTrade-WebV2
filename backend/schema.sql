@@ -387,7 +387,7 @@ CREATE TABLE audit_log (
     table_name  VARCHAR(100) NOT NULL,
     record_id   INT,
     action      VARCHAR(20) NOT NULL
-                CHECK (action IN ('INSERT', 'UPDATE', 'CORRECTION', 'MARK_PAID', 'MARK_UNPAID')),
+                CHECK (action IN ('INSERT', 'UPDATE', 'CORRECTION', 'MARK_PAID', 'MARK_UNPAID', 'CLOSE', 'REPORT', 'SETTLE')),
     old_data    JSONB,
     new_data    JSONB,
     reason      TEXT,   -- обязательно при CORRECTION

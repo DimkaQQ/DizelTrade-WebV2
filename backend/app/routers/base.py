@@ -72,6 +72,10 @@ class ReceiptCreate(BaseModel):
     density: Optional[float] = None
     ttn_number: Optional[str] = None
     notes: Optional[str] = None
+    purchase_amount: Optional[float] = None
+    price_per_liter: Optional[float] = None
+    cash_record_id: Optional[int] = None
+    order_id: Optional[int] = None
 
 
 AUTO_CONFIRM_SUPPLIER_NAMES = {"Ангарск", "Коля", "Восточка", "Артём закупил"}
@@ -179,8 +183,9 @@ def create_receipt(body: ReceiptCreate, bg: BackgroundTasks, user: dict = Depend
             INSERT INTO fuel_receipts
                 (received_at, supplier_id, source_custom, volume_nominal, temperature,
                  density, volume_adjusted, ttn_number, ttn_confirmed, confirmed_by,
-                 confirmed_at, entered_by, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, {confirm_sql}, %s, %s)
+                 confirmed_at, entered_by, notes, purchase_amount, price_per_liter,
+                 cash_record_id, order_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, {confirm_sql}, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -196,6 +201,10 @@ def create_receipt(body: ReceiptCreate, bg: BackgroundTasks, user: dict = Depend
                 user["id"] if auto_confirm else None,
                 user["id"],
                 body.notes,
+                body.purchase_amount,
+                body.price_per_liter,
+                body.cash_record_id,
+                body.order_id,
             ),
             conn=conn,
             returning=True,
@@ -385,6 +394,8 @@ def get_dispatch(dispatch_id: int, user: dict = Depends(get_current_user)):
 
 @router.post("/dispatches", status_code=201)
 def create_dispatch(body: DispatchCreate, user: dict = Depends(require_not_operator)):
+    if not body.order_id:
+        raise HTTPException(400, "Создание рейса возможно только под заказ клиента. Создайте заказ в разделе «Заказы клиентов» или используйте кнопку «Создать заказ + рейс».")
     dispatched_at = body.dispatched_at or datetime.utcnow().isoformat()
 
     with get_db() as conn:
@@ -664,6 +675,7 @@ class CashArtemCreate(BaseModel):
     amount_given: float
     purpose: Optional[str] = None
     notes: Optional[str] = None
+    order_id: Optional[int] = None
 
 
 class CashArtemReport(BaseModel):
@@ -701,15 +713,17 @@ def list_cash_artem(
 
 @router.post("/cash-artem", status_code=201)
 def create_cash_artem(body: CashArtemCreate, user: dict = Depends(require_partner)):
+    if not body.order_id:
+        raise HTTPException(400, "Наличные всегда вносятся под конкретный заказ клиента.")
     given_at = body.given_at or datetime.utcnow().isoformat()
     with get_db() as conn:
         row = execute(
             """
-            INSERT INTO cash_to_artem (given_at, amount_given, purpose, entered_by, notes)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO cash_to_artem (given_at, amount_given, purpose, entered_by, notes, order_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
-            (given_at, body.amount_given, body.purpose, user["id"], body.notes),
+            (given_at, body.amount_given, body.purpose, user["id"], body.notes, body.order_id),
             conn=conn, returning=True,
         )
         log_action(conn, "cash_to_artem", row["id"], "INSERT", user["id"], new_data=dict(row))
