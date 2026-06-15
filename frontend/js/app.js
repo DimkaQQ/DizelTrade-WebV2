@@ -1185,18 +1185,7 @@
     }
   };
 
-  window.showCashForm = function () {
-    showModal('Выдать наличные Артёму', `
-      ${formField('Сумма, ₽', `<input class="inp" type="number" id="m-amount" placeholder="0">`)}
-      ${formField('Комментарий', `<input class="inp" type="text" id="m-note" placeholder="Назначение...">`)}
-    `, async () => {
-      const amount_given = parseFloat(document.getElementById('m-amount').value);
-      const purpose = document.getElementById('m-note').value;
-      await api.post('/api/base/cash-artem', { amount_given, purpose });
-      toast('✅ Записано!');
-      viewBase('cash');
-    });
-  };
+  window.showCashForm = function () { window.addCashArtemModal(); };
 
   // ── Advances global functions ─────────────────────────────────────────────
   window.returnAdvance = async function(advanceId) {
@@ -1244,11 +1233,18 @@
   };
 
   // ── Cash Artem global functions ───────────────────────────────────────────
-  window.addCashArtemModal = function() {
+  window.addCashArtemModal = async function() {
+    let orders = [];
+    try { orders = await api.get('/api/orders?status=active') || []; } catch(e) {}
+    const orderOpts = orders.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
     overlay.innerHTML = `<div style="background:var(--card);border-radius:20px 20px 0 0;padding:24px;max-width:500px;width:100%">
       <div style="font-size:17px;font-weight:700;margin-bottom:16px">Выдать наличные Артёму</div>
+      <select id="cash-order" class="inp" style="width:100%;margin-bottom:10px">
+        <option value="">— выбрать заказ —</option>
+        ${orderOpts}
+      </select>
       <input id="cash-amount" class="inp" type="number" placeholder="Сумма ₽" style="width:100%;margin-bottom:10px">
       <input id="cash-purpose" class="inp" placeholder="Назначение (закупка Ангарск, прочее)" style="width:100%;margin-bottom:16px">
       <div style="display:flex;gap:8px">
@@ -1261,12 +1257,14 @@
   };
 
   window._submitCashArtem = async function() {
+    const order_id = parseInt(document.getElementById('cash-order')?.value) || null;
     const amount = parseFloat(document.getElementById('cash-amount')?.value);
     const purpose = document.getElementById('cash-purpose')?.value?.trim() || null;
+    if (!order_id) { toast('Выберите заказ клиента', 'error'); return; }
     if (!amount || amount <= 0) { toast('Укажите сумму', 'error'); return; }
     try {
       const today = new Date().toISOString().slice(0, 10);
-      await api.post('/api/base/cash-artem', { given_at: today, amount_given: amount, purpose });
+      await api.post('/api/base/cash-artem', { given_at: today, amount_given: amount, purpose, order_id });
       toast('✅ Записано');
       document.querySelector('[style*="z-index:9999"]')?.remove();
       navigate('#base?tab=cash');
@@ -1515,10 +1513,13 @@
   // ── Dispatch form ─────────────────────────────────────────────────────────
   async function viewBaseDispatchNew() {
     let trucks = [], drivers = [], sites = [], openOrdersList = [];
-    try { trucks = await api.get('/api/trucks') || []; } catch (e) {}
-    try { drivers = await api.get('/api/drivers') || []; } catch (e) {}
-    try { sites = await api.get('/api/sites') || []; } catch (e) {}
-    try { openOrdersList = await api.get('/api/orders?status=active') || []; } catch (e) {}
+    [trucks, drivers, sites, openOrdersList] = await Promise.all([
+      api.get('/api/trucks').catch(() => []),
+      api.get('/api/drivers').catch(() => []),
+      api.get('/api/sites').catch(() => []),
+      api.get('/api/orders?status=active').catch(() => []),
+    ]);
+    trucks = trucks || []; drivers = drivers || []; sites = sites || []; openOrdersList = openOrdersList || [];
 
     const ownerTypes = ['Наш DTL', 'Автопарк Артёма', 'Наёмная'];
     const truckOpts = trucks.length ? trucks.map(t => ({ value: String(t.id), label: t.name })) : [{ value: 'shkh-1', label: 'Шахман-1' }, { value: 'shkh-2', label: 'Шахман-2' }];
@@ -1680,10 +1681,7 @@
     let order = null, dispatches = [];
     try { order = await api.get(`/api/orders/${id}`); } catch (e) {}
     if (!order) { navigate('#orders'); return; }
-    try {
-      const allD = await api.get(`/api/base/dispatches`) || [];
-      dispatches = allD.filter(d => d.order_id == id);
-    } catch (e) {}
+    dispatches = order.dispatches || [];
 
     const delivered = dispatches.filter(d => d.status === 'delivered').reduce((s, d) => s + (parseFloat(d.volume) || 0), 0);
     const inTransit = dispatches.filter(d => ['dispatched','in_transit'].includes(d.status)).reduce((s, d) => s + (parseFloat(d.volume) || 0), 0);
@@ -2120,15 +2118,21 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   };
 
   window.showHireModal = async function () {
-    let clients = [], suppliers = [], carriers = [];
-    try { clients = await api.get('/api/clients') || []; } catch (e) {}
-    try { suppliers = await api.get('/api/suppliers') || []; } catch (e) {}
-    try { carriers = await api.get('/api/carriers') || []; } catch (e) {}
+    let clients = [], suppliers = [], carriers = [], orders = [];
+    try { [clients, suppliers, carriers, orders] = await Promise.all([
+      api.get('/api/clients').catch(() => []),
+      api.get('/api/suppliers').catch(() => []),
+      api.get('/api/carriers').catch(() => []),
+      api.get('/api/orders?status=active').catch(() => []),
+    ]); } catch (e) {}
+    clients = clients || []; suppliers = suppliers || []; carriers = carriers || []; orders = orders || [];
     const sel = (id, items, label) => `<select class="inp" id="${id}">
       <option value="">— выбери ${label} —</option>
       ${items.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('')}
     </select>`;
+    const orderOpts = orders.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
     showModal('Новая сделка по найму', `
+      ${formField('Заказ клиента', `<select class="inp" id="m-order"><option value="">— выбрать заказ —</option>${orderOpts}</select>`)}
       ${formField('Дата сделки', `<input class="inp" type="date" id="m-deal-date" value="${new Date().toISOString().slice(0,10)}">`)}
       ${formField('Клиент', sel('m-client', clients, 'клиента'))}
       ${formField('Поставщик', sel('m-supplier', suppliers, 'поставщика'))}
@@ -2139,6 +2143,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${formField('Цена перевозчику, ₽/л', `<input class="inp" type="number" id="m-price-t" placeholder="7" oninput="calcHireMargin()">`)}
       <div class="auto-calc" id="hire-calc">Маржа: — ₽ (—%)</div>
     `, async () => {
+      const order_id = parseInt(document.getElementById('m-order').value) || null;
       const client_id = parseInt(document.getElementById('m-client').value) || null;
       const supplier_id = parseInt(document.getElementById('m-supplier').value) || null;
       const carrier_id = parseInt(document.getElementById('m-carrier').value) || null;
@@ -2147,9 +2152,10 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const price_client = parseFloat(document.getElementById('m-price-c').value) || 0;
       const price_supplier = parseFloat(document.getElementById('m-price-s').value) || 0;
       const price_carrier = parseFloat(document.getElementById('m-price-t').value) || 0;
+      if (!order_id) throw new Error('Выберите заказ клиента');
       if (!client_id) throw new Error('Выберите клиента');
       if (!supplier_id) throw new Error('Выберите поставщика');
-      await api.post('/api/hire', { client_id, supplier_id, carrier_id, delivery_at, volume_liters, price_client, price_supplier, price_carrier });
+      await api.post('/api/hire', { order_id, client_id, supplier_id, carrier_id, delivery_at, volume_liters, price_client, price_supplier, price_carrier });
       toast('✅ Сделка записана!'); viewHire();
     });
   };

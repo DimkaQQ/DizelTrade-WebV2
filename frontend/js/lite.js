@@ -701,11 +701,8 @@
 
   async function screenOrderDetail(id) {
     setContent(pageHead('Заказ', '') + spinner());
-    const [o, allDisp] = await Promise.all([
-      api.get('/api/orders/' + id),
-      api.get('/api/base/dispatches'),
-    ]);
-    const disp = (allDisp || []).filter(d => String(d.order_id) === String(id));
+    const o = await api.get('/api/orders/' + id);
+    const disp = (o.dispatches || []);
     let delivered = 0, inTransit = 0;
     disp.forEach(d => { if (d.status === 'delivered') delivered += d.volume || 0; else if (d.status !== 'cancelled') inTransit += d.volume || 0; });
     const total = o.volume_ordered || 0;
