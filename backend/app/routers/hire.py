@@ -87,7 +87,7 @@ def get_hire(hire_id: int, user: dict = Depends(require_partner)):
 @router.post("/hire", status_code=201)
 def create_hire(body: HireCreate, user: dict = Depends(require_partner)):
     if not body.order_id:
-        raise HTTPException(400, "Создание найм-доставки возможно только под заказ клиента.")
+        raise HTTPException(400, "Создание найм-доставки возможно только под заказ клиента. Создайте заказ в разделе «Заказы клиентов» или используйте кнопку «Создать заказ + рейс».")
     amt = _calc_amounts(body)
     with get_db() as conn:
         row = execute("""
