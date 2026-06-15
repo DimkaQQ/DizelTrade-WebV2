@@ -801,6 +801,7 @@
   L.cancelDispatch = async (id) => { if (!await confirmAction({ title: 'Отменить рейс?', danger: true, okLabel: 'Отменить' })) return; await api.put(`/api/base/dispatches/${id}/status`, { status: 'cancelled' }); afterWrite('Рейс отменён'); };
 
   L.formReceipt = async () => {
+    const allOrders = await openOrders(null);
     await openSheet({
       title: 'Приёмка топлива', submitLabel: 'Записать приёмку',
       fields: [
@@ -811,13 +812,14 @@
         { name: 'density', label: 'Плотность', type: 'number', value: 0.840, half: true, calcId: 'rec-calc' },
         { name: 'purchase_amount', label: 'Сумма закупки ₽', type: 'number', half: true },
         { name: 'price_per_liter', label: 'Цена ₽/л', type: 'number', half: true },
+        { name: 'order_id', label: 'Заказ (необязательно)', type: 'select', placeholder: '— не указан —', options: allOrders },
       ],
       onChange: (v, sheet) => {
         const box = sheet.querySelector('#rec-calc'); const vol = num(v.volume_nominal), den = num(v.density);
         if (box && vol && den) { box.style.display = ''; box.textContent = 'Пересчитано при 20°C: ' + (vol * den / 0.840).toFixed(1) + ' куб'; }
       },
       onSubmit: async (v) => {
-        await api.post('/api/base/receipts', { source_custom: v.source_custom, volume_nominal: num(v.volume_nominal), density: num(v.density), temperature: num(v.temperature), ttn_number: str(v.ttn_number), purchase_amount: num(v.purchase_amount) || null, price_per_liter: num(v.price_per_liter) || null });
+        await api.post('/api/base/receipts', { source_custom: v.source_custom, volume_nominal: num(v.volume_nominal), density: num(v.density), temperature: num(v.temperature), ttn_number: str(v.ttn_number), purchase_amount: num(v.purchase_amount) || null, price_per_liter: num(v.price_per_liter) || null, order_id: num(v.order_id) || null });
         afterWrite('Приёмка записана');
       },
     });
@@ -1045,15 +1047,17 @@
     return html;
   }
   L.formExpense = async () => {
+    const allOrders = await openOrders(null);
     await openSheet({
       title: 'Расход', submitLabel: 'Записать расход',
       fields: [
         { name: 'expense_at', label: 'Дата', type: 'date', value: todayISO(), half: true },
         { name: 'amount', label: 'Сумма ₽', type: 'number', required: true, half: true },
         { name: 'category', label: 'Категория', type: 'select', value: 'Прочие', options: ['Бухгалтерия', 'Аренда', 'Кредиты (тело)', 'Проценты по кредитам', 'Налоги/штрафы', 'Командировочные', 'Зарплата партнёрам', 'Финансовые расходы (налоги/вывод)', 'Прочие'] },
+        { name: 'order_id', label: 'Заказ (необязательно)', type: 'select', placeholder: '— не указан —', options: allOrders },
         { name: 'comment', label: 'Комментарий', type: 'text' },
       ],
-      onSubmit: async (v) => { await api.post('/api/expenses', { expense_at: v.expense_at, category: v.category, amount: num(v.amount), comment: str(v.comment) }); afterWrite('Расход записан'); },
+      onSubmit: async (v) => { await api.post('/api/expenses', { expense_at: v.expense_at, category: v.category, amount: num(v.amount), comment: str(v.comment), order_id: num(v.order_id) || null }); afterWrite('Расход записан'); },
     });
   };
   L.correctExpense = async (id) => {

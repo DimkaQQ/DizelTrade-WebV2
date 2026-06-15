@@ -1514,10 +1514,11 @@
 
   // ── Dispatch form ─────────────────────────────────────────────────────────
   async function viewBaseDispatchNew() {
-    let trucks = [], drivers = [], sites = [];
+    let trucks = [], drivers = [], sites = [], openOrdersList = [];
     try { trucks = await api.get('/api/trucks') || []; } catch (e) {}
     try { drivers = await api.get('/api/drivers') || []; } catch (e) {}
     try { sites = await api.get('/api/sites') || []; } catch (e) {}
+    try { openOrdersList = await api.get('/api/orders?status=active') || []; } catch (e) {}
 
     const ownerTypes = ['Наш DTL', 'Автопарк Артёма', 'Наёмная'];
     const truckOpts = trucks.length ? trucks.map(t => ({ value: String(t.id), label: t.name })) : [{ value: 'shkh-1', label: 'Шахман-1' }, { value: 'shkh-2', label: 'Шахман-2' }];
@@ -1548,6 +1549,7 @@
         <div class="tariff-label" id="tariff-label">Тариф (Тында → ${esc(siteOpts[0]?.label || '')})</div>
         <div class="tariff-val" id="tariff-val">—</div>
       </div>
+      ${formField('Заказ клиента', `<select class="inp" id="f-order-d" required><option value="">— выбрать заказ —</option>${openOrdersList.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('')}</select>`)}
       ${formField('Номер ТТН', `<input class="inp" type="text" id="f-ttn-d" placeholder="ТТН-2026-...">`)}
       ${formField('Фото ТТН', photoButton('f-photo-d'))}
       <div style="background:rgba(50,215,75,.06);border:1px solid rgba(50,215,75,.15);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:var(--green)">
@@ -1616,7 +1618,10 @@
     const ownerMap = { 'Наш DTL': 'DTL', 'Автопарк Артёма': 'Артём', 'Наёмная': 'наёмная' };
     const ownerRaw = ownerEl ? ownerEl.getAttribute('data-val') : 'Наш DTL';
     try {
+      const orderIdVal = parseInt(document.getElementById('f-order-d')?.value) || null;
+      if (!orderIdVal) { toast('Выберите заказ клиента', 'error'); return; }
       const res = await api.post('/api/base/dispatches', {
+        order_id: orderIdVal,
         truck_id: truckEl ? parseInt(truckEl.getAttribute('data-val')) || null : null,
         driver_id: driverEl ? parseInt(driverEl.getAttribute('data-val')) || null : null,
         site_id: siteEl ? parseInt(siteEl.getAttribute('data-val')) : null,
