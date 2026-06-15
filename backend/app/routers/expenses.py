@@ -112,9 +112,9 @@ def update_expense(expense_id: int, body: ExpenseCreate, user: dict = Depends(re
     with get_db() as conn:
         row = execute("""
             UPDATE company_expenses
-            SET expense_at=%s, category=%s, amount=%s, comment=%s
+            SET expense_at=%s, category=%s, amount=%s, comment=%s, cash_record_id=%s, order_id=%s
             WHERE id=%s RETURNING *
-        """, (body.expense_at, body.category, body.amount, body.comment, expense_id),
+        """, (body.expense_at, body.category, body.amount, body.comment, body.cash_record_id, body.order_id, expense_id),
             conn=conn, returning=True)
         log_action(conn, "company_expenses", expense_id, "UPDATE", user["id"],
                    old_data=dict(existing), new_data=dict(row))

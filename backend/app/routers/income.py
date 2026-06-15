@@ -113,9 +113,9 @@ def update_income(income_id: int, body: IncomeCreate, user: dict = Depends(requi
     with get_db() as conn:
         row = execute("""
             UPDATE income_records
-            SET income_at=%s, client_id=%s, amount=%s, volume=%s, comment=%s, is_credit=%s
+            SET income_at=%s, client_id=%s, amount=%s, volume=%s, comment=%s, is_credit=%s, order_id=%s
             WHERE id=%s RETURNING *
-        """, (body.income_at, body.client_id, body.amount, body.volume, body.comment, body.is_credit, income_id),
+        """, (body.income_at, body.client_id, body.amount, body.volume, body.comment, body.is_credit, body.order_id, income_id),
             conn=conn, returning=True)
         log_action(conn, "income_records", income_id, "UPDATE", user["id"],
                    old_data=dict(existing), new_data=dict(row))

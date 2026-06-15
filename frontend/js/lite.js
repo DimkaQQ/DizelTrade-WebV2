@@ -1125,7 +1125,7 @@
         const hintBox = sheet.querySelector('#hire-order-hint');
         if (v.client_id && hintBox) {
           const clientOrders = await openOrders(num(v.client_id));
-          const orderSel = sheet.querySelector('[name="order_id"]');
+          const orderSel = sheet.querySelector('[data-name="order_id"]');
           if (orderSel) {
             orderSel.innerHTML = clientOrders.length
               ? `<option value="">— выбрать заказ —</option>` + clientOrders.map(o => `<option value="${o.value}">${o.label}</option>`).join('')

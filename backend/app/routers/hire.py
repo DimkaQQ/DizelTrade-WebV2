@@ -177,14 +177,14 @@ def update_hire(hire_id: int, body: HireCreate, user: dict = Depends(require_par
                 delivery_at=%s, client_id=%s, supplier_id=%s, carrier_id=%s, carrier_custom=%s,
                 volume_liters=%s, price_client=%s, price_supplier=%s, price_carrier=%s,
                 amount_client=%s, amount_supplier=%s, amount_carrier=%s,
-                margin=%s, margin_pct=%s, comment=%s
+                margin=%s, margin_pct=%s, comment=%s, order_id=%s
             WHERE id=%s RETURNING *
         """, (
             body.delivery_at, body.client_id, body.supplier_id, body.carrier_id,
             body.carrier_custom, body.volume_liters, body.price_client, body.price_supplier,
             body.price_carrier, amt["amount_client"], amt["amount_supplier"],
             amt["amount_carrier"], amt["margin"], amt["margin_pct"],
-            body.comment, hire_id
+            body.comment, body.order_id, hire_id
         ), conn=conn, returning=True)
         log_action(conn, "hire_deliveries", hire_id, "UPDATE", user["id"],
                    old_data=dict(existing), new_data=dict(row))
