@@ -2125,19 +2125,21 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
   };
 
   window.showHireModal = async function () {
-    let clients = [], suppliers = [], carriers = [], orders = [];
-    try { [clients, suppliers, carriers, orders] = await Promise.all([
+    let clients = [], suppliers = [], carriers = [], orders = [], cashRecords = [];
+    try { [clients, suppliers, carriers, orders, cashRecords] = await Promise.all([
       api.get('/api/clients').catch(() => []),
       api.get('/api/suppliers').catch(() => []),
       api.get('/api/carriers').catch(() => []),
       api.get('/api/orders?status=active').catch(() => []),
+      api.get('/api/base/cash-artem').catch(() => []),
     ]); } catch (e) {}
-    clients = clients || []; suppliers = suppliers || []; carriers = carriers || []; orders = orders || [];
+    clients = clients || []; suppliers = suppliers || []; carriers = carriers || []; orders = orders || []; cashRecords = cashRecords || [];
     const sel = (id, items, label) => `<select class="inp" id="${id}">
       <option value="">— выбери ${label} —</option>
       ${items.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('')}
     </select>`;
     const orderOpts = orders.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
+    const cashOpts = cashRecords.map(c => `<option value="${c.id}">#${c.id} ${fmtMoney(c.amount_given)} — ${esc(c.purpose||'')}</option>`).join('');
     showModal('Новая сделка по найму', `
       ${formField('Заказ клиента', `<select class="inp" id="m-order"><option value="">— выбрать заказ —</option>${orderOpts}</select>`)}
       ${formField('Дата сделки', `<input class="inp" type="date" id="m-deal-date" value="${new Date().toISOString().slice(0,10)}">`)}
@@ -2148,6 +2150,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${formField('Цена клиенту, ₽/л', `<input class="inp" type="number" id="m-price-c" placeholder="74" oninput="calcHireMargin()">`)}
       ${formField('Цена поставщику, ₽/л', `<input class="inp" type="number" id="m-price-s" placeholder="59" oninput="calcHireMargin()">`)}
       ${formField('Цена перевозчику, ₽/л', `<input class="inp" type="number" id="m-price-t" placeholder="7" oninput="calcHireMargin()">`)}
+      ${formField('Оплачено с наличных (необяз.)', `<select class="inp" id="m-hire-cash"><option value="">— не указано —</option>${cashOpts}</select>`)}
       <div class="auto-calc" id="hire-calc">Маржа: — ₽ (—%)</div>
     `, async () => {
       const order_id = parseInt(document.getElementById('m-order').value) || null;
@@ -2159,10 +2162,11 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       const price_client = parseFloat(document.getElementById('m-price-c').value) || 0;
       const price_supplier = parseFloat(document.getElementById('m-price-s').value) || 0;
       const price_carrier = parseFloat(document.getElementById('m-price-t').value) || 0;
+      const cash_record_id = parseInt(document.getElementById('m-hire-cash').value) || null;
       if (!order_id) throw new Error('Выберите заказ клиента');
       if (!client_id) throw new Error('Выберите клиента');
       if (!supplier_id) throw new Error('Выберите поставщика');
-      await api.post('/api/hire', { order_id, client_id, supplier_id, carrier_id, delivery_at, volume_liters, price_client, price_supplier, price_carrier });
+      await api.post('/api/hire', { order_id, client_id, supplier_id, carrier_id, delivery_at, volume_liters, price_client, price_supplier, price_carrier, cash_record_id });
       toast('✅ Сделка записана!'); viewHire();
     });
   };

@@ -1111,6 +1111,7 @@
         { name: 'price_client', label: 'Клиенту ₽/л', type: 'number', half: true },
         { name: 'price_supplier', label: 'Поставщик ₽/л', type: 'number', half: true },
         { name: 'price_carrier', label: 'Перевозка ₽/л', type: 'number', half: true, calcId: 'hire-calc' },
+        { name: 'cash_record_id', label: 'Оплачено с наличных', type: 'select', placeholder: '— не указано —', options: [] },
       ],
       onChange: async (v, sheet) => {
         const calcBox = sheet.querySelector('#hire-calc');
@@ -1133,7 +1134,7 @@
           hintBox.style.color = clientOrders.length ? '' : 'var(--red, #ff3b30)';
         }
       },
-      onSubmit: async (v) => { await api.post('/api/hire', { client_id: num(v.client_id), order_id: num(v.order_id), supplier_id: num(v.supplier_id), carrier_id: num(v.carrier_id), delivery_at: v.delivery_at, volume_liters: num(v.volume_liters), price_client: num(v.price_client), price_supplier: num(v.price_supplier), price_carrier: num(v.price_carrier) }); afterWrite('Сделка создана'); },
+      onSubmit: async (v) => { await api.post('/api/hire', { client_id: num(v.client_id), order_id: num(v.order_id), supplier_id: num(v.supplier_id), carrier_id: num(v.carrier_id), delivery_at: v.delivery_at, volume_liters: num(v.volume_liters), price_client: num(v.price_client), price_supplier: num(v.price_supplier), price_carrier: num(v.price_carrier), cash_record_id: num(v.cash_record_id) || null }); afterWrite('Сделка создана'); },
     });
   };
   L.closeHire = async (id) => {
