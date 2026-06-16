@@ -1162,6 +1162,19 @@
           }
           hintBox.style.color = clientOrders.length ? '' : 'var(--red, #ff3b30)';
         }
+        // Order → load cash records for that order
+        const cashSel = sheet.querySelector('[data-name="cash_record_id"]');
+        if (cashSel && v.order_id) {
+          const ordKey = 'o' + v.order_id;
+          if (cashSel._ok !== ordKey) {
+            cashSel._ok = ordKey;
+            try {
+              const recs = await api.get('/api/base/cash-artem?order_id=' + v.order_id).catch(() => []) || [];
+              cashSel.innerHTML = `<option value="">— не указано —</option>` +
+                recs.map(c => `<option value="${c.id}">#${c.id} ${fmtMoney(c.amount_given)} — ${esc(c.purpose||'')}</option>`).join('');
+            } catch(e) {}
+          }
+        }
       },
       onSubmit: async (v) => { await api.post('/api/hire', { client_id: num(v.client_id), order_id: num(v.order_id), supplier_id: num(v.supplier_id), carrier_id: num(v.carrier_id), delivery_at: v.delivery_at, volume_liters: num(v.volume_liters), price_client: num(v.price_client), price_supplier: num(v.price_supplier), price_carrier: num(v.price_carrier), cash_record_id: num(v.cash_record_id) || null }); afterWrite('Сделка создана'); },
     });

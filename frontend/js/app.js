@@ -2197,6 +2197,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     const _clientSel = document.getElementById('m-client');
     const _orderSel = document.getElementById('m-order');
     const _orderHint = document.getElementById('m-order-hint');
+    const _cashSel = document.getElementById('m-hire-cash');
     if (_clientSel && _orderSel) {
       _clientSel.addEventListener('change', () => {
         const cid = _clientSel.value;
@@ -2210,6 +2211,21 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
           } else {
             _orderHint.style.display = 'none';
           }
+        }
+      });
+    }
+    // Bind order change → load cash records for that order
+    if (_orderSel && _cashSel) {
+      _orderSel.addEventListener('change', async () => {
+        const oid = _orderSel.value;
+        if (oid) {
+          try {
+            const recs = await api.get('/api/base/cash-artem?order_id=' + oid).catch(() => []) || [];
+            _cashSel.innerHTML = `<option value="">— не указано —</option>` +
+              recs.map(c => `<option value="${c.id}">#${c.id} ${fmtMoney(c.amount_given)} — ${esc(c.purpose||'')}</option>`).join('');
+          } catch(e) {}
+        } else {
+          _cashSel.innerHTML = `<option value="">— не указано —</option>${cashOpts}`;
         }
       });
     }
