@@ -2162,7 +2162,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${items.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('')}
     </select>`;
     const orderOpts = orders.map(o => `<option value="${o.id}">#${o.id} ${esc(o.client_name || '')} · ${o.volume_ordered || 0} куб</option>`).join('');
-    const cashOpts = cashRecords.map(c => `<option value="${c.id}">#${c.id} ${fmtMoney(c.amount_given)} — ${esc(c.purpose||'')}</option>`).join('');
+    const cashOpts = cashRecords.map(c => `<option value="${c.id}">#${c.id} ${formatNum(Math.round(c.amount_given))} ₽ — ${esc(c.purpose||'')}</option>`).join('');
     showModal('Новая сделка по найму', `
       ${formField('Клиент', sel('m-client', clients, 'клиента'))}
       ${formField('Заказ клиента', `<select class="inp" id="m-order"><option value="">— выбрать заказ —</option>${orderOpts}</select>`)}
@@ -2222,7 +2222,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
           try {
             const recs = await api.get('/api/base/cash-artem?order_id=' + oid).catch(() => []) || [];
             _cashSel.innerHTML = `<option value="">— не указано —</option>` +
-              recs.map(c => `<option value="${c.id}">#${c.id} ${fmtMoney(c.amount_given)} — ${esc(c.purpose||'')}</option>`).join('');
+              recs.map(c => `<option value="${c.id}">#${c.id} ${formatNum(Math.round(c.amount_given))} ₽ — ${esc(c.purpose||'')}</option>`).join('');
           } catch(e) {}
         } else {
           _cashSel.innerHTML = `<option value="">— не указано —</option>${cashOpts}`;
