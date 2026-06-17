@@ -1,11 +1,29 @@
 import psycopg2
 import psycopg2.extras
+from psycopg2.pool import ThreadedConnectionPool
 from contextlib import contextmanager
 from .config import settings
 
+_pool: ThreadedConnectionPool | None = None
+
+
+def _get_pool() -> ThreadedConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = ThreadedConnectionPool(
+            minconn=2, maxconn=10,
+            dsn=settings.DATABASE_URL,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+    return _pool
+
 
 def get_connection():
-    return psycopg2.connect(settings.DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    return _get_pool().getconn()
+
+
+def _release(conn):
+    _get_pool().putconn(conn)
 
 
 @contextmanager
@@ -18,7 +36,7 @@ def get_db():
         conn.rollback()
         raise
     finally:
-        conn.close()
+        _release(conn)
 
 
 def query(sql, params=None, conn=None):
@@ -32,7 +50,7 @@ def query(sql, params=None, conn=None):
             return [dict(r) for r in cur.fetchall()]
     finally:
         if close_after:
-            conn.close()
+            _release(conn)
 
 
 def query_one(sql, params=None, conn=None):
@@ -59,4 +77,4 @@ def execute(sql, params=None, conn=None, returning=False):
         raise
     finally:
         if close_after:
-            conn.close()
+            _release(conn)

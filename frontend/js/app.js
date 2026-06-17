@@ -456,12 +456,18 @@
   }
 
   // ── BOOT ──────────────────────────────────────────────────────────────────
+  function _prewarm() {
+    ['/api/clients', '/api/suppliers', '/api/carriers', '/api/trucks',
+     '/api/drivers', '/api/sites', '/api/orders?status=active'].forEach(u => api.get(u).catch(() => {}));
+  }
+
   async function boot() {
     try {
       const r = await api.refresh();
       if (r && r.access_token) api.setToken(r.access_token);
       user = await api.me();
       window.currentUser = user;
+      _prewarm();
       checkOnboarding();
     } catch (e) { user = null; }
     setupLayout();
@@ -636,6 +642,7 @@
       api.setToken(d.access_token);
       user = await api.me();
       window.currentUser = user;
+      _prewarm();
       setupLayout();
       navigate('#home');
       checkOnboarding();
@@ -683,6 +690,7 @@
       api.setToken(d.access_token);
       user = await api.me();
       window.currentUser = user;
+      _prewarm();
       setupLayout();
       navigate('#home');
       checkOnboarding();

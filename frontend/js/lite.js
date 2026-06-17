@@ -396,6 +396,7 @@
         }
         user = await api.me();
         window.currentUser = user;
+        _prewarm();
         location.hash = '#home';
         renderApp();
       } catch (e) {
@@ -1484,12 +1485,18 @@
   /* ═══════════════════════════ ЗАГРУЗКА ═══════════════════════════ */
   window.addEventListener('hashchange', renderApp);
 
+  function _prewarm() {
+    loadRef(['clients', 'suppliers', 'carriers', 'trucks', 'drivers', 'sites']).catch(() => {});
+    api.get('/api/orders?status=active').catch(() => {});
+  }
+
   async function boot() {
     try {
       const r = await api.refresh();
       if (r && r.access_token) api.setToken(r.access_token);
       user = await api.me();
       window.currentUser = user;
+      _prewarm();
     } catch (e) { user = null; }
     renderApp();
   }
