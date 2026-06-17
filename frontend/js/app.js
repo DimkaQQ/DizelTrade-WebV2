@@ -3342,7 +3342,10 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     document.body.appendChild(overlay);
     bindChips(overlay);
     document.getElementById('modal-ok').addEventListener('click', async () => {
-      try { await onSubmit(); closeModal(); } catch (e) { toast(e.message, 'error'); }
+      const btn = document.getElementById('modal-ok');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try { await onSubmit(); closeModal(); } catch (e) { toast(e.message, 'error'); btn.disabled = false; }
     });
     overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
   }
