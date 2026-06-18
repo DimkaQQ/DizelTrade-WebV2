@@ -3008,7 +3008,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="lic b">📍</div>
         <div class="lit"><div class="lim">${esc(s.name)}</div></div>
         <div class="lir">${s.is_active ? badge('Активен','done') : badge('Скрыт','cancelled')}
-          ${isPartner() ? `<button onclick="toggleSite(${s.id},${!s.is_active})" style="margin-left:8px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">${s.is_active ? 'Скрыть' : 'Показать'}</button>` : ''}
+          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('sites',${s.id},${JSON.stringify(s.name)},${!!s.is_active})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('sites',${s.id},${JSON.stringify(s.name)})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
         </div>
       </div>`).join('')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addSiteModal()">+ Добавить участок</button>` : ''}
@@ -3017,7 +3017,9 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${suppliers.map(s => `<div class="li">
         <div class="lic g">⛽</div>
         <div class="lit"><div class="lim">${esc(s.name)}</div></div>
-        <div class="lir">${s.is_active !== false ? badge('Активен','done') : badge('Скрыт','cancelled')}</div>
+        <div class="lir">${s.is_active !== false ? badge('Активен','done') : badge('Скрыт','cancelled')}
+          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('suppliers',${s.id},${JSON.stringify(s.name)},${s.is_active !== false})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('suppliers',${s.id},${JSON.stringify(s.name)})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
+        </div>
       </div>`).join('')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addSupplierModal()">+ Добавить поставщика</button>` : ''}
 
@@ -3025,7 +3027,9 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${carriers.map(c => `<div class="li">
         <div class="lic tr">🚛</div>
         <div class="lit"><div class="lim">${esc(c.name)}</div></div>
-        <div class="lir">${c.is_active ? badge('Активен','done') : badge('Скрыт','cancelled')}</div>
+        <div class="lir">${c.is_active ? badge('Активен','done') : badge('Скрыт','cancelled')}
+          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('carriers',${c.id},${JSON.stringify(c.name)},${!!c.is_active})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('carriers',${c.id},${JSON.stringify(c.name)})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
+        </div>
       </div>`).join('')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addCarrierModal()">+ Добавить перевозчика</button>` : ''}
 
@@ -3060,7 +3064,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${clients.map(c => `<div class="li">
         <div class="lic b">👤</div>
         <div class="lit"><div class="lim">${esc(c.name)}</div>${c.notes ? `<div class="lis">${esc(c.notes)}</div>` : ''}</div>
-        <div class="lir">${isPartner() ? `<button onclick="event.stopPropagation();window.editClientModal(${c.id},${JSON.stringify(c.name)},${JSON.stringify(c.notes||'')})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button>` : ''}</div>
+        <div class="lir">${isPartner() ? `<button onclick="event.stopPropagation();window.editClientModal(${c.id},${JSON.stringify(c.name)},${JSON.stringify(c.notes||'')})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('clients',${c.id},${JSON.stringify(c.name)})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}</div>
       </div>`).join('') || emptyState('Нет клиентов')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addClientModal()">+ Добавить клиента</button>` : ''}
 
@@ -3235,6 +3239,25 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         await api.put(`/api/clients/${id}`, { name, notes });
         toast('✅ Клиент обновлён'); viewSettings();
       });
+  };
+
+  window.editRefModal = function(kind, id, name, isActive) {
+    const titles = { suppliers: 'Изменить поставщика', carriers: 'Изменить перевозчика', sites: 'Изменить участок' };
+    showModal(titles[kind] || 'Изменить',
+      formField('Название', `<input class="inp" id="m-ref-name" value="${esc(name)}">`) +
+      formField('Статус', `<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-ref-active"${isActive ? ' checked' : ''}><span>Активен</span></label>`),
+      async () => {
+        const nm = document.getElementById('m-ref-name')?.value?.trim();
+        if (!nm) throw new Error('Введите название');
+        await api.put(`/api/${kind}/${id}`, { name: nm, is_active: document.getElementById('m-ref-active').checked });
+        toast('✅ Сохранено'); viewSettings();
+      });
+  };
+
+  window.deleteRef = async function(kind, id, name) {
+    if (!confirm(`Удалить «${name}»?`)) return;
+    try { await api.del(`/api/${kind}/${id}`); toast('✅ Удалено'); viewSettings(); }
+    catch(e) { toast(e.message, 'error'); }
   };
 
   window.addTariffModal = async function() {

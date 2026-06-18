@@ -1428,13 +1428,18 @@
     ]);
     window._settings = settings;
     let html = `<div class="section-title">Параметры</div><button class="btn-add" onclick="L.formThresholds()">⚙ Пороги оповещений</button>`;
-    const refBlock = (title, list, addFn) => `<div class="section-title">${title} (${list.length})</div>` +
-      `<button class="btn-add" onclick="${addFn}">+ Добавить</button>` +
-      `<div class="list" style="margin-top:12px">` + (list.length ? list.map(o => row({ title: esc(o.name), badge: o.is_active === false ? badge('Выкл', 'gray') : '' })).join('') : empty('Пусто', '∅')) + `</div>`;
-    html += refBlock('Клиенты', clients, 'L.formAddRef(\'clients\')');
-    html += refBlock('Участки', sites, 'L.formAddRef(\'sites\')');
-    html += refBlock('Поставщики', suppliers, 'L.formAddRef(\'suppliers\')');
-    html += refBlock('Перевозчики', carriers, 'L.formAddRef(\'carriers\')');
+    const refRow = (kind, o) => row({
+      title: esc(o.name), sub: o.notes || '',
+      badge: (o.is_active === false ? badge('Выкл', 'gray') + ' ' : '') + (isPartner()
+        ? `<button class="btn-ghost" onclick="event.stopPropagation();L.formEditRef('${kind}',${o.id},${JSON.stringify(o.name)},${JSON.stringify(o.notes||'')},${o.is_active !== false})">✏</button> <button class="btn-ghost danger" onclick="event.stopPropagation();L.deleteRef('${kind}',${o.id},${JSON.stringify(o.name)})">🗑</button>` : ''),
+    });
+    const refBlock = (title, kind, list, addFn) => `<div class="section-title">${title} (${list.length})</div>` +
+      (isPartner() ? `<button class="btn-add" onclick="${addFn}">+ Добавить</button>` : '') +
+      `<div class="list" style="margin-top:12px">` + (list.length ? list.map(o => refRow(kind, o)).join('') : empty('Пусто', '∅')) + `</div>`;
+    html += refBlock('Клиенты', 'clients', clients, 'L.formAddRef(\'clients\')');
+    html += refBlock('Участки', 'sites', sites, 'L.formAddRef(\'sites\')');
+    html += refBlock('Поставщики', 'suppliers', suppliers, 'L.formAddRef(\'suppliers\')');
+    html += refBlock('Перевозчики', 'carriers', carriers, 'L.formAddRef(\'carriers\')');
     html += `<div class="section-title">Тарифы (${tariffs.length})</div>`;
     if (tariffs.length) html += `<div class="tbl-wrap"><table><thead><tr><th>Участок</th><th>Чья машина</th><th class="num">Тариф</th></tr></thead><tbody>` +
       tariffs.map(t => `<tr><td>${esc(t.site_name)}</td><td>${esc(t.truck_owner)}</td><td class="num">${fmtMoney(t.amount)}</td></tr>`).join('') + `</tbody></table></div>`;
@@ -1464,6 +1469,31 @@
       fields: [{ name: 'name', label: 'Название', type: 'text', required: true }, ...(kind === 'clients' ? [{ name: 'notes', label: 'Заметки', type: 'text' }] : [])],
       onSubmit: async (v) => { const body = { name: str(v.name) }; if (kind === 'clients') body.notes = str(v.notes); if (kind === 'sites') body.is_active = true; await api.post('/api/' + kind, body); afterWrite('Добавлено'); },
     });
+  };
+
+  L.formEditRef = async (kind, id, name, notes, isActive) => {
+    const titles = { clients: 'Изменить клиента', sites: 'Изменить участок', suppliers: 'Изменить поставщика', carriers: 'Изменить перевозчика' };
+    await openSheet({
+      title: titles[kind] || 'Изменить', submitLabel: 'Сохранить',
+      fields: [
+        { name: 'name', label: 'Название', type: 'text', required: true, value: name },
+        ...(kind === 'clients' ? [{ name: 'notes', label: 'Примечание', type: 'text', value: notes || '' }] : []),
+        ...(kind !== 'clients' ? [{ name: 'is_active', label: 'Статус', type: 'chips', value: isActive ? 'yes' : 'no', options: [{ value: 'yes', label: 'Активен' }, { value: 'no', label: 'Скрыт' }] }] : []),
+      ],
+      onSubmit: async (v) => {
+        const body = { name: str(v.name) };
+        if (kind === 'clients') body.notes = str(v.notes) || null;
+        else body.is_active = v.is_active === 'yes';
+        await api.put(`/api/${kind}/${id}`, body);
+        afterWrite('Изменено');
+      },
+    });
+  };
+
+  L.deleteRef = async (kind, id, name) => {
+    if (!await confirmAction({ title: `Удалить «${name}»?`, danger: true, okLabel: 'Удалить' })) return;
+    try { await api.del(`/api/${kind}/${id}`); afterWrite('Удалено'); }
+    catch(e) { toast(e.message || 'Ошибка', 'err'); }
   };
   L.formAddTariff = async () => {
     const sites = await api.get('/api/sites');

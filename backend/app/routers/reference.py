@@ -199,3 +199,44 @@ def update_client(client_id: int, body: ClientCreate, user: dict = Depends(requi
         "UPDATE clients SET name=%s, notes=%s WHERE id=%s RETURNING *",
         (body.name, body.notes, client_id), returning=True
     )
+
+
+@router.delete("/clients/{client_id}", status_code=204)
+def delete_client(client_id: int, user: dict = Depends(require_partner)):
+    if not query_one("SELECT id FROM clients WHERE id = %s", (client_id,)):
+        raise HTTPException(404, "Не найдено")
+    try:
+        execute("DELETE FROM clients WHERE id = %s", (client_id,))
+    except Exception:
+        raise HTTPException(400, "Нельзя удалить: клиент связан с заказами или сделками")
+
+
+@router.delete("/suppliers/{supplier_id}", status_code=204)
+def delete_supplier(supplier_id: int, user: dict = Depends(require_partner)):
+    if not query_one("SELECT id FROM suppliers WHERE id = %s", (supplier_id,)):
+        raise HTTPException(404, "Не найдено")
+    try:
+        execute("DELETE FROM suppliers WHERE id = %s", (supplier_id,))
+    except Exception:
+        raise HTTPException(400, "Нельзя удалить: поставщик связан с поступлениями или сделками")
+
+
+@router.delete("/carriers/{carrier_id}", status_code=204)
+def delete_carrier(carrier_id: int, user: dict = Depends(require_partner)):
+    if not query_one("SELECT id FROM carriers WHERE id = %s", (carrier_id,)):
+        raise HTTPException(404, "Не найдено")
+    try:
+        execute("DELETE FROM carriers WHERE id = %s", (carrier_id,))
+    except Exception:
+        raise HTTPException(400, "Нельзя удалить: перевозчик связан с рейсами или сделками")
+
+
+@router.delete("/sites/{site_id}", status_code=204)
+def delete_site(site_id: int, user: dict = Depends(require_partner)):
+    if not query_one("SELECT id FROM sites WHERE id = %s", (site_id,)):
+        raise HTTPException(404, "Не найдено")
+    try:
+        execute("DELETE FROM order_sites WHERE site_id = %s", (site_id,))
+        execute("DELETE FROM sites WHERE id = %s", (site_id,))
+    except Exception:
+        raise HTTPException(400, "Нельзя удалить: участок связан с рейсами")
