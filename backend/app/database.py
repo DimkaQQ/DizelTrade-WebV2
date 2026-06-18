@@ -67,7 +67,11 @@ def execute(sql, params=None, conn=None, returning=False):
     try:
         with conn.cursor() as cur:
             cur.execute(sql, params)
-            result = dict(cur.fetchone()) if returning else None
+            if returning:
+                row = cur.fetchone()
+                result = dict(row) if row else None
+            else:
+                result = None
         if close_after:
             conn.commit()
         return result

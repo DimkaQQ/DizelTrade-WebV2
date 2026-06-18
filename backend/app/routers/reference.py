@@ -98,13 +98,14 @@ def create_tariff(body: TariffCreate, user: dict = Depends(require_partner)):
 
 @router.put("/tariffs/{tariff_id}")
 def update_tariff(tariff_id: int, body: TariffCreate, user: dict = Depends(require_partner)):
-    row = query_one("SELECT id FROM tariffs WHERE id = %s", (tariff_id,))
+    row = query_one("SELECT id, valid_from FROM tariffs WHERE id = %s", (tariff_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Tariff not found")
+    valid_from = body.valid_from or str(row["valid_from"])
     return execute(
         "UPDATE tariffs SET site_id=%s, truck_owner=%s, amount=%s, valid_from=%s, comment=%s, updated_at=NOW() WHERE id=%s RETURNING *",
         (body.site_id, body.truck_owner, body.amount,
-         body.valid_from or "today", body.comment, tariff_id), returning=True
+         valid_from, body.comment, tariff_id), returning=True
     )
 
 
