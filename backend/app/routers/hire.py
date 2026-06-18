@@ -161,7 +161,7 @@ def correct_hire(hire_id: int, body: HireCorrection, user: dict = Depends(requir
     vals = list(updates.values()) + [hire_id]
     with get_db() as conn:
         updated = execute(f"UPDATE hire_deliveries SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
-        log_action(conn, "hire_deliveries", hire_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        log_action(conn, "hire_deliveries", hire_id, "CORRECTION", user["id"], old_data=dict(row), new_data=(dict(updated) if updated else {}), reason=body.reason)
         conn.commit()
     return updated
 
@@ -205,6 +205,6 @@ def close_hire_delivery(hire_id: int, body: dict, user: dict = Depends(require_p
             "UPDATE hire_deliveries SET is_closed = TRUE, closed_comment = %s WHERE id = %s RETURNING *",
             (comment, hire_id), conn=conn, returning=True
         )
-        log_action(conn, "hire_deliveries", hire_id, "CLOSE", user["id"], old_data=dict(row), new_data=dict(updated))
+        log_action(conn, "hire_deliveries", hire_id, "CLOSE", user["id"], old_data=dict(row), new_data=(dict(updated) if updated else {}))
         conn.commit()
     return {"ok": True}

@@ -1431,7 +1431,7 @@
     const refRow = (kind, o) => row({
       title: esc(o.name), sub: o.notes || '',
       badge: (o.is_active === false ? badge('Выкл', 'gray') + ' ' : '') + (isPartner()
-        ? `<button class="btn-ghost" onclick="event.stopPropagation();L.formEditRef('${kind}',${o.id},${JSON.stringify(o.name)},${JSON.stringify(o.notes||'')},${o.is_active !== false})">✏</button> <button class="btn-ghost danger" onclick="event.stopPropagation();L.deleteRef('${kind}',${o.id},${JSON.stringify(o.name)})">🗑</button>` : ''),
+        ? `<button class="btn-ghost" onclick="event.stopPropagation();L.formEditRef('${kind}',${o.id},${JSON.stringify(o.name).replace(/"/g,'&quot;')},${JSON.stringify(o.notes||'').replace(/"/g,'&quot;')},${o.is_active !== false})">✏</button> <button class="btn-ghost danger" onclick="event.stopPropagation();L.deleteRef('${kind}',${o.id},${JSON.stringify(o.name).replace(/"/g,'&quot;')})">🗑</button>` : ''),
     });
     const refBlock = (title, kind, list, addFn) => `<div class="section-title">${title} (${list.length})</div>` +
       (isPartner() ? `<button class="btn-add" onclick="${addFn}">+ Добавить</button>` : '') +

@@ -1829,7 +1829,9 @@
         await api.post('/api/orders', { client_id, paid_at, volume_ordered, price_per_liter, amount_paid, delivery_type, site_ids });
       } else {
         const client_name = clientNameEl?.value?.trim() || '';
-        await api.post('/api/orders', { client_name, paid_at, volume_ordered, price_per_liter, amount_paid, delivery_type, site_ids });
+        if (!client_name) throw new Error('Введите имя клиента');
+        const newClient = await api.post('/api/clients', { name: client_name });
+        await api.post('/api/orders', { client_id: newClient.id, paid_at, volume_ordered, price_per_liter, amount_paid, delivery_type, site_ids });
       }
       toast('✅ Заказ создан!'); viewOrders();
     });
@@ -3008,7 +3010,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="lic b">📍</div>
         <div class="lit"><div class="lim">${esc(s.name)}</div></div>
         <div class="lir">${s.is_active ? badge('Активен','done') : badge('Скрыт','cancelled')}
-          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('sites',${s.id},${JSON.stringify(s.name)},${!!s.is_active})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('sites',${s.id},${JSON.stringify(s.name)})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
+          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('sites',${s.id},${JSON.stringify(s.name).replace(/"/g,'&quot;')},${!!s.is_active})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('sites',${s.id},${JSON.stringify(s.name).replace(/"/g,'&quot;')})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
         </div>
       </div>`).join('')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addSiteModal()">+ Добавить участок</button>` : ''}
@@ -3018,7 +3020,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="lic g">⛽</div>
         <div class="lit"><div class="lim">${esc(s.name)}</div></div>
         <div class="lir">${s.is_active !== false ? badge('Активен','done') : badge('Скрыт','cancelled')}
-          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('suppliers',${s.id},${JSON.stringify(s.name)},${s.is_active !== false})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('suppliers',${s.id},${JSON.stringify(s.name)})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
+          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('suppliers',${s.id},${JSON.stringify(s.name).replace(/"/g,'&quot;')},${s.is_active !== false})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('suppliers',${s.id},${JSON.stringify(s.name).replace(/"/g,'&quot;')})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
         </div>
       </div>`).join('')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addSupplierModal()">+ Добавить поставщика</button>` : ''}
@@ -3028,7 +3030,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
         <div class="lic tr">🚛</div>
         <div class="lit"><div class="lim">${esc(c.name)}</div></div>
         <div class="lir">${c.is_active ? badge('Активен','done') : badge('Скрыт','cancelled')}
-          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('carriers',${c.id},${JSON.stringify(c.name)},${!!c.is_active})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('carriers',${c.id},${JSON.stringify(c.name)})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
+          ${isPartner() ? `<button onclick="event.stopPropagation();window.editRefModal('carriers',${c.id},${JSON.stringify(c.name).replace(/"/g,'&quot;')},${!!c.is_active})" style="margin-left:6px;background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('carriers',${c.id},${JSON.stringify(c.name).replace(/"/g,'&quot;')})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}
         </div>
       </div>`).join('')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addCarrierModal()">+ Добавить перевозчика</button>` : ''}
@@ -3064,7 +3066,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
       ${clients.map(c => `<div class="li">
         <div class="lic b">👤</div>
         <div class="lit"><div class="lim">${esc(c.name)}</div>${c.notes ? `<div class="lis">${esc(c.notes)}</div>` : ''}</div>
-        <div class="lir">${isPartner() ? `<button onclick="event.stopPropagation();window.editClientModal(${c.id},${JSON.stringify(c.name)},${JSON.stringify(c.notes||'')})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('clients',${c.id},${JSON.stringify(c.name)})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}</div>
+        <div class="lir">${isPartner() ? `<button onclick="event.stopPropagation();window.editClientModal(${c.id},${JSON.stringify(c.name).replace(/"/g,'&quot;')},${JSON.stringify(c.notes||'').replace(/"/g,'&quot;')})" style="background:var(--card2);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">✏</button><button onclick="event.stopPropagation();window.deleteRef('clients',${c.id},${JSON.stringify(c.name).replace(/"/g,'&quot;')})" style="margin-left:4px;background:var(--card2);border:1px solid var(--border);color:var(--red,#ff3b30);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">🗑</button>` : ''}</div>
       </div>`).join('') || emptyState('Нет клиентов')}
       ${isPartner() ? `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="addClientModal()">+ Добавить клиента</button>` : ''}
 

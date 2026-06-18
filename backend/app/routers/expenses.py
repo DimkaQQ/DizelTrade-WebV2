@@ -99,7 +99,7 @@ def correct_expense(expense_id: int, body: ExpenseCorrection, user: dict = Depen
     vals = list(updates.values()) + [expense_id]
     with get_db() as conn:
         updated = execute(f"UPDATE company_expenses SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
-        log_action(conn, "company_expenses", expense_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        log_action(conn, "company_expenses", expense_id, "CORRECTION", user["id"], old_data=dict(row), new_data=(dict(updated) if updated else {}), reason=body.reason)
         conn.commit()
     return updated
 

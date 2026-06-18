@@ -246,7 +246,7 @@ def confirm_receipt(receipt_id: int, user: dict = Depends(require_not_operator))
             returning=True,
         )
         log_action(conn, "fuel_receipts", receipt_id, "UPDATE", user["id"],
-                   old_data=dict(row), new_data=dict(updated))
+                   old_data=dict(row), new_data=(dict(updated) if updated else {}))
     return updated
 
 
@@ -281,7 +281,7 @@ def correct_receipt(receipt_id: int, body: ReceiptCorrection, user: dict = Depen
     vals = list(updates.values()) + [receipt_id]
     with get_db() as conn:
         updated = execute(f"UPDATE fuel_receipts SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
-        log_action(conn, "fuel_receipts", receipt_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        log_action(conn, "fuel_receipts", receipt_id, "CORRECTION", user["id"], old_data=dict(row), new_data=(dict(updated) if updated else {}), reason=body.reason)
         conn.commit()
     return updated
 
@@ -463,7 +463,7 @@ def update_dispatch_status(
             returning=True,
         )
         log_action(conn, "fuel_dispatches", dispatch_id, "UPDATE", user["id"],
-                   old_data=dict(row), new_data=dict(updated))
+                   old_data=dict(row), new_data=(dict(updated) if updated else {}))
     return updated
 
 
@@ -491,7 +491,7 @@ def correct_dispatch(dispatch_id: int, body: DispatchCorrection, user: dict = De
     vals = list(updates.values()) + [dispatch_id]
     with get_db() as conn:
         updated = execute(f"UPDATE fuel_dispatches SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
-        log_action(conn, "fuel_dispatches", dispatch_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        log_action(conn, "fuel_dispatches", dispatch_id, "CORRECTION", user["id"], old_data=dict(row), new_data=(dict(updated) if updated else {}), reason=body.reason)
         conn.commit()
     return updated
 
@@ -522,7 +522,7 @@ def mark_dispatch_paid(dispatch_id: int, user: dict = Depends(require_partner)):
             (dispatch_id,), conn=conn, returning=True
         )
         log_action(conn, "fuel_dispatches", dispatch_id, "MARK_PAID", user["id"],
-                   old_data=dict(row), new_data=dict(updated))
+                   old_data=dict(row), new_data=(dict(updated) if updated else {}))
         conn.commit()
     return updated
 
@@ -539,7 +539,7 @@ def mark_dispatch_unpaid(dispatch_id: int, user: dict = Depends(require_partner)
             (dispatch_id,), conn=conn, returning=True
         )
         log_action(conn, "fuel_dispatches", dispatch_id, "MARK_UNPAID", user["id"],
-                   old_data=dict(row), new_data=dict(updated))
+                   old_data=dict(row), new_data=(dict(updated) if updated else {}))
         conn.commit()
     return updated
 
@@ -754,7 +754,7 @@ def report_cash_artem(record_id: int, body: CashArtemReport, user: dict = Depend
             conn=conn, returning=True,
         )
         log_action(conn, "cash_to_artem", record_id, "REPORT", user["id"],
-                   old_data=dict(row), new_data=dict(updated))
+                   old_data=dict(row), new_data=(dict(updated) if updated else {}))
         conn.commit()
     return updated
 
@@ -771,7 +771,7 @@ def settle_cash_artem(record_id: int, user: dict = Depends(require_partner)):
             conn=conn, returning=True,
         )
         log_action(conn, "cash_to_artem", record_id, "SETTLE", user["id"],
-                   old_data=dict(row), new_data=dict(updated))
+                   old_data=dict(row), new_data=(dict(updated) if updated else {}))
         conn.commit()
     return updated
 

@@ -100,7 +100,7 @@ def correct_income(income_id: int, body: IncomeCorrection, user: dict = Depends(
     vals = list(updates.values()) + [income_id]
     with get_db() as conn:
         updated = execute(f"UPDATE income_records SET {set_clause} WHERE id = %s RETURNING *", vals, conn=conn, returning=True)
-        log_action(conn, "income_records", income_id, "CORRECTION", user["id"], old_data=dict(row), new_data=dict(updated), reason=body.reason)
+        log_action(conn, "income_records", income_id, "CORRECTION", user["id"], old_data=dict(row), new_data=(dict(updated) if updated else {}), reason=body.reason)
         conn.commit()
     return updated
 
