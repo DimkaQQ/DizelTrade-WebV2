@@ -1422,7 +1422,7 @@
 
   async function repSettings() {
     const [sites, suppliers, carriers, clients, tariffs, settings, tokens, twofa] = await Promise.all([
-      api.get('/api/sites'), api.get('/api/suppliers'), api.get('/api/carriers'), api.get('/api/clients'),
+      api.get('/api/sites'), api.get('/api/suppliers'), api.get('/api/carriers?active_only=false'), api.get('/api/clients'),
       api.get('/api/tariffs'), api.get('/api/settings'),
       api.get('/api/tokens').catch(() => []), api.get('/api/auth/2fa/status').catch(() => ({ totp_enabled: false })),
     ]);

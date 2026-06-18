@@ -1,7 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from ..database import query, query_one, execute
+from ..database import query, query_one, execute, get_db
 from ..deps import get_current_user, require_partner
 
 router = APIRouter()
@@ -116,8 +116,10 @@ class CarrierCreate(BaseModel):
 
 
 @router.get("/carriers")
-def list_carriers(user: dict = Depends(get_current_user)):
-    return query("SELECT * FROM carriers WHERE is_active = TRUE ORDER BY name")
+def list_carriers(active_only: bool = True, user: dict = Depends(get_current_user)):
+    if active_only:
+        return query("SELECT * FROM carriers WHERE is_active = TRUE ORDER BY name")
+    return query("SELECT * FROM carriers ORDER BY name")
 
 
 @router.post("/carriers", status_code=201)
@@ -236,7 +238,8 @@ def delete_site(site_id: int, user: dict = Depends(require_partner)):
     if not query_one("SELECT id FROM sites WHERE id = %s", (site_id,)):
         raise HTTPException(404, "Не найдено")
     try:
-        execute("DELETE FROM order_sites WHERE site_id = %s", (site_id,))
-        execute("DELETE FROM sites WHERE id = %s", (site_id,))
+        with get_db() as conn:
+            execute("DELETE FROM order_sites WHERE site_id = %s", (site_id,), conn=conn)
+            execute("DELETE FROM sites WHERE id = %s", (site_id,), conn=conn)
     except Exception:
         raise HTTPException(400, "Нельзя удалить: участок связан с рейсами")

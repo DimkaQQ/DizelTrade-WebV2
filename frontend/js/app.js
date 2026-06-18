@@ -2967,7 +2967,7 @@ tfoot td{background:#e8e8e8;font-weight:700;border:1px solid #bbb}
     try { sites = await api.get('/api/sites') || []; } catch (e) {}
     try { tariffs = await api.get('/api/tariffs') || []; } catch (e) {}
     try { suppliers = await api.get('/api/suppliers') || []; } catch (e) {}
-    try { carriers = await api.get('/api/carriers') || []; } catch (e) {}
+    try { carriers = await api.get('/api/carriers?active_only=false') || []; } catch (e) {}
     try { settings = await api.get('/api/settings') || []; } catch (e) {}
     try { clients = await api.get('/api/clients') || []; } catch (e) {}
 
